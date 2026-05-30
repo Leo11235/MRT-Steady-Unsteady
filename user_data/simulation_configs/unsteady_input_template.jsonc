@@ -1,0 +1,78 @@
+// numbers probably not realistic
+// need to add "atmosphere_model" somewhere 
+{
+    "rocket_inputs": {
+        "metadata": {
+            "simulation_name": "", // str, optional
+            "simulation_type": "unsteady", // can be "steady" or "unsteady"
+            "warnings": false // true or false; whether to include warnings in the final report
+        },
+        "initial_conditions": { // initial rocket conditions not related to any one CV
+            "launch_site_altitude_asl_m": 300.0
+        },
+        "CV_inputs": {
+            "CV1_tank": {
+                "model": "joel",
+                "tank_internal_radius_m": 0.1,
+                "tank_internal_shell_length_m": 0.5,
+                "tank_internal_volume_m3": 0.0157,
+                "tank_temperature_K": 298.15,
+                "tank_oxidizer_mass_kg": 15.5,
+                "dip_tube_external_radius_m": 0.006,
+                "dip_tube_internal_radius_m": 0.004,
+                "dip_tube_length_m": 0.45,
+                    // tank: one of the following:
+                "tank_ullage_fraction": 0.1,
+                    // or:
+                "tank_internal_length_m": 0.0
+            },
+            "CV2_valve": {
+                "model": "sigmoid",
+                "valve_time_constant_s": 0.1, // how quickly the valve opens
+                "sigmoid_half_time_s": 0.05, // time at which the valve is 50% open
+                "sigmoid_steepness": 10.0 // how steep the opening curve is around the 50% open mark
+            },
+            "CV3_injector": {
+                "model": "joel",
+                "injector_discharge_coefficient": 0.8,
+                "injector_number_of_holes": 36,
+                "injector_hole_area_m2": 1.8e-6,
+                "feed_pressure_loss_Pa": 300000.0
+            },
+            "CV4_chamber": {
+                "model": "joel",
+                "chamber_fuel_length_m": 0.45,
+                "chamber_fuel_density_kgm3": 900.0,
+                "chamber_fuel_external_radius_m": 0.1,
+                "chamber_regression_rate_scaling_constant": 0.000132,
+                "chamber_regression_rate_exponent": 0.555,
+                "pre_chamber_volume_m3": 0.001,
+                "post_chamber_volume_m3": 0.0015,
+                    // chamber: one of the following: 
+                "chamber_fuel_mass_kg": 6.0,
+                    // or:
+                "chamber_fuel_internal_radius_m": 0.0
+            },
+            "CV5_nozzle": {
+                "model": "joel",
+                "nozzle_throat_radius_m": 0.016,
+                "nozzle_exit_radius_m": 0.045
+            },
+            "CV6_trajectory": {
+                "model": "2dof",
+                "rocket_dry_mass_kg": 45.0,
+                "rocket_drag_coefficient": 0.64,
+                "rocket_frontal_area_m2": 0.032,
+                "rocket_launch_angle_deg": 6.0,
+                "drogue_parachute_drag_coefficient": 1.2,
+                "drogue_parachute_frontal_area_m2": 0.28,
+                "main_parachute_deployment_altitude_agl_m": 450.0,
+                "main_parachute_drag_coefficient": 1.5,
+                "main_parachute_frontal_area_m2": 9.62
+            }
+        }
+    },
+    "simulation_settings_override": { // optional, any inputs here will override default inputs
+    
+    }
+}

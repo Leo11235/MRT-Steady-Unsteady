@@ -1,0 +1,61 @@
+// default settings for the simulation
+
+{
+    "simulation_settings": {
+        "transition_events": {},
+        "phase_max_times": {
+            "phase_1":  5.0,
+            "phase_2":  30.0,
+            "phase_3":  30.0,
+            "phase_4a": 15.0,
+            "phase_4c": 10.0,
+            "phase_5":  300.0,
+            "phase_6":  600.0,
+            "phase_7":  600.0
+        },
+        "warnings": {
+            "enabled": true,
+            "initialization_near_limits": {},
+            "near_critical_tank_temperature": {
+                "advisory_k": 290.0,
+                "warning_k": 300.0,
+                "critical_k": 309.52
+            },
+            "poor_tank_matrix_conditioning": { // for liquid tank blowdown, detects when calculated values are unstable
+                "advisory": 100000.0,
+                "warning": 10000000.0,
+                "critical": 100000000.0
+            },
+            "OF_ranges": { // for CEA, OF ratio should optimally be within a certain range for CEA to be reliable
+                "advisory_min": 5.5,
+                "advisory_max": 8.5,
+                "warning_min": 4.0,
+                "warning_max": 12.0
+            },
+            "mach_or_drag_model_outside_trusted_range": {
+                "warning_min": 0.8,
+                "warning_max": 1.2
+            },
+            "multiple_transition_events_detected": {
+                "enabled": true
+            }
+        },
+        "epsilons": {}, // define the 0-crossing thresholds for phase transitions
+        "solver": {
+            "integration_method": "LSODA",
+            "rtol": 1e-6,
+            "atol": 1e-9,
+            "max_step_s": 0.05,
+            "dense_output": true
+        },
+        "return_policy": {
+            "return_partial_results_on_abort": true,
+            "include_warning_summaries": true,
+            "include_event_log": true,
+            "include_state_history": true,
+            "success_return_code": "001",
+            "partial_abort_return_code": "002",
+            "invalid_initialization_return_code": "003"
+        }
+    }
+}

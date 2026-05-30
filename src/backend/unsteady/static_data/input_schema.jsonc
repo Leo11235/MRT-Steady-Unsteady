@@ -1,0 +1,79 @@
+// full list of necessary items for unsteady
+// each CV can have different physical models, this lists below inform the program which inputs to expect given which model the user wants
+// arrays within the main lists (eg ["a", "b"]) indicate that only one of those inputs must be provided.
+
+{
+  "initial_conditions": [
+    "launch_site_altitude_asl_m"
+  ],
+  "CV1_tank": {
+    "joel": [
+      "tank_internal_radius_m",
+      "tank_internal_shell_length_m",
+      "tank_internal_volume_m3",
+      "tank_temperature_K",
+      "tank_oxidizer_mass_kg",
+      "dip_tube_external_radius_m",
+      "dip_tube_internal_radius_m",
+      "dip_tube_length_m",
+      ["tank_ullage_fraction", "tank_internal_length_m"]
+    ]
+  },
+  "CV2_valve": {
+    "linear": [
+      "valve_time_constant_s"
+    ],
+    "sigmoid": [
+      "valve_time_constant_s",
+      "sigmoid_half_time_s",
+      "sigmoid_steepness"
+    ],
+    "instant": []
+  },
+  "CV3_injector": {
+    "joel": [
+      "injector_discharge_coefficient",
+      "injector_number_of_holes",
+      "injector_hole_area_m2",
+      "feed_pressure_loss_Pa"
+    ],
+    "nhne": [
+      "injector_discharge_coefficient",
+      "injector_number_of_holes",
+      "injector_hole_area_m2",
+      "feed_pressure_loss_Pa",
+      "two_phase_multiplier"
+    ]
+  },
+  "CV4_chamber": {
+    "joel": [
+      "chamber_fuel_length_m",
+      "chamber_fuel_density_kgm3",
+      "chamber_fuel_external_radius_m",
+      "chamber_regression_rate_scaling_constant",
+      "chamber_regression_rate_exponent",
+      "pre_chamber_volume_m3",
+      "post_chamber_volume_m3",
+      ["chamber_fuel_mass_kg", "chamber_fuel_internal_radius_m"]
+    ]
+  },
+  "CV5_nozzle": {
+    "joel": [
+      "nozzle_throat_radius_m",
+      "nozzle_exit_radius_m"
+    ]
+  },
+  "CV6_trajectory": {
+    "2dof": [
+      "rocket_dry_mass_kg",
+      "rocket_drag_coefficient",
+      "rocket_frontal_area_m2",
+      "rocket_launch_angle_deg",
+      "drogue_parachute_drag_coefficient",
+      "drogue_parachute_frontal_area_m2",
+      "main_parachute_deployment_altitude_agl_m",
+      "main_parachute_drag_coefficient",
+      "main_parachute_frontal_area_m2"
+    ]
+  }
+}

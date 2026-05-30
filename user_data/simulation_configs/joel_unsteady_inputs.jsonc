@@ -1,0 +1,126 @@
+// =========================================================================
+// VALIDATION CASE: Joel Jean-Philippe (2023), Table 3.1
+// Reference: "A computational model for the design of a nitrous oxide-
+//             paraffin wax hybrid rocket engine", McGill University
+//
+// Purpose: Exact replication of Joel's unsteady model parameters for
+//          validation against his published MATLAB results (Table 3.2).
+//
+// Expected outputs (Table 3.2):
+//     Burntime:           3.34 s
+//     Total impulse:      16,845 Ns
+//     Specific impulse:   198 s
+//     Peak thrust:        6.74 kN
+//     Average thrust:     5.05 kN
+//     Predicted apogee:   3048 m AGL
+//
+// Simulation-specific parameters not present in Joel's model (using defaults):
+//     ignition_delta_p_pa : 500,000 Pa   [range: 100k-2,000k Pa]
+//     k_amb               : 1.05         [range: 1.01-1.15]
+//     feed_margin_pa      : 50,000 Pa    [range: 10k-200k Pa]
+// =========================================================================
+{
+    "rocket_inputs": {
+        "metadata": {
+            "simulation_name": "joel_table_3_1_validation.json",
+            "simulation_type": "unsteady"
+        },
+
+        "initial_conditions": {
+            "launch_site_altitude_asl_m": 1402.0    // SAC launch site, Table 2.1
+        },
+
+        "CV_inputs": {
+
+            // =================================================================
+            // CV1: Oxidizer Tank — Joel Table 3.1
+            // =================================================================
+            "CV1_tank": {
+                "model": "joel",
+                "tank_internal_radius_m": 0.064,            // dT = 128 mm → r = 64 mm
+                "tank_internal_shell_length_m": 0.838,      // LT = 838 mm
+                "tank_internal_volume_m3": 0.0108,          // VT = 10.8 L
+                "tank_temperature_K": 298.15,               // TT,0 = 25°C
+                "tank_oxidizer_mass_kg": 7.035,             // mo,tot = 7035 g
+                "dip_tube_external_radius_m": 0.003175,     // Ddt = 6.35 mm → r = 3.175 mm
+                "dip_tube_internal_radius_m": 0.002286,     // ddt = 4.572 mm → r = 2.286 mm
+                "dip_tube_length_m": 0.140,                 // Ldt = 140 mm
+                "tank_ullage_fraction": 0.20                // U = 20%
+            },
+
+            // =================================================================
+            // CV2: Valve
+            // Joel's model has no valve — using linear with zero time constant
+            // (instantaneous opening). valve_time_constant_s range: 0.0-0.5 s
+            // =================================================================
+            "CV2_valve": {
+                "model": "linear",
+                "valve_time_constant_s": 0.0
+            },
+
+            // =================================================================
+            // CV3: Injector — Joel Table 3.1
+            // =================================================================
+            "CV3_injector": {
+                "model": "joel",
+                "injector_discharge_coefficient": 1.0,      // Ci = 1
+                "injector_number_of_holes": 10,             // Ni = 10
+                "injector_hole_area_m2": 3.79e-6,           // Ai = 3.79e-6 m²
+                "feed_pressure_loss_Pa": 34500.0            // ploss = 0.345 bar
+            },
+
+            // =================================================================
+            // CV4: Combustion Chamber — Joel Table 3.1
+            // =================================================================
+            "CV4_chamber": {
+                "model": "joel",
+                "chamber_fuel_length_m": 0.610,                      // Lf = 610 mm
+                "chamber_fuel_density_kgm3": 900.0,                  // ρf = 900 kg/m³
+                "chamber_fuel_external_radius_m": 0.039497,          // Rf = 39.497 mm
+                "chamber_regression_rate_scaling_constant": 1.32e-4, // a
+                "chamber_regression_rate_exponent": 0.555,           // n
+                "pre_chamber_volume_m3": 2.18e-4,                    // Vpre = 0.218 L
+                "post_chamber_volume_m3": 8.85e-4,                   // Vpost = 0.885 L
+                "chamber_fuel_mass_kg": 1.639                        // mf,tot = 1639 g; rf,0 computed from this
+            },
+
+            // =================================================================
+            // CV5: Nozzle — Joel Table 3.1
+            // =================================================================
+            "CV5_nozzle": {
+                "model": "joel",
+                "nozzle_throat_radius_m": 0.0233,           // rt = 23.3 mm
+                "nozzle_exit_radius_m": 0.0381              // re = 38.1 mm
+            },
+
+            // =================================================================
+            // CV6: Trajectory — Joel Table 3.1
+            // =================================================================
+            "CV6_trajectory": {
+                "model": "2dof",
+                "rocket_dry_mass_kg": 52.5,                         // mdry = 52.5 kg
+                "rocket_drag_coefficient": 0.529,                   // Cd
+                "rocket_frontal_area_m2": 0.019478,                 // AR = 19,478 mm²
+                "rocket_launch_angle_deg": 6.0,                     // θ = 6°
+                "drogue_parachute_drag_coefficient": 1.55,          // Cd,drogue
+                "drogue_parachute_frontal_area_m2": 1.17,           // Adrogue = 1.17 m²
+                "main_parachute_deployment_altitude_agl_m": 457.0,  // 1500 ft AGL
+                "main_parachute_drag_coefficient": 2.20,            // Cd,main
+                "main_parachute_frontal_area_m2": 10.5              // Amain = 10.5 m²
+            }
+        }
+    },
+
+    "simulation_settings_override": {
+        "phase_max_times": {
+            "phase_1":  5.0,
+            "phase_2":  30.0,
+            "phase_3":  30.0,
+            "phase_4a": 15.0,
+            "phase_4c": 10.0,
+            "phase_5":  300.0,
+            "phase_6":  600.0,
+            "phase_7":  600.0
+        }
+    }
+}

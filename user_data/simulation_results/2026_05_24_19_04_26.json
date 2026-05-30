@@ -1,0 +1,188 @@
+{
+    "metadata": {
+        "total_timesteps": 4619,
+        "total_simulation_time": 192.8805785263552
+    },
+    "performance": {
+        "overall": {
+            "burntime_s": 3.562984908461706,
+            "total_impulse_Ns": 16199.167921149514,
+            "peak_thrust_N": 6594.9714627110525,
+            "average_thrust_N": 4546.516007597515,
+            "peak_chamber_pressure_Pa": 2691794.4414924183,
+            "peak_chamber_temperature_K": 2672.0382798053706,
+            "average_OF_ratio": 3.1233699155198678,
+            "pad_thrust_to_weight": 10.99323131502472,
+            "apogee_m_asl": 4310.833160813766,
+            "apogee_m_agl": 2908.833160813766,
+            "ox_mass_available_kg": 7.035,
+            "fuel_mass_available_kg": 1.639,
+            "ox_mass_consumed_kg": 6.344988420847918,
+            "fuel_mass_consumed_kg": 1.639,
+            "ox_mass_remaining_kg": 0.6900115791520817,
+            "fuel_mass_remaining_kg": 0.0,
+            "total_propellant_available_kg": 8.674,
+            "total_propellant_consumed_kg": 7.983988420847918
+        },
+        "by_phase": {
+            "phase_1": {
+                "t_start_s": 0.0,
+                "t_end_s": 0.00024288742924192118,
+                "duration_s": 0.00024288742924192118,
+                "total_impulse_Ns": 0.1191653211629062,
+                "peak_thrust_N": 1134.6962608006504,
+                "average_thrust_N": 490.6195497018289,
+                "peak_chamber_pressure_Pa": 585744.4322417435,
+                "average_OF_ratio": 5.110340310743942,
+                "peak_chamber_temperature_K": 2671.936950206766,
+                "ox_mass_consumed_kg": 0.0008215468154106426,
+                "fuel_mass_consumed_kg": 0.00017311735407786108
+            },
+            "phase_2": {
+                "t_start_s": 0.00024304457536920154,
+                "t_end_s": 2.619642846113483,
+                "duration_s": 2.6193998015381137,
+                "total_impulse_Ns": 15608.412019454314,
+                "peak_thrust_N": 6594.9714627110525,
+                "average_thrust_N": 5958.774223884816,
+                "peak_chamber_pressure_Pa": 2691794.4414924183,
+                "average_OF_ratio": 4.2372246977865515,
+                "peak_chamber_temperature_K": 2672.0382798053706,
+                "ox_mass_consumed_kg": 6.0271602300595815,
+                "fuel_mass_consumed_kg": 1.465825026138202
+            },
+            "phase_3": {
+                "t_start_s": 2.6196467539387522,
+                "t_end_s": 3.560845414482123,
+                "duration_s": 0.9411986605433706,
+                "total_impulse_Ns": 590.2997609681727,
+                "peak_thrust_N": 5111.105275124319,
+                "average_thrust_N": 627.178709144552,
+                "peak_chamber_pressure_Pa": 2115641.2575053815,
+                "average_OF_ratio": 2.1482787319254415,
+                "peak_chamber_temperature_K": 2300.4395767998803,
+                "ox_mass_consumed_kg": 0.3166275502598226,
+                "fuel_mass_consumed_kg": 0.17300064947636756
+            },
+            "phase_4a": {
+                "t_start_s": 3.560847545040946,
+                "t_end_s": 3.562984908461706,
+                "duration_s": 0.0021373634207599856,
+                "total_impulse_Ns": 0.3162877594636916,
+                "peak_thrust_N": 307.25182428156046,
+                "average_thrust_N": 147.98033707867455,
+                "peak_chamber_pressure_Pa": 209665.18259524854,
+                "average_OF_ratio": null,
+                "peak_chamber_temperature_K": null,
+                "ox_mass_consumed_kg": 0.0003755383522853495,
+                "fuel_mass_consumed_kg": 0.0
+            },
+            "phase_5": {
+                "t_start_s": 3.56525831123288,
+                "t_end_s": 24.704088606046366,
+                "duration_s": 21.138830294813484,
+                "peak_velocity_ms": 241.55528762781228,
+                "terminal_velocity_ms": 23.2517490974123
+            },
+            "phase_6": {
+                "t_start_s": 24.704088708017988,
+                "t_end_s": 123.8889092411605,
+                "duration_s": 99.18482053314251,
+                "peak_velocity_ms": 26.595296780981666,
+                "terminal_velocity_ms": 23.75124799599641
+            },
+            "phase_7": {
+                "t_start_s": 123.88907404981126,
+                "t_end_s": 192.8805785263552,
+                "duration_s": 68.99150447654395,
+                "peak_velocity_ms": 23.732250682811326,
+                "terminal_velocity_ms": 6.496590248664715
+            }
+        }
+    },
+    "static": {
+        "rocket_inputs": {
+            "launch_site_altitude_asl_m": 1402.0,
+            "tank_internal_radius_m": 0.064,
+            "tank_internal_shell_length_m": 0.838,
+            "tank_internal_volume_m3": 0.0108,
+            "tank_temperature_K": 298.15,
+            "tank_oxidizer_mass_kg": 7.035,
+            "dip_tube_external_radius_m": 0.003175,
+            "dip_tube_internal_radius_m": 0.002286,
+            "dip_tube_length_m": 0.14,
+            "tank_ullage_fraction": 0.2,
+            "valve_time_constant_s": 0.0,
+            "injector_discharge_coefficient": 1.0,
+            "injector_number_of_holes": 10,
+            "injector_hole_area_m2": 3.79e-06,
+            "feed_pressure_loss_Pa": 34500.0,
+            "chamber_fuel_length_m": 0.61,
+            "chamber_fuel_density_kgm3": 900.0,
+            "chamber_fuel_external_radius_m": 0.039497,
+            "chamber_regression_rate_scaling_constant": 0.000132,
+            "chamber_regression_rate_exponent": 0.555,
+            "pre_chamber_volume_m3": 0.000218,
+            "post_chamber_volume_m3": 0.000885,
+            "chamber_fuel_mass_kg": 1.639,
+            "nozzle_throat_radius_m": 0.0233,
+            "nozzle_exit_radius_m": 0.0381,
+            "rocket_dry_mass_kg": 52.5,
+            "rocket_drag_coefficient": 0.529,
+            "rocket_frontal_area_m2": 0.019478,
+            "rocket_launch_angle_deg": 6.0,
+            "drogue_parachute_drag_coefficient": 1.55,
+            "drogue_parachute_frontal_area_m2": 1.17,
+            "main_parachute_deployment_altitude_agl_m": 457.0,
+            "main_parachute_drag_coefficient": 2.2,
+            "main_parachute_frontal_area_m2": 10.5,
+            "CV_models": {
+                "CV1_tank": "joel",
+                "CV2_valve": "linear",
+                "CV3_injector": "joel",
+                "CV4_chamber": "joel",
+                "CV5_nozzle": "joel",
+                "CV6_trajectory": "2dof"
+            }
+        }
+    },
+    "data": "deleted so it doesn't take 4 megabytes",
+    "event_log": [
+        {
+            "t_s": 0.00024288742924192118,
+            "event_type": "PHASE_TRANSITION",
+            "message": "Event 'event_ignition_pressure_reached' triggered. Exiting phase_1 to phase_2."
+        },
+        {
+            "t_s": 2.619642846113483,
+            "event_type": "PHASE_TRANSITION",
+            "message": "Event 'event_liquid_depleted' triggered. Exiting phase_2 to phase_3."
+        },
+        {
+            "t_s": 3.560845414482123,
+            "event_type": "PHASE_TRANSITION",
+            "message": "Event 'event_fuel_burnout_during_gaseous_blowdown' triggered. Exiting phase_3 to phase_4a."
+        },
+        {
+            "t_s": 3.562984908461706,
+            "event_type": "PHASE_TRANSITION",
+            "message": "Event 'event_chamber_near_ambient_after_burnout' triggered. Exiting phase_4a to phase_5."
+        },
+        {
+            "t_s": 24.704088606046366,
+            "event_type": "PHASE_TRANSITION",
+            "message": "Event 'event_apogee_reached' triggered. Exiting phase_5 to phase_6."
+        },
+        {
+            "t_s": 123.8889092411605,
+            "event_type": "PHASE_TRANSITION",
+            "message": "Event 'event_main_deployment_altitude_reached_descending' triggered. Exiting phase_6 to phase_7."
+        },
+        {
+            "t_s": 192.8805785263552,
+            "event_type": "PHASE_TRANSITION",
+            "message": "Event 'event_landing_reached' triggered. Exiting phase_7 to terminal_success_landed."
+        }
+    ],
+    "warnings": {}
+}
