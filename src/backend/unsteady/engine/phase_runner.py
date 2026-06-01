@@ -1,8 +1,7 @@
 """
-The main executive script that initializes and runs the unsteady simulation
+The main script that initializes and runs the unsteady simulation
 """
 
-# hella imports
 import numpy as np
 from scipy.integrate import solve_ivp
 from pathlib import Path
@@ -26,11 +25,10 @@ from src.backend.unsteady.engine.warnings import (WARNINGS_REGISTRY, warn_initia
 import src.backend.unsteady.engine.rhs as rhs
 
 
-def run_unsteady(rocket_inputs_filename: str, rocket_inputs_filepath: str | Path = Path(f"{project_root}") / "user_data" / "simulation_configs"):
+def run_unsteady(rocket_inputs_filename: str, rocket_inputs_filepath: str | Path = Path(f"{project_root}") / "user_data" / "simulation_configs" / "unsteady"):
     """
     The main function for running the unsteady simulation.
     Takes a JSON file of rocket inputs, outputs another JSON with simulation performance
-    If you're trying to figure out how unsteady works, this is the place to start
     """
     
     # load rocket inputs and simulation settings
@@ -203,5 +201,5 @@ def run_unsteady(rocket_inputs_filename: str, rocket_inputs_filepath: str | Path
     
 
 
-run_unsteady("unsteady_input_template.jsonc")
+#run_unsteady("unsteady_input_template.jsonc")
 #run_unsteady("joel_unsteady_inputs.jsonc")

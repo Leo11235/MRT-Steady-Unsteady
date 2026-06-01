@@ -1,0 +1,24 @@
+{
+    "base_requirements": [ 
+        // keys required for all simulations ('fuel_mass_convergence', 'parametric_study', 'hotfire', or 'optimize_values_for_unsteady')
+        // hotfire requires only these keys
+        "oxidizer_mass_flow_rate",
+        "chamber_pressure",
+        "fuel_external_radius",
+        "initial_internal_fuel_radius",
+        "fuel_length",
+        "liquid_oxidizer_type",
+        "solid_fuel_type",
+        "fuel_grain_density",
+        "regression_rate_scaling_coefficient",
+        "regression_rate_exponent"
+    ],
+    "kinematics_requirements": [
+        "target_apogee",
+        "launch_site_altitude",
+        "dry_mass",
+        "rocket_external_radius",
+        "drag_coefficient",
+        "launch_angle"
+    ]
+}

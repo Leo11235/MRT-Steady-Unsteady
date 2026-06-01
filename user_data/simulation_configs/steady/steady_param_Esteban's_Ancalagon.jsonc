@@ -1,0 +1,59 @@
+{
+    "simulation settings" : {
+        // must be set
+        "simulation type": "parametric study", // can be 'fuel mass convergence', 'parametric study'
+        // overrides defaults
+        "debug comments": "detailed comments", 
+        "output units": "SI", // SI, IMP, or MRT (rocket team's own mishmash of SI and IMP)
+        "show output graphs": true, // whether to show graphs once the simulation is done computing
+        "save simulation data": true, // whether to save simulation data
+        "parametric study settings": {
+            "oxidizer mass flow rate": {
+                "low end": 1,
+                "high end": 5,
+                "step size": 1
+            }, 
+            "chamber pressure": {
+                "low end": 2758000, // 400 psi
+                "high end": 4137000, // 600 psi
+                "step size": 689476 // 100 psi
+            }
+        }
+    },
+
+    "simulation constants": { // used to override natural and simulation constants, eg: 
+        "tolerated apogee difference": 1 // changes acceptable distance between rocket apogee and target apogee to 1 meter
+    },
+
+    "rocket attributes" : {
+        "rocket name": "Ancalagon",
+        "target apogee": 13716, // m
+
+        "oxidizer mass flow rate": 3.0, // kg/s
+        "chamber pressure": 3447000, // Pa
+        "fuel external radius": 0.0762, // m
+        "initial internal fuel radius": 0.02, // m; only used for hotfire tests
+        "fuel length": 0.6096, // m
+        "launch site altitude": 364, // m
+        "dry mass": 88.89, // kg
+        "rocket external radius": 0.10287, // m
+        "drag coefficient": 0.641606, // [.]
+        "launch angle": 6, // degrees
+
+        // PROPEP stuff here
+        "liquid oxidizer type": "NITROUS OXIDE",
+        "oxidizer molecule code": 657,
+        "solid fuel type": "EICOSANE (PARAFFIN)",
+        "fuel molecule code": 1029,
+
+        // from literature
+        "fuel grain density": 900, // kg/m^3
+        "regression rate scaling coefficient": 0.000132, // [.]
+        "regression rate exponent": 0.555, // [.]
+
+        // not yet sure what to do w these
+        "prop dry mass":0,
+        "prop diameter":0,
+        "prop length":0
+        }
+    }

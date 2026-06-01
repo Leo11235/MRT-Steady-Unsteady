@@ -1,5 +1,5 @@
 """
-The Right-Hand Side (RHS) master derivative functions for the ODE solver
+The right hand side master derivative functions for the ODE solver
 Separated by flight phase to maintain continuous mathematics and optimize execution speed
 """
 

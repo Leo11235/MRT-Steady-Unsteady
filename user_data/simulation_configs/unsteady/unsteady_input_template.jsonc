@@ -5,7 +5,7 @@
         "metadata": {
             "simulation_name": "", // str, optional
             "simulation_type": "unsteady", // can be "steady" or "unsteady"
-            "warnings": false // true or false; whether to include warnings in the final report
+            "warnings": true // true or false; whether to include warnings in the final report
         },
         "initial_conditions": { // initial rocket conditions not related to any one CV
             "launch_site_altitude_asl_m": 300.0

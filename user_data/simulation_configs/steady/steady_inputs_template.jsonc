@@ -1,0 +1,51 @@
+{
+    "simulation_settings" : {
+        "simulation_type": "fuel_mass_convergence", // can be 'fuel_mass_convergence', 'parametric_study', 'hotfire', or 'optimize_values_for_unsteady'
+        "output_units": "SI", // SI, IMP, or MRT (rocket team's own mishmash of SI and IMP)
+        "save_output_data": true, // whether to save simulation data
+        "parametric_study_settings": { // only include if simulation type is "parametric study"
+            "oxidizer_mass_flow_rate": {
+                "low_end": 1, // in kg/s
+                "high_end": 5,
+                "step_size": 1
+            }, 
+            "chamber_pressure": {
+                "low_end": 2758000, // 400 psi
+                "high_end": 4137000, // 600 psi
+                "step_size": 689476 // 100 psi
+            }
+        }
+    },
+
+    "rocket_inputs" : {
+        "rocket_name": "Ancalagon",
+        "target_apogee": 13716, // m
+
+        "oxidizer_mass_flow_rate": 3.0, // kg/s
+        "chamber_pressure": 3447000, // Pa
+        "fuel_external_radius": 0.0762, // m
+        "initial_internal_fuel_radius": 0.02, // m; only used for hotfire tests
+        "fuel_length": 0.6096, // m
+        "launch_site_altitude": 364, // m
+        "dry_mass": 88.89, // kg
+        "rocket_external_radius": 0.10287, // m
+        "drag_coefficient": 0.641606, // [.]
+        "launch_angle": 6, // degrees
+
+        // PROPEP stuff here
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        //"oxidizer_molecule_code": 657,
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+        //"fuel_molecule_code": 1029,
+
+        // from literature
+        "fuel_grain_density": 900, // kg/m^3
+        "regression_rate_scaling_coefficient": 0.000132, // [.]
+        "regression_rate_exponent": 0.555, // [.]
+
+        // not yet sure what to do w these
+        "prop dry mass":0,
+        "prop diameter":0,
+        "prop length":0
+        }
+    }

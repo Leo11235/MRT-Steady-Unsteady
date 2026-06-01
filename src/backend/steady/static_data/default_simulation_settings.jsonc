@@ -1,0 +1,7 @@
+// default settings for the simulation
+
+{
+    "simulation_type": "fuel mass convergence", // the default simulation type
+    "output_units": "MRT",
+    "save_output_data": true
+}
