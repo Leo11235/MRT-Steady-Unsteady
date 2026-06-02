@@ -1,90 +1,82 @@
-# McGill Rocket Team Steady-Unsteady-Flight-Model
+# McGill Rocket Team -- Steady-Unsteady Flight Model
 
-### Steady-State and Unsteady Models for Nitrous Oxide/Paraffin Wax Hybrid Rocket Engine
+A Python tool for modelling, simulating, and optimising a self-pressurising
+hybrid rocket engine using liquid nitrous oxide as oxidiser and paraffin
+wax as fuel. Supports both steady-state and unsteady (transient)
+simulations, parametric design studies, flight-trajectory prediction, and
+validation against experimental hot-fire test data.
 
-This repository contains the computational framework developed by the McGill Rocket Team (MRT) to model, simulate, and optimize the performance of a self-pressurizing hybrid rocket engine using liquid nitrous oxide (N₂O) as oxidizer and paraffin wax as fuel. The tool supports both steady-state and transient (unsteady) simulations, enabling parametric design studies, flight trajectory prediction, and validation against experimental hot-fire test data.
+This guide gets the code running on **Windows**, **macOS**, and **Linux**.
 
-## 🚀 Quick Start Guide
+---
 
-Follow these steps to get the code running on your own computer.
+## Quick start guide
 
-### 1. Prerequisites
+### Prerequisites
+Python 3.13 (https://www.python.org/downloads/)
 
-*   **Python 3.13+**
-*   **Git**
+Git (https://git-scm.com/install/)
 
-**Check your Python version:**
+### First time setup
+
+First, clone the repository to your local machine and navigate into the project directory:
+
 ```bash
-# Windows
-python --version
-
-# Mac/Linux
-python3 --version
+git clone https://github.com/Leo11235/MRT-Steady-Unsteady
+cd MRT-Steady-Unsteady
 ```
 
-### 2. Clone this repository
-```bash
-git clone https://github.com/Leo11235/Steady-Unsteady-Flight-Model
-cd Steady-Unsteady-Flight-Model
+Open a terminal in the project's root directory (the folder containing requirements.txt; on Windows you can right click on an empty space in the folder and select "Open in Terminal").
+
+Create a virtual environment and install the required dependencies by running the following commands: 
+
+```
+# Windows  (PowerShell or cmd)
+py -3.13 -m venv .venv
+.venv\Scripts\activate
+python -m pip install -U pip setuptools wheel
+python -m pip install -r requirements.txt
+python main.py
+
+# macOS / Linux
+python3.13 -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip setuptools wheel
+python -m pip install -r requirements.txt
+python main.py
 ```
 
-### 3. Set up your environment
-Windows
-```bash
-# Create virtual environment
-python -m venv venv
+### Subsequent usage 
+After the program has run for the first time, the following commands suffice to run the program: 
 
-# Activate it
-venv\Scripts\activate
+```
+# Windows  (PowerShell or cmd)
+.venv\Scripts\activate
+python main.py
 
-# Install dependencies
-pip install -r requirements.txt
+# macOS / Linux
+source .venv/bin/activate
+python main.py
 ```
 
-Mac/Linux
-```bash
-# Create virtual environment
-python3 -m venv venv
 
-# Activate it  
-source venv/bin/activate
+## Usage & Configuration
 
-# Install dependencies
-pip install -r requirements.txt
-```
+The simulation physics are decoupled from the rocket parameters. You do not need to modify the core Python scripts to test a new engine or flight profile.
 
-### 4. Verify your setup
-Run the verification test to make sure everything works:
-```bash
-# Windows
-python backend/steady_venv_testing.py
+All rocket configurations are stored as `.jsonc` files.
+1. Navigate to `user_data/simulation_configs/`. You will see a folder for steady configs and one for unsteady configs. 
+2. Duplicate `(un)steady_input_template.jsonc` and adjust the parameters. 
+3. Update the execution target in `main.py`
 
-# Mac/Linux  
-python3 backend/steady_venv_testing.py
-```
-You should see simulation loops running with apogee calculations, ending with:
-```bash
-LOOP 9 - FINAL APOGEE: 13715.2 meters (0.81256 meters off from target)
-```
-If you see this, your setup is complete and working!
+### Expected output & Analysis
 
-## Development workflow
+Runtime Dashboard: During execution, the program will continuously print updated information in your terminal. This dashboard visualizes the active phase, live telemetry (chamber pressure, O/F ratio, thrust), an ASCII schematic of the tank and chamber regression, and a rolling event log.
 
-Always start by activating your environment:
-```bash
-# Windows
-venv\Scripts\activate
+Data Export:
+Upon completion, the solver outputs a highly detailed .json file containing all initial conditions, phase-by-phase performance metrics, warnings, and time-series arrays for every state variable. These are automatically saved to user_data/simulation_results/.
 
-# Mac/Linux  
-source venv/bin/activate
-```
-Run the simulations:
-```bash
-# Windows
-python backend/steady_main.py
-python backend/unsteady_main.py
+Plotting Tools:
+To visualize the results, utilize the provided analysis scripts. For example, run plotter.py located in src/backend/unsteady/analysis/ to generate matplotlib graphs (e.g., Thrust vs. Time) directly from the exported JSON files.
 
-# Mac/Linux  
-python3 backend/steady_main.py
-python3 backend/unsteady_main.py
-```
+
