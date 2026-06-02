@@ -17,6 +17,8 @@ Python 3.13 (https://www.python.org/downloads/)
 
 Git (https://git-scm.com/install/)
 
+Microsoft Build Tools (https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+
 ### First time setup
 
 First, clone the repository to your local machine and navigate into the project directory:
