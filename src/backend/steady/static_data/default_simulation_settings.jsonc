@@ -1,7 +1,16 @@
 // default settings for the simulation
 
 {
-    "simulation_type": "fuel mass convergence", // the default simulation type
-    "output_units": "MRT",
-    "save_output_data": true
+    "simulation_type": "fuel_mass_convergence", // the default simulation type
+    "output_units": "MRT", // SI or MRT (rocket team mishmash of SI and IMP)
+    "save_output_data": true,
+
+    "number_of_timesteps": 100, // number of timesteps in burntime (only accounts for the part of the burn where there is a thrust). Ascent timesteps typically 300-400
+    "tolerated_apogee_difference": 0.01, // m, allowed space between target and real apogee
+    "smallest_allowed_inner_fuel_radius": 0.01, // m; equivalent to 1 cm
+    "parametric_study_step_size_undershoot_tolerance": 0.1, // in %; the amount by which parametric studies will 'undershoot' the high end set by the user. For example, if low=1, high=4, step=1.45 --> list of values to parametrize = [1, 2.45, 3.9] (not [1, 2.45, 3.9, 5.35]) since 3.9 is close enough to 4
+
+    // settings applicable for direct backend use only
+    "show_graphs": true,
+    "save_simulation_data": true
 }

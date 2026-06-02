@@ -10,10 +10,10 @@ import pypropep as ppp
 # chamber temperature (T), chamber gas molar weight (Wc), and heat capacity ratio (y)
 def runPROPEP(rocket_inputs, rocket_parameters):
     # get values from dictionaries
-    fuel_name = rocket_inputs["solid fuel type"]
-    oxidizer_name = rocket_inputs["liquid oxidizer type"]
-    OF_ratio = rocket_parameters["average oxidizer to fuel ratio"]
-    chamber_pressure = rocket_inputs["chamber pressure"] / 101325 # convert from pascal to atm
+    fuel_name = rocket_inputs["solid_fuel_type"]
+    oxidizer_name = rocket_inputs["liquid_oxidizer_type"]
+    OF_ratio = rocket_parameters["average_oxidizer_to_fuel_ratio"]
+    chamber_pressure = rocket_inputs["chamber_pressure"] / 101325 # convert from pascal to atm
 
     # calculations
     ppp.init() # initialize pypropep
@@ -46,9 +46,9 @@ def runPROPEP(rocket_inputs, rocket_parameters):
         heat_ratio = Cp / Cv if Cp is not None and Cv is not None else None
 
         # add new values to rocket_parameters
-        rocket_parameters["chamber temperature"] = chamber_temp
-        rocket_parameters["chamber gas molar weight"] = molar_weight
-        rocket_parameters["heat capacity ratio"] = heat_ratio
+        rocket_parameters["chamber_temperature"] = chamber_temp
+        rocket_parameters["chamber_gas_molar_weight"] = molar_weight
+        rocket_parameters["heat_capacity_ratio"] = heat_ratio
 
     except Exception as e:
         return {"error": f"pyPROPEP - Error extracting properties: {e}"}

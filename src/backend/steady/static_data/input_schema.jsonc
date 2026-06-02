@@ -5,7 +5,6 @@
         "oxidizer_mass_flow_rate",
         "chamber_pressure",
         "fuel_external_radius",
-        "initial_internal_fuel_radius",
         "fuel_length",
         "liquid_oxidizer_type",
         "solid_fuel_type",
@@ -20,5 +19,8 @@
         "rocket_external_radius",
         "drag_coefficient",
         "launch_angle"
+    ],
+    "hotfire_requirements": [
+        ["initial_internal_fuel_radius", "fuel_mass"] // ONE of the following is needed for running a hotfire
     ]
 }
