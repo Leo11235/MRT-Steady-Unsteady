@@ -33,6 +33,7 @@ Create a virtual environment and install the required dependencies by running th
 ```
 # Windows  (PowerShell or cmd)
 py -3.13 -m venv .venv
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 .venv\Scripts\activate
 python -m pip install -U pip setuptools wheel
 python -m pip install -r requirements.txt
@@ -45,6 +46,7 @@ python -m pip install -U pip setuptools wheel
 python -m pip install -r requirements.txt
 python main.py
 ```
+Note: if `.venv\Scripts\activate` gives an error, try `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` first. 
 
 ### Subsequent usage 
 After the program has run for the first time, the following commands suffice to run the program: 
