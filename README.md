@@ -17,7 +17,7 @@ Python 3.13 (https://www.python.org/downloads/)
 
 Git (https://git-scm.com/install/)
 
-Microsoft Build Tools (https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+Microsoft Build Tools (https://visualstudio.microsoft.com/visual-cpp-build-tools/) (ensure you select Desktop development with C++, MSVC v14.x, and Windows 10/11 SDK)
 
 ### First time setup
 
