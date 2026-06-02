@@ -1,16 +1,20 @@
 # requirements.txt
 # This file lists all Python packages required to run the rocket model.
-# Install them with: pip install -r requirements.txt
-# Verify installation by running steady_venv_testing.py
+# Install with:
+#     python -m pip install -U pip setuptools wheel
+#     python -m pip install -r requirements.txt
+# Ensure you have Python 3.13 and Git before running
 
-# General dependencies
-json5==0.10.0
-matplotlib==3.10.7
-numpy==2.1.3
-pandas==2.2.3
-scipy==1.15.1
-pyqt6==6.10.2
+numpy>=2.1,<3
+scipy>=1.15,<2
+pandas>=2.2.3,<3
+matplotlib>=3.10,<4
+json5>=0.10,<1
 
-# Project-specific dependencies
+rocketcea>=1.2,<2
+
+
+# pyqt6>=6.10,<7
+
 git+https://github.com/Leo11235/AttrDict.git # fixed for python 3.13
 git+https://github.com/Leo11235/pypropep.git # removed annoying print statements
