@@ -1,6 +1,6 @@
 {
     "simulation_settings" : {
-        "simulation_type": "fuel_mass_convergence", // can be 'fuel_mass_convergence', 'parametric_study', 'hotfire', or 'optimize_values_for_unsteady'
+        "simulation_type": "parametric_study", // can be 'fuel_mass_convergence', 'parametric_study', 'hotfire', or 'optimize_values_for_unsteady'
         "output_units": "SI", // SI, IMP, or MRT (rocket team's own mishmash of SI and IMP)
         "save_output_data": true, // whether to save simulation data
         "parametric_study_settings": { // only include if simulation type is "parametric study"
@@ -41,11 +41,6 @@
         // from literature
         "fuel_grain_density": 900, // kg/m^3
         "regression_rate_scaling_coefficient": 0.000132, // [.]
-        "regression_rate_exponent": 0.555, // [.]
-
-        // not yet sure what to do w these
-        "prop dry mass":0,
-        "prop diameter":0,
-        "prop length":0
+        "regression_rate_exponent": 0.555 // [.]
         }
     }
