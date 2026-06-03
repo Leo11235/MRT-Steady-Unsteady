@@ -70,8 +70,10 @@ The simulation physics are decoupled from the rocket parameters. You do not need
 
 All rocket configurations are stored as `.jsonc` files.
 1. Navigate to `user_data/simulation_configs/`. You will see a folder for steady configs and one for unsteady configs. 
-2. Duplicate `(un)steady_input_template.jsonc` and adjust the parameters. 
+2. Duplicate `(un)steady_input_template.jsonc` and adjust the parameters. (Note: For editing .json or .jsonc files, an IDE such as VS Code is useful.)
 3. Update the execution target in `main.py`
+4. Run the program by inputting `python main.py` in your terminal while in the project's root folder.
+5. To view the simulation output, navigate to `user_data/simulation_output/steady` or `user_data/simulation_output/unsteady`. The simulation you just ran will by named by the timestamp of when you ran it in the `YYYY-MM-DD-HH-MM-SS` format. 
 
 ### Expected output & Analysis
 
