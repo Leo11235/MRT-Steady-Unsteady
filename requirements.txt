@@ -14,7 +14,7 @@ json5>=0.10,<1
 rocketcea>=1.2,<2
 
 
-# pyqt6>=6.10,<7
+# pyqt6>=6.10,<7 # not anymore
 
 git+https://github.com/Leo11235/AttrDict.git # fixed for python 3.13
 git+https://github.com/Leo11235/pypropep.git # removed annoying print statements

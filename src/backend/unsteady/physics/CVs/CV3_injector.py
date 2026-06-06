@@ -88,7 +88,7 @@ def injector_joel_gaseous_blowdown(t: float, state_vector: dict, rocket_inputs: 
     # unpack values
     p_C = state_vector["p_C"]
     p_T = live["p_T"]
-    v_v = live["v_v"] # Note this is v_v instead of v_l!
+    v_v = live["v_v"]
     valve_open_fraction = live["valve_open_fraction"]
     injector_discharge_coefficient = rocket_inputs["injector_discharge_coefficient"]
     injector_number_of_holes = rocket_inputs["injector_number_of_holes"]

@@ -197,9 +197,5 @@ def run_unsteady(rocket_inputs_filename: str, rocket_inputs_filepath: str | Path
 
     print("\nSimulation Complete! Ready for export.")
     finalized_warnings = finalize_warnings(warnings_dict) if rocket_inputs_metadata.get("warnings", True) else None # keep warnings by default if not specified
-    return history.export(rocket_inputs, finalized_warnings)
     
-
-
-#run_unsteady("unsteady_input_template.jsonc")
-#run_unsteady("joel_unsteady_inputs.jsonc")
+    return history.export(rocket_inputs, finalized_warnings, rocket_inputs_metadata)

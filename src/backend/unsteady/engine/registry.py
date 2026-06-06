@@ -37,10 +37,6 @@ CV_REGISTRY = {
         "joel": {
             ("phase_1", "phase_2"): CV3.injector_joel_liquid_blowdown,
             ("phase_3", "phase_4a"): CV3.injector_joel_gaseous_blowdown
-        },
-        "nhne": {
-            ("phase_1", "phase_2"): CV3.injector_nhne_liquid_blowdown,
-            ("phase_3", "phase_4a"): CV3.injector_nhne_gaseous_blowdown
         }
     },
     "CV4_chamber": {

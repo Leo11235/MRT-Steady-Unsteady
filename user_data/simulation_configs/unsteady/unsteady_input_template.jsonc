@@ -1,11 +1,12 @@
-// numbers probably not realistic
-// need to add "atmosphere_model" somewhere 
 {
     "rocket_inputs": {
         "metadata": {
-            "simulation_name": "", // str, optional
             "simulation_type": "unsteady", // can be "steady" or "unsteady"
-            "warnings": true // true or false; whether to include warnings in the final report
+            // optional inputs: 
+            "simulation_name": "", // str, optional
+            "warnings": true, // true or false; whether to include warnings in the final report
+            "save_to_pdf": false, // whether to save all output plots to a pdf file
+            "save_to_png": true // wither to save all output plots as a png
         },
         "initial_conditions": { // initial rocket conditions not related to any one CV
             "launch_site_altitude_asl_m": 300.0
