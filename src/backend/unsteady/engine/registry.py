@@ -24,7 +24,7 @@ import src.backend.unsteady.physics.CVs.CV6_trajectory as CV6
 # list out every function for each CV/model & which phase(s) each function belongs to
 CV_REGISTRY = {
     "CV1_tank": {
-        "joel": {
+        "saturated_equilibrium": {
             ("phase_1", "phase_2"): CV1.tank_liquid_blowdown,
             ("phase_3", "phase_4a"): CV1.tank_gaseous_blowdown
         }
@@ -34,19 +34,19 @@ CV_REGISTRY = {
         "sigmoid": {"universal": CV2.valve_sigmoid_ramp}
     },
     "CV3_injector": {
-        "joel": {
+        "SPI": {
             ("phase_1", "phase_2"): CV3.injector_joel_liquid_blowdown,
             ("phase_3", "phase_4a"): CV3.injector_joel_gaseous_blowdown
         }
     },
     "CV4_chamber": {
-        "joel": {
+        "0D_quasi_steady": {
             ("phase_1", "phase_2", "phase_3"): CV4.chamber_joel_unsteady,
             ("phase_4a", "phase_4c"): CV4.chamber_residual_blowdown
         }
     },
     "CV5_nozzle": {
-        "joel": {
+        "1D_frozen": {
             ("phase_1", "phase_2", "phase_3"): CV5.nozzle_joel_unsteady,
             ("phase_4a", "phase_4c"): CV5.nozzle_residual_blowdown
         }

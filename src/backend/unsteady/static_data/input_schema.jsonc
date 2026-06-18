@@ -4,7 +4,7 @@
 
 {
   "CV1_tank": {
-    "joel": [
+    "saturated_equilibrium": [
       "tank_internal_radius_m",
       "tank_internal_shell_length_m",
       "tank_internal_volume_m3",
@@ -28,13 +28,13 @@
     "instant": []
   },
   "CV3_injector": {
-    "joel": [
+    "SPI": [
       "injector_discharge_coefficient",
       "injector_number_of_holes",
       "injector_hole_area_m2",
       "feed_pressure_loss_Pa"
     ],
-    "nhne": [
+    "NHNE": [
       "injector_discharge_coefficient",
       "injector_number_of_holes",
       "injector_hole_area_m2",
@@ -43,7 +43,7 @@
     ]
   },
   "CV4_chamber": {
-    "joel": [
+    "0D_quasi_steady": [
       "chamber_fuel_length_m",
       "chamber_fuel_density_kgm3",
       "chamber_fuel_external_radius_m",
@@ -55,7 +55,7 @@
     ]
   },
   "CV5_nozzle": {
-    "joel": [
+    "1D_frozen": [
       "nozzle_throat_radius_m",
       "nozzle_exit_radius_m"
     ]
