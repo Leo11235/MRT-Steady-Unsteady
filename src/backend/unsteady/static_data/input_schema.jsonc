@@ -3,9 +3,6 @@
 // arrays within the main lists (eg ["a", "b"]) indicate that only one of those inputs must be provided.
 
 {
-  "initial_conditions": [
-    "launch_site_altitude_asl_m"
-  ],
   "CV1_tank": {
     "joel": [
       "tank_internal_radius_m",
@@ -73,7 +70,8 @@
       "drogue_parachute_frontal_area_m2",
       "main_parachute_deployment_altitude_agl_m",
       "main_parachute_drag_coefficient",
-      "main_parachute_frontal_area_m2"
+      "main_parachute_frontal_area_m2",
+      "launch_site_altitude_asl_m"
     ]
   }
 }

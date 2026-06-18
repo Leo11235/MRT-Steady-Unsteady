@@ -5,11 +5,8 @@
             // optional inputs: 
             "simulation_name": "", // str, optional
             "warnings": true, // true or false; whether to include warnings in the final report
-            "save_to_pdf": false, // whether to save all output plots to a pdf file
-            "save_to_png": true // wither to save all output plots as a png
-        },
-        "initial_conditions": { // initial rocket conditions not related to any one CV
-            "launch_site_altitude_asl_m": 300.0
+            "save_to_pdf": true, // whether to save all output plots to a pdf file
+            "save_to_png": false // wither to save all output plots as a png
         },
         "CV_inputs": {
             "CV1_tank": {
@@ -69,7 +66,8 @@
                 "drogue_parachute_frontal_area_m2": 0.28,
                 "main_parachute_deployment_altitude_agl_m": 450.0,
                 "main_parachute_drag_coefficient": 1.5,
-                "main_parachute_frontal_area_m2": 9.62
+                "main_parachute_frontal_area_m2": 9.62,
+                "launch_site_altitude_asl_m": 300.0
             }
         }
     },

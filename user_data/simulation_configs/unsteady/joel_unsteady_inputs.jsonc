@@ -26,10 +26,6 @@
             "simulation_type": "unsteady"
         },
 
-        "initial_conditions": {
-            "launch_site_altitude_asl_m": 1402.0    // SAC launch site, Table 2.1
-        },
-
         "CV_inputs": {
 
             // =================================================================
@@ -106,7 +102,9 @@
                 "drogue_parachute_frontal_area_m2": 1.17,           // Adrogue = 1.17 m²
                 "main_parachute_deployment_altitude_agl_m": 457.0,  // 1500 ft AGL
                 "main_parachute_drag_coefficient": 2.20,            // Cd,main
-                "main_parachute_frontal_area_m2": 10.5              // Amain = 10.5 m²
+                "main_parachute_frontal_area_m2": 10.5,             // Amain = 10.5 m²
+                "launch_site_altitude_asl_m": 1402.0                // SAC launch site, Table 2.1
+
             }
         }
     },

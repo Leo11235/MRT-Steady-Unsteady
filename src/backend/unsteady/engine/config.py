@@ -110,15 +110,6 @@ def load_unsteady_config(user_inputs_filepath: str | Path,
     if not metadata:
         raise KeyError("Missing rocket inputs metadata")
     
-    # get initial conditions
-    initial_conditions = rocket_inputs.get("initial_conditions", {})
-    if not initial_conditions:
-        raise KeyError("Missing rocket inputs initial_conditions")
-    # validate
-    for required_key in schema.get("initial_conditions", []):
-        if required_key not in initial_conditions:
-            raise KeyError(f"Missing required initial condition: '{required_key}'")
-    
     # get control volume inputs
     CV_inputs = rocket_inputs.get("CV_inputs", {})
     if not CV_inputs:
@@ -129,10 +120,6 @@ def load_unsteady_config(user_inputs_filepath: str | Path,
     # define rocket_inputs dictionary
     rocket_inputs = {}
     cv_models = {}
-    
-    # dump initial conditions into rocket_inputs
-    for key, value in initial_conditions.items():
-        rocket_inputs[key] = value
     
     # get CV model names & put into CV_models
     for cv_name, cv_data in validated_cvs.items():
