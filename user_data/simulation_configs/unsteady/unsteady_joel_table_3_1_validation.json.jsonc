@@ -1,0 +1,68 @@
+{
+    "rocket_inputs": {
+        "metadata": {
+            "simulation_type": "unsteady",
+            "simulation_name": "joel_table_3_1_validation.json",
+            "warnings": true,
+            "save_to_pdf": true,
+            "save_to_png": true
+        },
+        "CV_inputs": {
+            "CV1_tank": {
+                "model": "saturated_equilibrium",
+                "tank_internal_radius_m": 0.064,
+                "tank_internal_shell_length_m": 0.838,
+                "tank_internal_volume_m3": 0.0108,
+                "tank_temperature_K": 298.15,
+                "tank_oxidizer_mass_kg": 7.035,
+                "dip_tube_external_radius_m": 0.003175,
+                "dip_tube_internal_radius_m": 0.002286,
+                "dip_tube_length_m": 0.14,
+                "tank_ullage_fraction": 0.2
+            },
+            "CV2_valve": {
+                "model": "linear",
+                "valve_time_constant_s": 0
+            },
+            "CV3_injector": {
+                "model": "SPI",
+                "injector_discharge_coefficient": 1,
+                "injector_number_of_holes": 10,
+                "injector_hole_area_m2": 3.79e-06,
+                "feed_pressure_loss_Pa": 34500
+            },
+            "CV4_chamber": {
+                "model": "0D_quasi_steady",
+                "chamber_fuel_length_m": 0.612,
+                "chamber_fuel_external_radius_m": 0.039497,
+                "pre_chamber_volume_m3": 0.000218,
+                "post_chamber_volume_m3": 0.000885,
+                "chamber_fuel_mass_kg": 1.639,
+                "chamber_fuel_density_kgm3": 900,
+                "chamber_regression_rate_scaling_constant": 0.000132,
+                "chamber_regression_rate_exponent": 0.555
+            },
+            "CV5_nozzle": {
+                "model": "1D_frozen",
+                "nozzle_throat_radius_m": 0.0233,
+                "nozzle_exit_radius_m": 0.0381
+            },
+            "CV6_trajectory": {
+                "model": "2dof",
+                "rocket_dry_mass_kg": 52.5,
+                "rocket_drag_coefficient": 0.529,
+                "rocket_frontal_area_m2": 0.019478,
+                "rocket_launch_angle_deg": 6,
+                "drogue_parachute_drag_coefficient": 1.55,
+                "drogue_parachute_frontal_area_m2": 1.17,
+                "main_parachute_deployment_altitude_agl_m": 457,
+                "main_parachute_drag_coefficient": 2.2,
+                "main_parachute_frontal_area_m2": 10.5,
+                "launch_site_altitude_asl_m": 1402
+            }
+        }
+    },
+    "simulation_settings_override": {
+        "output_units": "SI"
+    }
+}

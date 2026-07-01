@@ -1,0 +1,10 @@
+# Extra dependencies needed only for the GUI.
+#
+# Install with:
+#     pip install -r src/ui/requirements-ui.txt
+#
+# (Backend deps still come from the project-root requirements.txt.)
+
+customtkinter>=5.2,<6
+pillow>=10,<12
+pyinstaller>=6.6,<7
