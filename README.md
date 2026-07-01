@@ -31,11 +31,6 @@
 
 ---
 
-## 📸 Screenshots
-
-*(add screenshots to `docs/screenshots/` and reference them here)*
-
----
 
 ## 📋 Table of contents
 
