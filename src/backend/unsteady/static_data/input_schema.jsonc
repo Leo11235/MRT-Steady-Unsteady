@@ -21,7 +21,6 @@
       "valve_time_constant_s"
     ],
     "sigmoid": [
-      "valve_time_constant_s",
       "sigmoid_half_time_s",
       "sigmoid_steepness"
     ],

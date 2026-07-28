@@ -33,14 +33,17 @@ def chamber_joel_unsteady(t: float, state_vector: dict, rocket_inputs: dict, liv
     p_C = state_vector["p_C"]
     n_dot_ox = live["n_dot_ox"]
     m_dot_n = live["m_dot_n"]
-    T_c = live["T_c"]
-    W_c = live["W_c"]
-    gamma = live["gamma"]
-    dT_dOF = live["dT_dOF"]
-    dW_dOF = live["dW_dOF"]
-    dT_dp = live["dT_dp"]
-    dW_dp = live["dW_dp"]
-    OF = live["OF"]
+    # Use .get() with cold-chamber fallbacks so a CV5 early-return that
+    # forgets to populate a thermo key never brings down the whole sim.
+    # These match the fallback values in CV5's "cold chamber" branch.
+    T_c    = live.get("T_c",    rocket_inputs.get("tank_temperature_K", 3000.0))
+    W_c    = live.get("W_c",    0.029)
+    gamma  = live.get("gamma",  1.4)
+    dT_dOF = live.get("dT_dOF", 0.0)
+    dW_dOF = live.get("dW_dOF", 0.0)
+    dT_dp  = live.get("dT_dp",  0.0)
+    dW_dp  = live.get("dW_dp",  0.0)
+    OF     = live.get("OF",     7.0)
     chamber_fuel_density = rocket_inputs["chamber_fuel_density_kgm3"]
     chamber_fuel_length = rocket_inputs["chamber_fuel_length_m"]
     chamber_regression_rate_a = rocket_inputs["chamber_regression_rate_scaling_constant"]
@@ -89,22 +92,28 @@ def chamber_joel_unsteady(t: float, state_vector: dict, rocket_inputs: dict, liv
         dOF_dt = np.clip(dOF_dt, -50.0, 50.0)
     else:
         dOF_dt = 0.0
+    
+    # prevent division-by-near-zero from solver step exploration
+    m_c_safe = max(m_c, 1e-4) 
+    T_c_safe = max(T_c, 1.0)
+    W_c_safe = max(W_c, 1e-3) 
 
     # chamber pressure derivative (dp_C/dt) (most error prone part)
-    # calculate Equation A: Nominal Unsteady Pressure Derivative
-    m_c_safe = max(m_c, 1e-4) # Prevent division-by-near-zero from solver step exploration
-    numerator = (dm_c_dt / m_c_safe) - (dV_c_dt / V_c) + dOF_dt * ((dT_dOF / T_c) + (dW_dOF / W_c))
+    numerator = (dm_c_dt / m_c_safe) - (dV_c_dt / V_c) + dOF_dt * ((dT_dOF / T_c_safe) + (dW_dOF / W_c_safe))
     
     # grid boundary safeguard (if you haven't added the clipping bounds here yet):
-    thermal_slope_term = np.clip(dT_dp / T_c, -0.15 / p_C, 0.15 / p_C)
-    molar_slope_term = np.clip(dW_dp / W_c, -0.15 / p_C, 0.15 / p_C)
+    # NOTE: use T_c_safe / W_c_safe (defined above) — CEA can return 0 at
+    # extreme O/F during ignition transients, especially with the linear
+    # valve model, which otherwise trips a float division by zero here.
+    thermal_slope_term = np.clip(dT_dp / T_c_safe, -0.15 / p_C, 0.15 / p_C)
+    molar_slope_term = np.clip(dW_dp / W_c_safe, -0.15 / p_C, 0.15 / p_C)
     denominator = (1.0 / p_C) - thermal_slope_term + molar_slope_term
-    
+
     dp_C_dt_unsteady = numerator / denominator
 
     # calculate Equation B: Damped Ideal Gas Fill-up Phase Derivative
     dm_dt_fill = m_dot_o_in + m_dot_f_in - m_dot_n
-    dp_C_dt_fill = dm_dt_fill * (R_u / W_c) * (T_c / V_c)
+    dp_C_dt_fill = dm_dt_fill * (R_u / W_c_safe) * (T_c_safe / V_c)
 
     # compute blending facgtor (Smooth Sigmoid Transition based on mass)
     # center the transition around m_c = 5e-4 kg with a smooth scaling width
@@ -146,9 +155,12 @@ def chamber_residual_blowdown(t: float, state_vector: dict, rocket_inputs: dict,
     R_u = constants["universal_gas_constant"]
     W_o = constants["nitrous_oxide_molar_mass"]
     
-    # Read frozen thermodynamics and dynamic temperature passed down from RHS
-    W_c = live.get("W_c", 0.025)
-    T_C = live.get("T_c", 3000.0) 
+    # Read frozen thermodynamics and dynamic temperature passed down from RHS.
+    # `.get(...)` returns 0 (not the default) if the key is present but zero,
+    # which happens when CEA returned junk in a prior phase — so we also
+    # clamp with `max(...)` to keep W_c out of the denominator on line 187.
+    W_c = max(live.get("W_c", 0.025), 1e-3)
+    T_C = max(live.get("T_c", 3000.0), 1.0)
     dT_C_dt = live.get("dT_c_dt", 0.0)
     
     # Read current state masses (clamped to prevent division by zero)

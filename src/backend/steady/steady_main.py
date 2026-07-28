@@ -39,7 +39,7 @@ def run_steady(rocket_inputs_filename: str,
     
     # load rocket inputs and simulation settings
     rocket_inputs_full_filepath = Path(f"{rocket_inputs_filepath}") / f"{rocket_inputs_filename}"
-    print(f"Loading rocket inputs from {rocket_inputs_full_filepath}\n")
+    #print(f"Loading rocket inputs from {rocket_inputs_full_filepath}\n")
     rocket_inputs, simulation_settings = load_steady_config(rocket_inputs_full_filepath)
         
     # initialize constants dict
@@ -61,10 +61,9 @@ def run_steady(rocket_inputs_filename: str,
         print("Running fuel mass convergence simulation")
         rocket_parameters, flight_dict = simulate_fuel_mass_convergence(rocket_inputs, rocket_parameters, simulation_settings, constants_dict)
     elif sim_type == "parametric_study": 
-        print("Running parametric study")
         param_results_dict = simulate_parametric_study(rocket_inputs, rocket_parameters, simulation_settings, constants_dict)    
     else: 
-        raise ValueError(f"Requested simulation type unavailable")
+        raise ValueError(f"Requested simulation type ({sim_type}) unavailable")
     
     # convert values. At this point, multiple dicts may or may not exist. We check/convert values in each one
     if simulation_settings.get("output_units") == "MRT":

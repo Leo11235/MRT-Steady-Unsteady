@@ -24,20 +24,32 @@ def nozzle_joel_unsteady(t: float, state_vector: dict, rocket_inputs: dict, live
     # if chamber pressure drops below ambient, no thrust or mass flow can be generated
     # we add a 100 Pa buffer to prevent solver chatter right at the boundary
     if p_C <= p_amb + 100.0:
+        # IMPORTANT: still dump cold-chamber thermodynamics onto the live
+        # blackboard so CV4 doesn't KeyError when the solver probes a
+        # sub-ambient state during ignition transients (linear valve case).
+        # These are the same fallback values used in the "cold chamber"
+        # branch below.
         return {
             "m_dot_n": 0.0,
             "F_thrust": 0.0,
             "p_e": p_amb,
             "v_e": 0.0,
             "M_e": 0.0,
-            "flow_regime": "sub_ambient_cutoff"
+            "flow_regime": "sub_ambient_cutoff",
+            "OF": 7.0,
+            "T_c": rocket_inputs["tank_temperature_K"],
+            "W_c": 0.029,
+            "gamma": 1.4,
+            "cstar": 1000.0,
+            "dT_dOF": 0.0, "dW_dOF": 0.0,
+            "dT_dp": 0.0,  "dW_dp": 0.0,
         }
 
     m_o = state_vector["m_o"]
     m_f = state_vector["m_f"]
     
     # if the chamber has no gas yet, use realistic fallback parameters 
-    if m_f < 1e-6 or m_o < 1e-6:
+    if m_f < 1e-4 or m_o < 1e-4:
         OF = 7.0 
         T_c = rocket_inputs["tank_temperature_K"] 
         W_c = 0.029 

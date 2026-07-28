@@ -766,6 +766,15 @@ def make_thrust_plot(sim_results: dict) -> Figure:
 
 
 def make_injector_mass_flow_plot(sim_results: dict) -> Figure:
+    """Injector mass flow vs. time — burn phases only.
+
+    Prefers the direct `m_dot_o_in` channel when present; falls back to
+    `n_dot_ox · W_o` (mole-flow scaled by the initial molar mass of the
+    oxidizer inventory) so runs that only recorded the mole-flow still
+    plot.  We trim to burn phases so the plot doesn't waste horizontal
+    space on the zero-flow pre-ignition/post-burn periods, matching the
+    tank-pressure / chamber-pressure / injector-dP style.
+    """
     data = sim_results.get("data", {})
     t_full = _arr(data, "time")
     phases_full = _phase_arr(data)
@@ -784,7 +793,8 @@ def make_injector_mass_flow_plot(sim_results: dict) -> Figure:
         raw = n_dot * W_o
         label = "n_dot_ox · W_o [kg/s]"
 
-    fig, ax = _open_axes("Injector mass flow vs. time", "Injector mass flow")
+    fig, ax = _open_axes("Injector mass flow vs. time (burn only)",
+                         "Injector mass flow")
     ax.set_ylabel(label)
     if raw is None:
         ax.text(0.5, 0.5, "No injector mass flow data found.",
@@ -792,13 +802,19 @@ def make_injector_mass_flow_plot(sim_results: dict) -> Figure:
         return fig
 
     t, y, phases = _align_to_time(raw, t_full, phases_full)
-    _shade_phase_bands(ax, t_full, phases_full)
-    _plot_colored_by_phase(ax, t, y, phases)
-    if len(t_full) > 0:
-        ax.set_xlim(float(np.min(t_full)), float(np.max(t_full)))
+    # Trim to burn-phase entries only — matches _make_simple_burn_plot.
+    burn_mask = np.array([p in BURN_PHASES for p in phases])
+    if not burn_mask.any():
+        # No burn phase in the recorded data: fall back to full trace.
+        _shade_phase_bands(ax, t_full, phases_full)
+        _plot_colored_by_phase(ax, t, y, phases)
+    else:
+        t, y, phases = t[burn_mask], y[burn_mask], phases[burn_mask]
+        _shade_phase_bands(ax, t, phases)
+        _plot_colored_by_phase(ax, t, y, phases)
     ax.axhline(0, color="black", linewidth=0.6)
-    ax.legend(handles=_phase_legend_patches(_present_phases(phases_full)),
-              loc="upper right", fontsize=9, frameon=True)
+    ax.legend(handles=_phase_legend_patches(_present_phases(phases)),
+              loc="best", fontsize=9, frameon=True)
     fig.tight_layout()
     return fig
 
@@ -1789,3 +1805,7 @@ if __name__ == "__main__":
         rocket_cross_section=True,
         nozzle_profile=True,
     )
+
+# Backwards-compatible alias — earlier UI versions imported this by name.
+# Keep it exported so `from ... import display_unsteady_results` keeps working.
+display_unsteady_results = unsteady_results

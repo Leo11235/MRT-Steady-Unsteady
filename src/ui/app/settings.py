@@ -26,11 +26,17 @@ from src.ui.app import backend_bridge
 # =============================================================================
 
 def user_settings_path() -> Path:
+    """The per-user, WRITABLE settings file.  In frozen mode this is
+    under %APPDATA%\\MRT-Steady-Unsteady\\.  In source mode it's the
+    checkout's user_data/ui_settings.json."""
     return backend_bridge.project_root() / "user_data" / "ui_settings.json"
 
 
 def default_settings_path() -> Path:
-    return backend_bridge.project_root() / "user_data" / "default_ui_settings.json"
+    """The bundled, READ-ONLY baseline that Reset restores from.  In
+    frozen mode this is inside the exe's resources; in source mode
+    it's the checked-in default_ui_settings.json."""
+    return backend_bridge.bundled_root() / "user_data" / "default_ui_settings.json"
 
 
 # =============================================================================

@@ -10,3 +10,12 @@ user_data/ui_settings.json
 build/
 dist/
 *.spec.bak
+
+# Inno Setup output (setup .exe lives here after build.bat)
+Output/
+
+# Local dev virtualenv
+.venv/
+
+# Personal to-do / scratch notes
+to do.txt

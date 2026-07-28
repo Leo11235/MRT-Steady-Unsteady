@@ -19,7 +19,6 @@ Compared to the Steady page:
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox
@@ -29,6 +28,13 @@ import customtkinter as ctk
 from src.ui.app import theme, backend_bridge, settings as user_settings
 from src.ui.app import display as display_mod
 from src.ui.app.widgets.form_field import LabeledField
+from src.ui.app.widgets.error_popup import show_simulation_error
+from src.ui.app.widgets.help_icon import HelpIcon
+from src.ui.app.widgets.tooltip import Tooltip
+from src.ui.app.widgets.recent_preset_menu import RecentPresetMenu
+from src.ui.app.services.preset_manager import PresetManager
+from src.ui.app.services import i18n
+from src.ui.app.services import recent_presets
 
 
 # ============================================================================
@@ -71,17 +77,17 @@ _DEFAULT_CV_INPUTS = {
         "model": "SPI",
         "injector_discharge_coefficient": "",
         "injector_number_of_holes":       "",
-        "injector_hole_area_m2":          "",
+        "injector_hole_diameter_m":       "",
         "feed_pressure_loss_Pa":          "",
     },
     "CV4_chamber": {
         "model": "0D_quasi_steady",
         "chamber_fuel_length_m":                       "",
-        "chamber_fuel_external_radius_m":              "",
+        "chamber_fuel_external_diameter_m":            "",
         "pre_chamber_volume_m3":                       "",
         "post_chamber_volume_m3":                      "",
         "chamber_fuel_mass_kg":                        "",
-        "chamber_fuel_internal_radius_m":              "",
+        "chamber_fuel_internal_diameter_m":            "",
         # ---- Advanced (locked by default) — see _CHAMBER_ADVANCED --------
         "chamber_fuel_density_kgm3":                   900.0,
         "chamber_regression_rate_scaling_constant":    0.000132,
@@ -89,20 +95,20 @@ _DEFAULT_CV_INPUTS = {
     },
     "CV5_nozzle": {
         "model": "1D_frozen",
-        "nozzle_throat_radius_m": "",
-        "nozzle_exit_radius_m":   "",
+        "nozzle_throat_diameter_m": "",
+        "nozzle_exit_diameter_m":   "",
     },
     "CV6_trajectory": {
         "model": "2dof",
         "rocket_dry_mass_kg":                       "",
         "rocket_drag_coefficient":                  "",
-        "rocket_frontal_area_m2":                   "",
+        "rocket_outer_diameter_m":                  "",
         "rocket_launch_angle_deg":                  "",
         "drogue_parachute_drag_coefficient":        "",
-        "drogue_parachute_frontal_area_m2":         "",
+        "drogue_parachute_diameter_m":              "",
         "main_parachute_deployment_altitude_agl_m": "",
         "main_parachute_drag_coefficient":          "",
-        "main_parachute_frontal_area_m2":           "",
+        "main_parachute_diameter_m":                "",
         "launch_site_altitude_asl_m":               "",
     },
 }
@@ -142,34 +148,136 @@ _LABELS = {
     "sigmoid_half_time_s":              "Sigmoid t½",
     "sigmoid_steepness":                "Sigmoid steepness",
     # CV3
-    "injector_discharge_coefficient":   "Discharge coefficient (Cd)",
+    "injector_discharge_coefficient":   "Discharge coefficient",
     "injector_number_of_holes":         "Number of holes",
-    "injector_hole_area_m2":            "Hole area",
+    "injector_hole_diameter_m":         "Hole diameter",
     "feed_pressure_loss_Pa":            "Feed pressure loss",
     # CV4
     "chamber_fuel_length_m":                    "Fuel length",
     "chamber_fuel_density_kgm3":                "Fuel density",
-    "chamber_fuel_external_radius_m":           "Fuel external radius",
+    "chamber_fuel_external_diameter_m":         "Fuel external diameter",
     "chamber_regression_rate_scaling_constant": "Regression coefficient (a)",
     "chamber_regression_rate_exponent":         "Regression exponent (n)",
     "pre_chamber_volume_m3":                    "Pre-chamber volume",
     "post_chamber_volume_m3":                   "Post-chamber volume",
     "chamber_fuel_mass_kg":                     "Fuel mass",
-    "chamber_fuel_internal_radius_m":           "Fuel internal radius",
+    "chamber_fuel_internal_diameter_m":         "Fuel internal diameter",
     # CV5
-    "nozzle_throat_radius_m":                   "Throat radius",
-    "nozzle_exit_radius_m":                     "Exit radius",
+    "nozzle_throat_diameter_m":                 "Throat diameter",
+    "nozzle_exit_diameter_m":                   "Exit diameter",
     # CV6
     "rocket_dry_mass_kg":                       "Dry mass",
     "rocket_drag_coefficient":                  "Drag coefficient",
-    "rocket_frontal_area_m2":                   "Frontal area",
+    "rocket_outer_diameter_m":                  "Outer diameter",
     "rocket_launch_angle_deg":                  "Launch angle (from vertical)",
     "drogue_parachute_drag_coefficient":        "Drogue Cd",
-    "drogue_parachute_frontal_area_m2":         "Drogue area",
+    "drogue_parachute_diameter_m":              "Drogue diameter",
     "main_parachute_deployment_altitude_agl_m": "Main deploy altitude AGL",
     "main_parachute_drag_coefficient":          "Main Cd",
-    "main_parachute_frontal_area_m2":           "Main area",
+    "main_parachute_diameter_m":                "Main diameter",
     "launch_site_altitude_asl_m":               "Launch site altitude ASL",
+}
+
+
+# ============================================================================
+# Field help-text (shown on hover)
+#
+# Aim: 1–2 sentences that (a) name what physical quantity the value
+# represents, (b) mention typical MRT-scale numbers so users notice
+# obviously-wrong entries.  Keep them concise — the tooltip wraps at
+# 320 px.
+# ============================================================================
+
+_HELP: dict[str, str] = {
+    # CV1 — tank
+    "tank_internal_radius_m":
+        "Inner radius of the oxidizer tank shell.",
+    "tank_internal_shell_length_m":
+        "Straight-section length of the tank (not including end caps).",
+    "tank_internal_volume_m3":
+        "Total internal volume of the tank.",
+    "tank_temperature_K":
+        "Initial N₂O bulk temperature. Room-temperature fills are usually "
+        "285–300 K.",
+    "tank_oxidizer_mass_kg":
+        "Total oxidizer mass loaded at t=0.",
+    "dip_tube_external_radius_m":
+        "External radius of the dip tube (if used).",
+    "dip_tube_internal_radius_m":
+        "Internal (flow) radius of the dip tube.",
+    "dip_tube_length_m":
+        "Length of the dip tube from top of tank downward.",
+    "tank_ullage_fraction":
+        "Fraction of tank volume that is gas at t=0 (0.0–1.0). "
+        "Either this OR Internal length must be filled.",
+    "tank_internal_length_m":
+        "Full internal length including end caps. Either this OR Ullage "
+        "fraction must be filled.",
+    # CV2 — valve
+    "valve_time_constant_s":
+        "Time-constant for a linear valve-opening ramp, in seconds. Slow-to-open valves (>~0.05s) can cause problems.",
+    "sigmoid_half_time_s":
+        "Time at which the sigmoid valve model reaches 50% open.",
+    "sigmoid_steepness":
+        "Sharpness of the sigmoid curve. Higher = sharper open.",
+    # CV3 — injector
+    "injector_discharge_coefficient":
+        "Injector discharge coefficient. Typical: 0.6–0.85 for MRT "
+        "single-phase incompressible (SPI) injectors.",
+    "injector_number_of_holes":
+        "Total number of injector orifices in the plate.",
+    "injector_hole_diameter_m":
+        "Diameter of a single injector hole (m).",
+    "feed_pressure_loss_Pa":
+        "Static pressure loss upstream of the injector (feed lines + valve).",
+    # CV4 — chamber
+    "chamber_fuel_length_m":
+        "Length of the fuel grain.",
+    "chamber_fuel_external_diameter_m":
+        "Outer diameter of the fuel grain (bounded by the case).",
+    "pre_chamber_volume_m3":
+        "Empty volume upstream of the fuel grain.",
+    "post_chamber_volume_m3":
+        "Empty volume downstream of the fuel grain, before the nozzle throat.",
+    "chamber_fuel_mass_kg":
+        "Total starting mass of solid fuel. Fill this OR the internal "
+        "diameter.",
+    "chamber_fuel_internal_diameter_m":
+        "Initial port diameter. Fill this OR Fuel mass.",
+    "chamber_fuel_density_kgm3":
+        "Bulk density of the solid fuel. Paraffin: ~900 kg/m³.",
+    "chamber_regression_rate_scaling_constant":
+        "Regression law coefficient 'a' in ṙ = a·G^n. For paraffin/N₂O: ~1.3e-4.",
+    "chamber_regression_rate_exponent":
+        "Regression law exponent 'n' in ṙ = a·G^n. For paraffin/N₂O: ~0.55.",
+    # CV5 — nozzle
+    "nozzle_throat_diameter_m":
+        "Nozzle throat diameter.",
+    "nozzle_exit_diameter_m":
+        "Nozzle exit-plane diameter.",
+    # CV6 — trajectory
+    "rocket_dry_mass_kg":
+        "Rocket dry mass (all structure + electronics + empty propellant "
+        "tanks).",
+    "rocket_drag_coefficient":
+        "Rocket drag coefficient. Typical: 0.5–0.7 for slender rockets.",
+    "rocket_outer_diameter_m":
+        "Rocket outer (maximum) diameter. Used with Cd for aerodynamic "
+        "drag.",
+    "rocket_launch_angle_deg":
+        "Launch rail angle from vertical. 0° = straight up.",
+    "drogue_parachute_drag_coefficient":
+        "Drogue parachute drag coefficient.",
+    "drogue_parachute_diameter_m":
+        "Drogue parachute canopy diameter.",
+    "main_parachute_deployment_altitude_agl_m":
+        "Altitude AGL at which the main parachute deploys.",
+    "main_parachute_drag_coefficient":
+        "Main parachute drag coefficient.",
+    "main_parachute_diameter_m":
+        "Main parachute canopy diameter.",
+    "launch_site_altitude_asl_m":
+        "Launch-site elevation above sea level.",
 }
 
 
@@ -198,6 +306,51 @@ _MODEL_OPTIONS = {
 _MODEL_FIELDS: dict[tuple[str, str], set[str]] = {
     ("CV2_valve", "linear"):  {"valve_time_constant_s"},
     ("CV2_valve", "sigmoid"): {"sigmoid_half_time_s", "sigmoid_steepness"},
+}
+
+
+# Short blurb shown between the model dropdown and the Inputs header,
+# describing what each physics model does.  Keyed by the model's WIRE
+# form (e.g. "sigmoid", not "Sigmoid").
+_MODEL_DESCRIPTIONS: dict[str, str] = {
+    "saturated_equilibrium":
+        "Treats the tank contents as liquid and vapor N2O in constant "
+        "phase equilibrium. Tank pressure follows the saturation curve "
+        "at the current tank temperature. Automatically handles both "
+        "the liquid blowdown and vapor-only blowdown regimes as the "
+        "tank empties.",
+    "linear":
+        "Assumes the valve opens linearly from 0% to 100% of max flow "
+        "over the time constant. Use a time constant of 0 for "
+        "instantaneous opening.",
+    "sigmoid":
+        "Assumes the valve opens along a logistic curve centered on "
+        "the sigmoid half-time. Steepness controls how sharp the "
+        "transition is (higher values approach a step). More realistic "
+        "for solenoid or pilot-operated valves that ease in and out.",
+    "SPI":
+        "Single-phase incompressible model. Treats the upstream N2O as "
+        "pure liquid across the injector. Best when the tank "
+        "still has liquid. Vapor-phase flow falls back to a "
+        "choked-flow relation.",
+    "0D_quasi_steady":
+        "Treats the whole chamber as one well-mixed control volume "
+        "with instantaneous chemical equilibrium. Combustion properties "
+        "(Tc, gamma, C*) come from CEA at the current pressure and O/F. "
+        "Fuel regresses radially as r_dot = a·G^n. Pre- and "
+        "post-chamber volumes add to the total gas storage and damp "
+        "pressure transients.",
+    "1D_frozen":
+        "One-dimensional isentropic expansion with frozen chemistry, "
+        "so the exhaust composition is set at the throat and does not "
+        "recombine in the divergent section. Detects under, ideally, "
+        "and over-expanded flow, plus flow separation for heavily "
+        "over-expanded cases.",
+    "2dof":
+        "Two-degree-of-freedom point-mass model in the vertical and "
+        "downrange directions. Uses a fixed drag coefficient times frontal area, standard-atmosphere "
+        "density, and altitude-dependent gravity. Drogue deploys at "
+        "burnout, main deploys at the specified AGL altitude.",
 }
 
 
@@ -235,12 +388,10 @@ def _model_wire(display: str) -> str:
 # more either/or-style notes later without changing the build loop.
 _INLINE_NOTES_BEFORE: dict[tuple[str, str], str] = {
     ("CV1_tank", "tank_ullage_fraction"): (
-        "Fill in EITHER 'Ullage fraction' OR 'Internal length' — the "
-        "simulator uses whichever is non-empty to size the tank."
+        "Fill in EITHER 'Ullage fraction' OR 'Internal length'."
     ),
     ("CV4_chamber", "chamber_fuel_mass_kg"): (
-        "Fill in EITHER 'Fuel mass' OR 'Fuel internal radius' — "
-        "the simulator solves for the other."
+        "Fill in EITHER 'Fuel mass' OR 'Fuel internal diameter'."
     ),
 }
 
@@ -262,6 +413,8 @@ class UnsteadyPage(ctk.CTkFrame):
 
         # Per-CV "model" string vars
         self.model_vars: dict[str, ctk.StringVar] = {}
+        # Per-CV description labels (updated whenever the model changes).
+        self._model_desc_labels: dict[str, ctk.CTkLabel] = {}
 
         # Metadata vars
         self.sim_name_var = ctk.StringVar(value=_DEFAULT_METADATA["simulation_name"])
@@ -272,9 +425,13 @@ class UnsteadyPage(ctk.CTkFrame):
         self.save_pdf_var    = ctk.BooleanVar(value=_DEFAULT_METADATA["save_to_pdf"])
         self.save_png_var    = ctk.BooleanVar(value=_DEFAULT_METADATA["save_to_png"])
 
-        # Preset tracking + auto-save (mirrors SteadyPage)
-        self._loaded_preset_path: Path | None = None
-        self._loaded_cfg_snapshot: dict | None = None
+        # Preset tracking + auto-save (mirrors SteadyPage) — the whole
+        # "reuse loaded preset or auto-save a friendly-named one" logic
+        # lives inside PresetManager so both simulation pages share it.
+        self._presets = PresetManager(
+            presets_dir_fn=backend_bridge.unsteady_presets_dir,
+            save_fn=backend_bridge.save_jsonc,
+        )
         self.auto_save_var = ctk.BooleanVar(value=True)
 
         # Chamber's Advanced-section lock (🔒 by default)
@@ -292,6 +449,9 @@ class UnsteadyPage(ctk.CTkFrame):
                          lambda *_, cv=cv_name: self._refresh_model_visibility(cv))
             self._refresh_model_visibility(cv_name)
 
+        # Snapshot the initial (defaults + blanks) form state for is_dirty().
+        self._initial_snapshot: dict | None = self.to_config()
+
     # ===================================================================
     # Layout
     # ===================================================================
@@ -305,13 +465,13 @@ class UnsteadyPage(ctk.CTkFrame):
         self.tabs.grid(row=0, column=0, sticky="nsew",
                        padx=(theme.PAD_M, theme.PAD_S), pady=theme.PAD_M)
 
-        sim_tab    = self.tabs.add("Sim Settings")
-        tank_tab   = self.tabs.add("Tank")
-        valve_tab  = self.tabs.add("Valve")
-        inj_tab    = self.tabs.add("Injector")
-        cham_tab   = self.tabs.add("Chamber")
-        noz_tab    = self.tabs.add("Nozzle")
-        body_tab   = self.tabs.add("Rocket Body")
+        sim_tab    = self.tabs.add(i18n.t("tab.sim_settings"))
+        tank_tab   = self.tabs.add(i18n.t("tab.tank"))
+        valve_tab  = self.tabs.add(i18n.t("tab.valve"))
+        inj_tab    = self.tabs.add(i18n.t("tab.injector"))
+        cham_tab   = self.tabs.add(i18n.t("tab.chamber"))
+        noz_tab    = self.tabs.add(i18n.t("tab.nozzle"))
+        body_tab   = self.tabs.add(i18n.t("tab.rocket_body"))
 
         self._build_sim_tab(sim_tab)
         self._build_cv_tab(tank_tab,  "CV1_tank")
@@ -344,35 +504,57 @@ class UnsteadyPage(ctk.CTkFrame):
         wrap = ctk.CTkScrollableFrame(parent, label_text="")
         wrap.pack(fill="both", expand=True)
 
-        self._section_title(wrap, "Simulation")
+        self._section_title(wrap, i18n.t("section.simulation"))
 
-        # Simulation name
+        # Simulation name.  Tooltip attaches to both the label and the
+        # entry so hovering anywhere on the row triggers it — no need
+        # for a separate '?' icon.
+        _sim_name_help = ("Optional label for this run. Used in the output "
+                          "filename and stored in the results file's metadata.")
         row = ctk.CTkFrame(wrap, fg_color="transparent")
         row.pack(fill="x", pady=theme.PAD_XS)
-        ctk.CTkLabel(row, text="Simulation name", width=220, anchor="w") \
-            .pack(side="left", padx=(0, theme.PAD_S))
-        ctk.CTkEntry(row, textvariable=self.sim_name_var,
-                     placeholder_text="(optional; used for the saved file name)") \
-            .pack(side="left", fill="x", expand=True)
+        _sim_name_label = ctk.CTkLabel(
+            row, text=i18n.t("label.sim_name"), width=220, anchor="w",
+        )
+        _sim_name_label.pack(side="left", padx=(0, theme.PAD_S))
+        _sim_name_entry = ctk.CTkEntry(
+            row, textvariable=self.sim_name_var,
+            placeholder_text=i18n.t("label.sim_name_placeholder"),
+        )
+        _sim_name_entry.pack(side="left", fill="x", expand=True)
+        Tooltip(_sim_name_label, _sim_name_help)
+        Tooltip(_sim_name_entry, _sim_name_help)
 
-        # Output units
-        row = ctk.CTkFrame(wrap, fg_color="transparent")
-        row.pack(fill="x", pady=theme.PAD_XS)
-        ctk.CTkLabel(row, text="Output units", width=220, anchor="w") \
-            .pack(side="left", padx=(0, theme.PAD_S))
-        ctk.CTkOptionMenu(row, variable=self.output_units_var,
-                          values=list(OUTPUT_UNITS),
-                          dynamic_resizing=False, width=260) \
-            .pack(side="left")
+        # (Output-units dropdown removed — the SI/IMP/MRT toggle on the
+        # results-page sidebar covers this use case.  output_units is
+        # still populated from user settings + saved into the config
+        # so backend behaviour is unchanged.)
 
         self._divider(wrap)
-        self._section_title(wrap, "Output")
-        ctk.CTkCheckBox(wrap, text="Generate warnings report",
-                        variable=self.warnings_var).pack(anchor="w", pady=theme.PAD_XS)
-        ctk.CTkCheckBox(wrap, text="Save graphs as PDF",
-                        variable=self.save_pdf_var).pack(anchor="w", pady=theme.PAD_XS)
-        ctk.CTkCheckBox(wrap, text="Save graphs as PNG",
-                        variable=self.save_png_var).pack(anchor="w", pady=theme.PAD_XS)
+        self._section_title(wrap, i18n.t("section.output"))
+        self._checkbox_with_help(
+            wrap, self.warnings_var, i18n.t("checkbox.warnings"),
+            "Runs post-simulation checks and flags results that look "
+            "physically suspicious (negative pressures, unrealistic O/F, "
+            "mass conservation errors, etc.).",
+        )
+        self._checkbox_with_help(
+            wrap, self.save_pdf_var, i18n.t("checkbox.save_pdf"),
+            "Save all output plots as a single multi-page PDF alongside the results JSON.",
+        )
+        self._checkbox_with_help(
+            wrap, self.save_png_var, i18n.t("checkbox.save_png"),
+            "Save each output plot as a separate PNG image alongside the results JSON.",
+        )
+
+    def _checkbox_with_help(self, parent, variable, label_text: str,
+                            help_text: str) -> None:
+        """A checkbox whose help text pops as a tooltip when the user
+        hovers over the checkbox itself.  No separate '?' widget — the
+        checkbox's own label is the hover target."""
+        cb = ctk.CTkCheckBox(parent, text=label_text, variable=variable)
+        cb.pack(anchor="w", pady=theme.PAD_XS)
+        Tooltip(cb, help_text)
 
     # -------------------------------------------------------------------
     # Generic CV tab builder
@@ -388,10 +570,10 @@ class UnsteadyPage(ctk.CTkFrame):
         cv_defaults = _DEFAULT_CV_INPUTS[cv_name]
 
         # ---- model dropdown ------------------------------------------
-        self._section_title(wrap, "Model")
+        self._section_title(wrap, i18n.t("section.model"))
         row = ctk.CTkFrame(wrap, fg_color="transparent")
         row.pack(fill="x", pady=theme.PAD_XS)
-        ctk.CTkLabel(row, text="Physics model", width=220, anchor="w") \
+        ctk.CTkLabel(row, text=i18n.t("label.physics_model"), width=220, anchor="w") \
             .pack(side="left", padx=(0, theme.PAD_S))
 
         # Model var stores the PRETTY display string; convert to wire form
@@ -409,8 +591,21 @@ class UnsteadyPage(ctk.CTkFrame):
                           dynamic_resizing=False, width=260) \
             .pack(side="left")
 
+        # Model description — muted, wrapping label just below the dropdown.
+        # Updates in place when the user picks a different model (see
+        # _refresh_model_visibility).
+        desc = ctk.CTkLabel(
+            wrap, text=_MODEL_DESCRIPTIONS.get(wire_default, ""),
+            wraplength=560, justify="left", anchor="w",
+            text_color=theme.TEXT_MUTED,
+            font=ctk.CTkFont(size=theme.SIZE_SMALL),
+        )
+        desc.pack(fill="x", padx=(220 + theme.PAD_S, 0),
+                  pady=(theme.PAD_XS, theme.PAD_S), anchor="w")
+        self._model_desc_labels[cv_name] = desc
+
         self._divider(wrap)
-        self._section_title(wrap, "Inputs")
+        self._section_title(wrap, i18n.t("section.inputs"))
 
         # For the chamber tab we split the fields into "main" and
         # "advanced" (locked) — the density + regression law only.
@@ -438,22 +633,26 @@ class UnsteadyPage(ctk.CTkFrame):
     # -------------------------------------------------------------------
 
     def _build_sidebar(self, parent) -> None:
-        ctk.CTkLabel(parent, text="Actions",
+        ctk.CTkLabel(parent, text=i18n.t("action.actions"),
                      font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
                      anchor="w").pack(fill="x", pady=(0, theme.PAD_S))
 
-        ctk.CTkButton(parent, text="Load preset…", width=180, height=36,
+        ctk.CTkButton(parent, text=i18n.t("action.load_preset"),
+                      width=180, height=36,
                       command=self._on_load_preset).pack(pady=theme.PAD_XS)
-        ctk.CTkButton(parent, text="Save preset…", width=180, height=36,
+
+        ctk.CTkButton(parent, text=i18n.t("action.save_preset"),
+                      width=180, height=36,
                       command=self._on_save_preset).pack(pady=theme.PAD_XS)
-        ctk.CTkButton(parent, text="Run simulation", width=180, height=44,
+        ctk.CTkButton(parent, text=i18n.t("action.run"),
+                      width=180, height=44,
                       font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
-                      fg_color=("#2a9d8f", "#2a9d8f"),
-                      hover_color=("#21867a", "#21867a"),
+                      fg_color=theme.ACCENT_SLATE,
+                      hover_color=theme.ACCENT_SLATE_HOVER,
                       command=self._on_run).pack(pady=(theme.PAD_M, theme.PAD_XS))
 
         ctk.CTkCheckBox(parent,
-                        text="Auto-save inputs\nas new preset",
+                        text=i18n.t("action.autosave"),
                         variable=self.auto_save_var) \
             .pack(pady=(theme.PAD_S, 0))
 
@@ -481,7 +680,7 @@ class UnsteadyPage(ctk.CTkFrame):
 
         ctk.CTkLabel(
             row,
-            text="Advanced (propellant chemistry & regression law)",
+            text=i18n.t("section.advanced"),
             font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
             anchor="w", height=ROW_H,
         ).pack(side="left")
@@ -495,7 +694,7 @@ class UnsteadyPage(ctk.CTkFrame):
         self._chamber_lock_btn.pack(side="left", padx=(theme.PAD_S, 0))
 
         ctk.CTkLabel(
-            row, text="click to edit",
+            row, text=i18n.t("advanced.click_to_edit"),
             font=ctk.CTkFont(size=theme.SIZE_SMALL, slant="italic"),
             text_color=("gray45", "gray60"),
             height=ROW_H, width=85, anchor="w",
@@ -533,6 +732,7 @@ class UnsteadyPage(ctk.CTkFrame):
             default="" if default == "" or default is None else str(default),
             numeric=_is_numeric(key),
             required=False,   # unsteady validation is per-CV, not per-field
+            help_text=_HELP.get(key),
         )
         field.pack(fill="x", pady=theme.PAD_XS)
         self.fields[(cv_name, key)] = field
@@ -593,6 +793,17 @@ class UnsteadyPage(ctk.CTkFrame):
         ri = cfg.get("rocket_inputs", {}) or {}
         meta = ri.get("metadata", {}) or {}
         cvs  = ri.get("CV_inputs", {}) or {}
+
+        # Legacy-preset compat: promote radius/area keys into diameter
+        # keys so the diameter-based form fields find their value.
+        # No-op for new presets (diameter already present).
+        try:
+            from src.backend.common.input_normalizer import (
+                promote_to_diameter_unsteady,
+            )
+            promote_to_diameter_unsteady(cvs)
+        except Exception:
+            pass
 
         # metadata
         self.sim_name_var.set(str(meta.get("simulation_name", "")))
@@ -675,6 +886,10 @@ class UnsteadyPage(ctk.CTkFrame):
         # model_var stores the pretty display string; convert to wire form
         # for the _MODEL_FIELDS lookup.
         model = _model_wire(mv.get())
+        # Update the descriptive blurb under the dropdown.
+        desc_label = self._model_desc_labels.get(cv_name)
+        if desc_label is not None:
+            desc_label.configure(text=_MODEL_DESCRIPTIONS.get(model, ""))
         visible_set = _MODEL_FIELDS.get((cv_name, model))
         if visible_set is None:
             # No filtering — every field stays visible.
@@ -694,6 +909,35 @@ class UnsteadyPage(ctk.CTkFrame):
                 self._set_packed(f, key in visible_set)
 
     # ===================================================================
+    # Dirty-check (used by shell's confirm-on-Home)
+    # ===================================================================
+
+    def is_dirty(self) -> bool:
+        """True if the current form differs from the last known-clean
+        snapshot."""
+        try:
+            baseline = self._presets._snapshot
+            if baseline is None:
+                baseline = getattr(self, "_initial_snapshot", None)
+            if baseline is None:
+                return False
+            return self.to_config() != baseline
+        except Exception:
+            return False
+
+    # ===================================================================
+    # Keyboard shortcut dispatch
+    # ===================================================================
+
+    def handle_shortcut(self, action: str) -> None:
+        if action == "run":
+            self._on_run()
+        elif action == "save":
+            self._on_save_preset()
+        elif action == "load":
+            self._on_load_preset()
+
+    # ===================================================================
     # Actions
     # ===================================================================
 
@@ -707,12 +951,19 @@ class UnsteadyPage(ctk.CTkFrame):
         )
         if not path:
             return
+        self._load_preset_from_path(Path(path))
+
+    def _load_preset_from_path(self, path: Path) -> None:
+        """Shared load-preset used by both the button and the recent
+        presets dropdown."""
         try:
-            cfg = backend_bridge.load_jsonc(Path(path))
+            cfg = backend_bridge.load_jsonc(path)
             self.from_config(cfg)
-            self._loaded_preset_path = Path(path)
-            self._loaded_cfg_snapshot = self.to_config()
-            self._set_status(f"Loaded preset: {Path(path).name}")
+            self._presets.mark_loaded(path, self.to_config())
+            recent_presets.record("unsteady", path)
+            if hasattr(self, "_recent_menu"):
+                self._recent_menu.refresh()
+            self._set_status(f"Loaded preset: {path.name}")
         except Exception as exc:
             messagebox.showerror("Could not load preset",
                                  f"{type(exc).__name__}: {exc}")
@@ -742,8 +993,10 @@ class UnsteadyPage(ctk.CTkFrame):
             return
         try:
             backend_bridge.save_jsonc(Path(path), cfg)
-            self._loaded_preset_path = Path(path)
-            self._loaded_cfg_snapshot = cfg
+            self._presets.mark_loaded(Path(path), cfg)
+            recent_presets.record("unsteady", Path(path))
+            if hasattr(self, "_recent_menu"):
+                self._recent_menu.refresh()
             self._set_status(f"Saved preset: {Path(path).name}")
         except Exception as exc:
             messagebox.showerror("Could not save preset",
@@ -760,7 +1013,16 @@ class UnsteadyPage(ctk.CTkFrame):
             )
             return
 
-        config_file_path = self._pick_config_path_for_run(cfg)
+        config_file_path, path_source = self._presets.pick_path_for_run(
+            cfg,
+            default_name=self._default_save_name(cfg),
+            auto_save=bool(self.auto_save_var.get()),
+        )
+        if path_source == "auto_save" and config_file_path is not None:
+            recent_presets.record("unsteady", config_file_path)
+            if hasattr(self, "_recent_menu"):
+                self._recent_menu.refresh()
+            self._set_status(f"Auto-saved as {config_file_path.name}")
 
         shell = self.winfo_toplevel()
         shell.start_loading_run(
@@ -771,30 +1033,6 @@ class UnsteadyPage(ctk.CTkFrame):
             on_complete=self._on_loading_complete,
             on_error=lambda exc, tb, cfg=cfg: self._on_loading_error(exc, tb, cfg),
         )
-
-    def _pick_config_path_for_run(self, cfg: dict) -> Path | None:
-        """Same logic as SteadyPage — reuse the loaded preset if unchanged,
-        or auto-save a friendly-named preset when that option is on."""
-        if (self._loaded_preset_path is not None
-                and self._loaded_cfg_snapshot == cfg
-                and self._loaded_preset_path.exists()):
-            return self._loaded_preset_path
-
-        if self.auto_save_var.get():
-            try:
-                presets = backend_bridge.unsteady_presets_dir()
-                presets.mkdir(parents=True, exist_ok=True)
-                name = self._default_save_name(cfg)
-                path = presets / name
-                backend_bridge.save_jsonc(path, cfg)
-                self._loaded_preset_path = path
-                self._loaded_cfg_snapshot = cfg
-                self._set_status(f"Auto-saved as {path.name}")
-                return path
-            except Exception:
-                return None
-
-        return None
 
     def _on_loading_complete(self, result) -> None:
         result_path, result_dict = result
@@ -814,78 +1052,19 @@ class UnsteadyPage(ctk.CTkFrame):
         self._show_error_popup(exc, tb, cfg)
 
     # ===================================================================
-    # Error popup (mirrors the one on SteadyPage)
+    # Error popup (delegates to the shared widget)
     # ===================================================================
 
     def _show_error_popup(self, exc: BaseException, tb: str, cfg: dict) -> None:
-        shell = self.winfo_toplevel()
-
-        win = ctk.CTkToplevel(self)
-        win.title("Simulation error")
-        win.geometry("480x230")
-        win.transient(shell)
-        win.grab_set()
-        win.resizable(False, False)
-
-        ctk.CTkLabel(
-            win, text="Error during simulation",
-            font=ctk.CTkFont(size=theme.SIZE_H1, weight="bold"),
-            text_color=theme.MRT_RED_THEMED,
-        ).pack(pady=(theme.PAD_L, theme.PAD_S))
-
-        ctk.CTkLabel(
-            win,
-            text="Please verify all your inputs are correct, and run again.",
-            font=ctk.CTkFont(size=theme.SIZE_BODY),
-            wraplength=420, justify="center",
-        ).pack(pady=(0, theme.PAD_M), padx=theme.PAD_M)
-
-        ctk.CTkLabel(
-            win,
-            text=f"{type(exc).__name__}: {exc}",
-            text_color=("gray35", "gray65"),
-            font=ctk.CTkFont(family="Consolas", size=theme.SIZE_SMALL),
-            wraplength=420, justify="center",
-        ).pack(pady=(0, theme.PAD_L), padx=theme.PAD_M)
-
-        actions = ctk.CTkFrame(win, fg_color="transparent")
-        actions.pack(pady=(0, theme.PAD_M))
-
-        def go_back():
-            win.destroy()
-            shell.go("unsteady")
-
-        def go_report():
-            win.destroy()
-            loading = shell.pages.get("loading")
-            terminal_text = (loading.get_terminal_text() if loading is not None
-                             else "(terminal output unavailable)")
-            try:
-                cfg_json = json.dumps(cfg, indent=4)
-            except Exception:
-                cfg_json = repr(cfg)
-            title = f"Error while running unsteady: {type(exc).__name__}"
-            body = (
-                "While running unsteady, the following message stack occurred:\n\n"
-                f"{terminal_text}\n\n"
-                f"{tb}\n"
-                "The following simulation inputs were used:\n\n"
-                f"{cfg_json}\n"
-            )
-            try:
-                bug_page = shell._ensure_page("bug")
-            except Exception:
-                bug_page = None
-            if bug_page is not None:
-                bug_page.prefill(title, body)
-            shell.go("bug")
-
-        ctk.CTkButton(actions, text="Back to Unsteady", width=160, height=36,
-                      command=go_back).pack(side="left", padx=theme.PAD_S)
-        ctk.CTkButton(actions, text="Report a bug", width=160, height=36,
-                      fg_color=theme.MRT_RED_THEMED,
-                      hover_color=("#7a131a", "#a01a26"),
-                      command=go_report).pack(side="left", padx=theme.PAD_S)
+        show_simulation_error(
+            self, exc, tb, cfg,
+            back_button_text="Back to Unsteady",
+            back_target="unsteady",
+            error_title_prefix="Error while running unsteady",
+            error_body_prefix=(
+                "While running unsteady, the following message stack occurred:"
+            ),
+        )
 
     # ===================================================================
     # Utilities
@@ -926,8 +1105,7 @@ class UnsteadyPage(ctk.CTkFrame):
         self._advanced_locked.set(True)
         self._apply_advanced_lock()
         # preset tracking + auto-save
-        self._loaded_preset_path = None
-        self._loaded_cfg_snapshot = None
+        self._presets.clear()
         self.auto_save_var.set(True)
         # status
         self._set_status("")

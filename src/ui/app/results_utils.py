@@ -30,11 +30,12 @@ import customtkinter as ctk
 
 from src.ui.app import theme
 from src.ui.app import display as display_mod
-from src.ui.app.results_units import (
+from src.ui.app.services.pretty_names import (
     get_field_info,
     unit_for_system,
     format_unit_label,
 )
+from src.ui.app.widgets.kv_row import KVRow
 
 
 # ---------------------------------------------------------------------------
@@ -246,26 +247,21 @@ def _format_scalar(v: Any) -> str:
 
 
 def render_kv_row(parent, key: str, value: Any, system: str,
-                  *, name_width: int = 260, unit_width: int = 90) -> None:
+                  *, name_width: int | None = None,
+                  unit_width: int | None = None) -> "KVRow":
     """
-    Add a three-column key/value/unit row to `parent`.
-        [ Pretty name              ] [ display_value ...            ] [ unit ]
-    Extra right-padding on the unit column keeps it away from the
-    scrollbar / panel edge.
-    """
-    pretty, _kind, _si = get_field_info(key)
-    converted, unit_label = _convert_scalar(value, key, system)
+    Add a three-column key/value/unit row to `parent` and return the
+    widget so the caller can call `.update_system(system)` on it later
+    without destroying + rebuilding — that's the fast path used by the
+    Units toggle on the results pages.
 
-    row = ctk.CTkFrame(parent, fg_color="transparent")
+    Backwards-compatible: existing callers that ignore the return value
+    still work exactly as before.
+    """
+    row = KVRow(parent, key, value, system,
+                name_width=name_width, unit_width=unit_width)
     row.pack(fill="x", pady=1)
-    ctk.CTkLabel(row, text=pretty, width=name_width, anchor="w") \
-        .pack(side="left", padx=(0, theme.PAD_S))
-    ctk.CTkLabel(row, text=unit_label, width=unit_width, anchor="e",
-                 text_color=("gray40", "gray60")) \
-        .pack(side="right", padx=(theme.PAD_S, theme.PAD_L))
-    ctk.CTkLabel(row, text=_format_scalar(converted), anchor="w",
-                 wraplength=460, justify="left") \
-        .pack(side="left", fill="x", expand=True)
+    return row
 
 
 # ---------------------------------------------------------------------------

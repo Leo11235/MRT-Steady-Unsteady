@@ -144,7 +144,7 @@ From Home → **Browse saved results…**. Pick a `.json` result file; the same 
 
 ### Editing configurations directly
 
-Every simulation configuration is stored as a `.jsonc` file under `user_data/simulation_configs/`. Copy `steady_input_template.jsonc` or `unsteady_input_template.jsonc`, edit in your favourite editor, then load via the GUI.
+Every simulation configuration is stored as a `.jsonc` file under `user_data/simulation_configs/`. Copy any of `steady_example.jsonc`, `steady_parametric_example.jsonc`, or `unsteady_example.jsonc`, edit in your favourite editor, then load via the GUI.
 
 ---
 

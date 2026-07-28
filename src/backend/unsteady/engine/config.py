@@ -5,6 +5,8 @@ Parses .jsonc inputs, merges them with default settings, and validates them
 import json5, os
 from pathlib import Path
 
+from src.backend.common.input_normalizer import normalize_unsteady_inputs
+
 # load .jsonc inputs file
 # takes a filepath str, returns a dict
 def _load_jsonc(filepath: str) -> dict:
@@ -114,6 +116,11 @@ def load_unsteady_config(user_inputs_filepath: str | Path,
     CV_inputs = rocket_inputs.get("CV_inputs", {})
     if not CV_inputs:
         raise KeyError("Missing rocket inputs 'CV_inputs'")
+
+    # convert UI-side diameter keys into radius/area keys the physics loop expects
+    # runs before the schema validator so the validator sees the physics keys it's checking for
+    normalize_unsteady_inputs(CV_inputs)
+
     # unpack & validate CVs
     validated_cvs = _validate_and_unpack_CVs(CV_inputs, schema)
     

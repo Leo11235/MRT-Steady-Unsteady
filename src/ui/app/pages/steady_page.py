@@ -20,7 +20,6 @@ Changes vs. the previous iteration:
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox
@@ -31,6 +30,11 @@ from src.ui.app import theme, backend_bridge, settings as user_settings
 from src.ui.app import display as display_mod
 from src.ui.app.widgets.form_field import LabeledField
 from src.ui.app.widgets.parametric_list import ParametricList
+from src.ui.app.widgets.error_popup import show_simulation_error
+from src.ui.app.widgets.recent_preset_menu import RecentPresetMenu
+from src.ui.app.services.preset_manager import PresetManager
+from src.ui.app.services import i18n
+from src.ui.app.services import recent_presets
 
 
 # --------------------------------------------------------------------------
@@ -81,8 +85,12 @@ class SteadyPage(ctk.CTkFrame):
         # we remember which file it was and what the config dict looked like
         # right after.  If the form is then run without any further edits,
         # we reuse that file instead of writing a fresh _ui_run_*.jsonc.
-        self._loaded_preset_path: Path | None = None
-        self._loaded_cfg_snapshot: dict | None = None
+        # Owned by a PresetManager service so both simulation pages share
+        # exactly one implementation of the "reuse-or-auto-save" logic.
+        self._presets = PresetManager(
+            presets_dir_fn=backend_bridge.steady_presets_dir,
+            save_fn=backend_bridge.save_jsonc,
+        )
 
         # "Auto-save inputs as new preset" — when on, every Run also stamps
         # out a properly-named preset file rather than a temp one.  Default
@@ -107,6 +115,10 @@ class SteadyPage(ctk.CTkFrame):
         self._apply_advanced_lock()
         self._refresh_visibility()
 
+        # Snapshot the initial (blank + Advanced-defaults) form state.
+        # is_dirty() compares against this OR the last loaded/saved preset.
+        self._initial_snapshot: dict | None = self.to_config()
+
     # ===================================================================
     # Layout
     # ===================================================================
@@ -120,9 +132,9 @@ class SteadyPage(ctk.CTkFrame):
         self.tabs.grid(row=0, column=0, sticky="nsew",
                        padx=(theme.PAD_M, theme.PAD_S), pady=theme.PAD_M)
 
-        sim_tab    = self.tabs.add("Sim Settings")
-        oxfuel_tab = self.tabs.add("Oxidizer & Fuel")
-        body_tab   = self.tabs.add("Rocket Body")
+        sim_tab    = self.tabs.add(i18n.t("tab.sim_settings"))
+        oxfuel_tab = self.tabs.add(i18n.t("tab.oxidizer_fuel"))
+        body_tab   = self.tabs.add(i18n.t("tab.rocket_body"))
 
         self._build_sim_tab(sim_tab)
         self._build_oxfuel_tab(oxfuel_tab)
@@ -152,47 +164,42 @@ class SteadyPage(ctk.CTkFrame):
         wrap.pack(fill="both", expand=True)
 
         # --- header --------------------------------------------------------
-        self._section_title(wrap, "Simulation")
+        self._section_title(wrap, i18n.t("section.simulation"))
 
         # Simulation name
         row = ctk.CTkFrame(wrap, fg_color="transparent")
         row.pack(fill="x", pady=theme.PAD_XS)
-        ctk.CTkLabel(row, text="Simulation name", width=220, anchor="w") \
+        ctk.CTkLabel(row, text=i18n.t("label.sim_name"), width=220, anchor="w") \
             .pack(side="left", padx=(0, theme.PAD_S))
         ctk.CTkEntry(row, textvariable=self.sim_name_var,
-                     placeholder_text="(optional; used for the saved file name)") \
+                     placeholder_text=i18n.t("label.sim_name_placeholder")) \
             .pack(side="left", fill="x", expand=True)
 
         # Simulation type — pretty display, wire-form storage
         row = ctk.CTkFrame(wrap, fg_color="transparent")
         row.pack(fill="x", pady=theme.PAD_XS)
-        ctk.CTkLabel(row, text="Simulation type", width=220, anchor="w") \
+        ctk.CTkLabel(row, text=i18n.t("label.sim_type"), width=220, anchor="w") \
             .pack(side="left", padx=(0, theme.PAD_S))
 
         self._sim_type_display_var = ctk.StringVar(
-            value=display_mod.SIM_TYPE_DISPLAY[self.sim_type_var.get()],
+            value=display_mod.sim_type_display(self.sim_type_var.get()),
         )
         ctk.CTkOptionMenu(
             row, variable=self._sim_type_display_var,
-            values=[display_mod.SIM_TYPE_DISPLAY[k] for k in SIM_TYPES_WIRE],
+            values=[display_mod.sim_type_display(k) for k in SIM_TYPES_WIRE],
             command=self._on_sim_type_display_changed,
             dynamic_resizing=False, width=260,
         ).pack(side="left")
 
-        # Output units
-        row = ctk.CTkFrame(wrap, fg_color="transparent")
-        row.pack(fill="x", pady=theme.PAD_XS)
-        ctk.CTkLabel(row, text="Output units", width=220, anchor="w") \
-            .pack(side="left", padx=(0, theme.PAD_S))
-        ctk.CTkOptionMenu(row, variable=self.output_units_var,
-                          values=list(OUTPUT_UNITS),
-                          dynamic_resizing=False, width=260) \
-            .pack(side="left")
+        # (Output-units dropdown removed — the SI/IMP/MRT toggle on the
+        # results-page sidebar covers this use case.  The output_units
+        # value is still populated from user settings + saved into the
+        # config so no backend behaviour changes.)
 
         # Save data
         row = ctk.CTkFrame(wrap, fg_color="transparent")
         row.pack(fill="x", pady=theme.PAD_XS)
-        ctk.CTkCheckBox(row, text="Save simulation data to JSON",
+        ctk.CTkCheckBox(row, text=i18n.t("checkbox.save_data"),
                         variable=self.save_data_var) \
             .pack(side="left")
 
@@ -201,14 +208,12 @@ class SteadyPage(ctk.CTkFrame):
         self._parametric_section = ctk.CTkFrame(wrap, fg_color="transparent")
         self._parametric_section.pack(fill="x", pady=(theme.PAD_S, 0))
 
-        self._section_title(self._parametric_section, "Parametric Study Settings")
+        self._section_title(self._parametric_section, i18n.t("section.parametric"))
         ctk.CTkLabel(
             self._parametric_section,
-            text="Add one or more variables to sweep; each is given a low/high/step. "
-                 "Parametrized variables are hidden from the other tabs so you can't "
-                 "set them to a single value at the same time.",
+            text=i18n.t("param.blurb"),
             anchor="w", justify="left",
-            text_color=("gray35", "gray65"),
+            text_color=theme.TEXT_MUTED,
             font=ctk.CTkFont(size=theme.SIZE_SMALL),
             wraplength=820,
         ).pack(fill="x", pady=(0, theme.PAD_S))
@@ -227,7 +232,7 @@ class SteadyPage(ctk.CTkFrame):
         wrap = ctk.CTkScrollableFrame(parent, label_text="")
         wrap.pack(fill="both", expand=True)
 
-        self._section_title(wrap, "Combustion")
+        self._section_title(wrap, i18n.t("section.combustion"))
         self._add_field(wrap, "oxidizer_mass_flow_rate",
                         label="Oxidizer mass flow rate",
                         kind="mass_flow",
@@ -238,9 +243,9 @@ class SteadyPage(ctk.CTkFrame):
                         required=True, numeric=True)
 
         self._divider(wrap)
-        self._section_title(wrap, "Fuel grain geometry")
-        self._add_field(wrap, "fuel_external_radius",
-                        label="Fuel external radius",
+        self._section_title(wrap, i18n.t("section.fuel_geometry"))
+        self._add_field(wrap, "fuel_external_diameter",
+                        label="Fuel external diameter",
                         kind="length",
                         required=True, numeric=True)
         self._add_field(wrap, "fuel_length",
@@ -252,13 +257,13 @@ class SteadyPage(ctk.CTkFrame):
         # unit, preserving the internal order on every toggle).
         self._hotfire_only_section = ctk.CTkFrame(wrap, fg_color="transparent")
         # NOT packed initially — _refresh_visibility will pack it when hotfire.
-        self._add_field(self._hotfire_only_section, "initial_internal_fuel_radius",
-                        label="Initial internal fuel radius",
+        self._add_field(self._hotfire_only_section, "initial_internal_fuel_diameter",
+                        label="Initial internal fuel diameter",
                         kind="length",
                         numeric=True)
         ctk.CTkLabel(
             self._hotfire_only_section,
-            text="(only used for hotfire — the other modes solve for it.)",
+            text="(only used for hotfires)",
             anchor="w",
             text_color=("gray35", "gray65"),
             font=ctk.CTkFont(size=theme.SIZE_SMALL, slant="italic"),
@@ -290,7 +295,7 @@ class SteadyPage(ctk.CTkFrame):
 
         ctk.CTkLabel(
             row,
-            text="Advanced (propellant chemistry & regression law)",
+            text=i18n.t("section.advanced"),
             font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
             anchor="w",
             height=ROW_H,
@@ -313,7 +318,7 @@ class SteadyPage(ctk.CTkFrame):
         # font-padding-cropping-the-t bug.
         ctk.CTkLabel(
             row,
-            text="click to edit",
+            text=i18n.t("advanced.click_to_edit"),
             font=ctk.CTkFont(size=theme.SIZE_SMALL, slant="italic"),
             text_color=("gray45", "gray60"),
             height=ROW_H,
@@ -340,7 +345,7 @@ class SteadyPage(ctk.CTkFrame):
         # Placeholder shown when sim_type is hotfire (in the SAME wrap).
         self._rocket_body_placeholder = ctk.CTkLabel(
             wrap,
-            text="Rocket Body inputs aren't used for a Hotfire simulation.",
+            text=i18n.t("rocket_body.not_used"),
             font=ctk.CTkFont(size=theme.SIZE_H2),
             text_color=("gray45", "gray60"),
             wraplength=600,
@@ -348,21 +353,19 @@ class SteadyPage(ctk.CTkFrame):
         )
         # built but not packed yet — _refresh_visibility manages it
 
-        self._section_title(content, "Rocket")
-        self._add_field(content, "rocket_name",
-                        label="Rocket name", placeholder="(optional)")
+        self._section_title(content, i18n.t("section.rocket"))
         self._add_field(content, "dry_mass",
                         label="Dry mass", kind="mass",
                         required=True, numeric=True)
-        self._add_field(content, "rocket_external_radius",
-                        label="Rocket external radius", kind="length",
+        self._add_field(content, "rocket_external_diameter",
+                        label="Rocket external diameter", kind="length",
                         required=True, numeric=True)
         self._add_field(content, "drag_coefficient",
                         label="Drag coefficient",
                         required=True, numeric=True)
 
         self._divider(content)
-        self._section_title(content, "Mission")
+        self._section_title(content, i18n.t("section.mission"))
         self._add_field(content, "target_apogee",
                         label="Target apogee", kind="length",
                         required=True, numeric=True)
@@ -376,7 +379,7 @@ class SteadyPage(ctk.CTkFrame):
         # Track which fields live on the Rocket Body tab so the parametric
         # mode knows which ones to hide when they're being swept.
         self._rocket_body_fields = [
-            "rocket_name", "dry_mass", "rocket_external_radius", "drag_coefficient",
+            "dry_mass", "rocket_external_diameter", "drag_coefficient",
             "target_apogee", "launch_site_altitude", "launch_angle",
         ]
 
@@ -385,24 +388,27 @@ class SteadyPage(ctk.CTkFrame):
     # -------------------------------------------------------------------
 
     def _build_sidebar(self, parent) -> None:
-        ctk.CTkLabel(parent, text="Actions",
+        ctk.CTkLabel(parent, text=i18n.t("action.actions"),
                      font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
                      anchor="w").pack(fill="x", pady=(0, theme.PAD_S))
 
-        ctk.CTkButton(parent, text="Load preset…", width=180, height=36,
+        ctk.CTkButton(parent, text=i18n.t("action.load_preset"),
+                      width=180, height=36,
                       command=self._on_load_preset).pack(pady=theme.PAD_XS)
 
-        ctk.CTkButton(parent, text="Save preset…", width=180, height=36,
+        ctk.CTkButton(parent, text=i18n.t("action.save_preset"),
+                      width=180, height=36,
                       command=self._on_save_preset).pack(pady=theme.PAD_XS)
 
-        ctk.CTkButton(parent, text="Run simulation", width=180, height=44,
+        ctk.CTkButton(parent, text=i18n.t("action.run"),
+                      width=180, height=44,
                       font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
-                      fg_color=("#2a9d8f", "#2a9d8f"),
-                      hover_color=("#21867a", "#21867a"),
+                      fg_color=theme.ACCENT_SLATE,
+                      hover_color=theme.ACCENT_SLATE_HOVER,
                       command=self._on_run).pack(pady=(theme.PAD_M, theme.PAD_XS))
 
         ctk.CTkCheckBox(parent,
-                        text="Auto-save inputs\nas new preset",
+                        text=i18n.t("action.autosave"),
                         variable=self.auto_save_var) \
             .pack(pady=(theme.PAD_S, 0))
 
@@ -425,6 +431,9 @@ class SteadyPage(ctk.CTkFrame):
         kwargs.setdefault("label", _PRETTY_FIELD_LABELS.get(key, key))
         # kind defaults to the registered FIELD_KIND
         kwargs.setdefault("kind", display_mod.field_kind(key))
+        # Help text (tooltip on hover) if we have a canonical entry for it.
+        if "help_text" not in kwargs:
+            kwargs["help_text"] = _FIELD_HELP.get(key)
         field = LabeledField(parent, **kwargs)
         field.pack(fill="x", pady=theme.PAD_XS)
         self.fields[key] = field
@@ -435,7 +444,7 @@ class SteadyPage(ctk.CTkFrame):
     # ===================================================================
 
     def _on_sim_type_display_changed(self, display_value: str) -> None:
-        wire = display_mod.SIM_TYPE_VALUE.get(display_value, display_value)
+        wire = display_mod.sim_type_value_from_display(display_value)
         self.sim_type_var.set(wire)
         # the trace on sim_type_var fires _refresh_visibility
 
@@ -595,7 +604,7 @@ class SteadyPage(ctk.CTkFrame):
             if key in parametrized:
                 continue
             # Skip hotfire-only field if not hotfire
-            if (key == "initial_internal_fuel_radius"
+            if (key == "initial_internal_fuel_diameter"
                     and self.sim_type_var.get() != "hotfire"):
                 continue
             # Skip Rocket Body fields entirely when hotfire
@@ -616,10 +625,23 @@ class SteadyPage(ctk.CTkFrame):
         sim = cfg.get("simulation_settings", {}) or {}
         ri  = cfg.get("rocket_inputs", {}) or {}
 
+        # Legacy-preset compat: if the file was saved before the diameter
+        # switch, ri only has radius keys.  Promote them so the diameter
+        # fields on the form populate correctly.  No-op for new presets.
+        try:
+            from src.backend.common.input_normalizer import (
+                promote_to_diameter_steady,
+            )
+            promote_to_diameter_steady(ri)
+        except Exception:
+            # Compat is best-effort; a broken import should never block
+            # loading a preset.
+            pass
+
         st = sim.get("simulation_type")
         if st in SIM_TYPES_WIRE:
             self.sim_type_var.set(st)
-            self._sim_type_display_var.set(display_mod.SIM_TYPE_DISPLAY[st])
+            self._sim_type_display_var.set(display_mod.sim_type_display(st))
         ou = sim.get("output_units")
         if ou in OUTPUT_UNITS:
             self.output_units_var.set(ou)
@@ -646,6 +668,38 @@ class SteadyPage(ctk.CTkFrame):
         self._refresh_visibility()
 
     # ===================================================================
+    # Dirty-check (used by shell's confirm-on-Home)
+    # ===================================================================
+
+    def is_dirty(self) -> bool:
+        """True if the current form differs from the last known-clean
+        snapshot.  The snapshot is captured at build time (blank form
+        with Advanced defaults) and updated on Load / Save preset."""
+        try:
+            baseline = self._presets._snapshot
+            if baseline is None:
+                baseline = getattr(self, "_initial_snapshot", None)
+            if baseline is None:
+                return False
+            return self.to_config() != baseline
+        except Exception:
+            return False
+
+    # ===================================================================
+    # Keyboard shortcut dispatch
+    # ===================================================================
+
+    def handle_shortcut(self, action: str) -> None:
+        """Wired via ShortcutRouter.  Only listens when this page is the
+        currently-visible one (shell filters that upstream)."""
+        if action == "run":
+            self._on_run()
+        elif action == "save":
+            self._on_save_preset()
+        elif action == "load":
+            self._on_load_preset()
+
+    # ===================================================================
     # Actions
     # ===================================================================
 
@@ -659,15 +713,21 @@ class SteadyPage(ctk.CTkFrame):
         )
         if not path:
             return
+        self._load_preset_from_path(Path(path))
+
+    def _load_preset_from_path(self, path: Path) -> None:
+        """Shared load-preset implementation used by both the button and
+        the recent-presets dropdown."""
         try:
-            cfg = backend_bridge.load_jsonc(Path(path))
+            cfg = backend_bridge.load_jsonc(path)
             self.from_config(cfg)
-            # Track the loaded preset so Run can reuse this file unchanged.
-            # We snapshot via to_config() (post-form-round-trip) so a later
-            # comparison isn't tripped up by JSON-vs-Python type quirks.
-            self._loaded_preset_path = Path(path)
-            self._loaded_cfg_snapshot = self.to_config()
-            self._set_status(f"Loaded preset: {Path(path).name}")
+            # Snapshot via to_config() (post-round-trip) so a later Run's
+            # equality check isn't tripped up by JSON-vs-Python type quirks.
+            self._presets.mark_loaded(path, self.to_config())
+            recent_presets.record("steady", path)
+            if hasattr(self, "_recent_menu"):
+                self._recent_menu.refresh()
+            self._set_status(f"Loaded preset: {path.name}")
         except Exception as exc:
             messagebox.showerror("Could not load preset",
                                  f"{type(exc).__name__}: {exc}")
@@ -698,10 +758,10 @@ class SteadyPage(ctk.CTkFrame):
             return
         try:
             backend_bridge.save_jsonc(Path(path), cfg)
-            # Treat the saved file as the "loaded" preset so subsequent
-            # runs reuse it.
-            self._loaded_preset_path = Path(path)
-            self._loaded_cfg_snapshot = cfg
+            self._presets.mark_loaded(Path(path), cfg)
+            recent_presets.record("steady", Path(path))
+            if hasattr(self, "_recent_menu"):
+                self._recent_menu.refresh()
             self._set_status(f"Saved preset: {Path(path).name}")
         except Exception as exc:
             messagebox.showerror("Could not save preset",
@@ -719,8 +779,17 @@ class SteadyPage(ctk.CTkFrame):
             )
             return
 
-        # Decide whether to reuse an existing preset file or write a new one.
-        config_file_path = self._pick_config_path_for_run(cfg)
+        # Ask the preset manager which file the backend should read.
+        config_file_path, path_source = self._presets.pick_path_for_run(
+            cfg,
+            default_name=self._default_save_name(cfg),
+            auto_save=bool(self.auto_save_var.get()),
+        )
+        if path_source == "auto_save" and config_file_path is not None:
+            recent_presets.record("steady", config_file_path)
+            if hasattr(self, "_recent_menu"):
+                self._recent_menu.refresh()
+            self._set_status(f"Auto-saved as {config_file_path.name}")
 
         # Route through the loading screen: it owns the worker thread,
         # captures stdout for the terminal display, and animates the
@@ -736,42 +805,6 @@ class SteadyPage(ctk.CTkFrame):
             # on the local scope by the time the worker reports back.
             on_error=lambda exc, tb, cfg=cfg: self._on_loading_error(exc, tb, cfg),
         )
-
-    def _pick_config_path_for_run(self, cfg: dict) -> Path | None:
-        """
-        Decide what file the simulator should be given:
-
-          - If the form matches the last loaded/saved preset exactly, reuse
-            that preset file (no new file is created).
-          - Else if "Auto-save inputs as new preset" is on, drop a friendly-
-            named preset file and use that.
-          - Else return None and let backend_bridge.run_steady write its
-            usual temp `_ui_run_*.jsonc`.
-        """
-        if (self._loaded_preset_path is not None
-                and self._loaded_cfg_snapshot == cfg
-                and self._loaded_preset_path.exists()):
-            return self._loaded_preset_path
-
-        if self.auto_save_var.get():
-            try:
-                presets = backend_bridge.steady_presets_dir()
-                presets.mkdir(parents=True, exist_ok=True)
-                # Strip the underscore prefix so it shows up alongside
-                # normal user presets, not the hidden `_ui_run_*` ones.
-                name = self._default_save_name(cfg)
-                path = presets / name
-                backend_bridge.save_jsonc(path, cfg)
-                # Update tracking so a subsequent identical Run reuses it.
-                self._loaded_preset_path = path
-                self._loaded_cfg_snapshot = cfg
-                self._set_status(f"Auto-saved as {path.name}")
-                return path
-            except Exception:
-                # If auto-save fails for any reason, fall through to temp.
-                return None
-
-        return None
 
     def _on_loading_complete(self, result) -> None:
         """Called by LoadingScreen when the simulation finishes successfully."""
@@ -793,88 +826,19 @@ class SteadyPage(ctk.CTkFrame):
         self._show_error_popup(exc, tb, cfg)
 
     # ===================================================================
-    # Error popup (shown on simulation failure)
+    # Error popup (delegates to the shared widget)
     # ===================================================================
 
     def _show_error_popup(self, exc: BaseException, tb: str, cfg: dict) -> None:
-        shell = self.winfo_toplevel()
-
-        win = ctk.CTkToplevel(self)
-        win.title("Simulation error")
-        win.geometry("480x230")
-        win.transient(shell)
-        win.grab_set()
-        win.resizable(False, False)
-
-        ctk.CTkLabel(
-            win, text="Error during simulation",
-            font=ctk.CTkFont(size=theme.SIZE_H1, weight="bold"),
-            text_color=theme.MRT_RED_THEMED,
-        ).pack(pady=(theme.PAD_L, theme.PAD_S))
-
-        ctk.CTkLabel(
-            win,
-            text="Please verify all your inputs are correct, and run again.",
-            font=ctk.CTkFont(size=theme.SIZE_BODY),
-            wraplength=420, justify="center",
-        ).pack(pady=(0, theme.PAD_M), padx=theme.PAD_M)
-
-        # Show the exception headline as a small detail line — useful even
-        # without opening a bug report.
-        ctk.CTkLabel(
-            win,
-            text=f"{type(exc).__name__}: {exc}",
-            text_color=("gray35", "gray65"),
-            font=ctk.CTkFont(family="Consolas", size=theme.SIZE_SMALL),
-            wraplength=420, justify="center",
-        ).pack(pady=(0, theme.PAD_L), padx=theme.PAD_M)
-
-        actions = ctk.CTkFrame(win, fg_color="transparent")
-        actions.pack(pady=(0, theme.PAD_M))
-
-        def go_back():
-            win.destroy()
-            shell.go("steady")
-
-        def go_report():
-            win.destroy()
-            # Build the prefilled bug-report message
-            loading = shell.pages.get("loading")
-            terminal_text = (loading.get_terminal_text() if loading is not None
-                             else "(terminal output unavailable)")
-            try:
-                cfg_json = json.dumps(cfg, indent=4)
-            except Exception:
-                cfg_json = repr(cfg)
-
-            title = f"Error while running steady: {type(exc).__name__}"
-            body = (
-                "While running steady, the following message stack occurred:\n\n"
-                f"{terminal_text}\n\n"
-                f"{tb}\n"
-                "The following simulation inputs were used:\n\n"
-                f"{cfg_json}\n"
-            )
-            # Lazy-build the bug page if it isn't on screen yet, then prefill.
-            try:
-                bug_page = shell._ensure_page("bug")
-            except Exception:
-                bug_page = None
-            if bug_page is not None:
-                bug_page.prefill(title, body)
-            shell.go("bug")
-
-        ctk.CTkButton(
-            actions, text="Back to Steady", width=160, height=36,
-            command=go_back,
-        ).pack(side="left", padx=theme.PAD_S)
-
-        ctk.CTkButton(
-            actions, text="Report a bug", width=160, height=36,
-            fg_color=theme.MRT_RED_THEMED,
-            hover_color=("#7a131a", "#a01a26"),
-            command=go_report,
-        ).pack(side="left", padx=theme.PAD_S)
+        show_simulation_error(
+            self, exc, tb, cfg,
+            back_button_text="Back to Steady",
+            back_target="steady",
+            error_title_prefix="Error while running steady",
+            error_body_prefix=(
+                "While running steady, the following message stack occurred:"
+            ),
+        )
 
     # ===================================================================
     # Results dialog (interim — to be replaced by the dedicated results page)
@@ -972,8 +936,8 @@ class SteadyPage(ctk.CTkFrame):
         if sim_type in ("fuel_mass_convergence", "parametric_study"):
             required += list(backend_bridge.STEADY_KINEMATICS_REQUIRED)
         if sim_type == "hotfire":
-            if not ri.get("initial_internal_fuel_radius") and not ri.get("fuel_mass"):
-                required.append("initial_internal_fuel_radius")
+            if not ri.get("initial_internal_fuel_diameter") and not ri.get("fuel_mass"):
+                required.append("initial_internal_fuel_diameter")
 
         parametrized = (
             set(self.parametric_list.used_vars())
@@ -1001,7 +965,7 @@ class SteadyPage(ctk.CTkFrame):
         """Blow away current inputs and status, restore initial state."""
         # form vars
         self.sim_type_var.set("fuel_mass_convergence")
-        self._sim_type_display_var.set(display_mod.SIM_TYPE_DISPLAY["fuel_mass_convergence"])
+        self._sim_type_display_var.set(display_mod.sim_type_display("fuel_mass_convergence"))
         self.output_units_var.set(user_settings.get("default_output_units", "SI"))
         self.save_data_var.set(True)
         self.sim_name_var.set("")
@@ -1018,8 +982,7 @@ class SteadyPage(ctk.CTkFrame):
         self._advanced_locked.set(True)
         self._apply_advanced_lock()
         # preset tracking + auto-save
-        self._loaded_preset_path = None
-        self._loaded_cfg_snapshot = None
+        self._presets.clear()
         self.auto_save_var.set(True)
         # status
         self._set_status("")
@@ -1046,9 +1009,9 @@ _PRETTY_FIELD_LABELS = {
     "rocket_name":                          "Rocket name",
     "oxidizer_mass_flow_rate":              "Oxidizer mass flow rate",
     "chamber_pressure":                     "Chamber pressure",
-    "fuel_external_radius":                 "Fuel external radius",
+    "fuel_external_diameter":               "Fuel external diameter",
     "fuel_length":                          "Fuel length",
-    "initial_internal_fuel_radius":         "Initial internal fuel radius",
+    "initial_internal_fuel_diameter":       "Initial internal fuel diameter",
     "fuel_grain_density":                   "Fuel grain density",
     "regression_rate_scaling_coefficient":  "Regression coefficient (a)",
     "regression_rate_exponent":             "Regression exponent (n)",
@@ -1057,9 +1020,53 @@ _PRETTY_FIELD_LABELS = {
     "target_apogee":                        "Target apogee",
     "launch_site_altitude":                 "Launch site altitude",
     "dry_mass":                             "Dry mass",
-    "rocket_external_radius":               "Rocket external radius",
+    "rocket_external_diameter":             "Rocket external diameter",
     "drag_coefficient":                     "Drag coefficient",
     "launch_angle":                         "Launch angle (from vertical)",
+}
+
+
+# Per-field help text (shown as a hover tooltip on the label + entry).
+# Concise; the tooltip wraps at 320 px.
+_FIELD_HELP: dict[str, str] = {
+    "rocket_name":
+        "Human-friendly identifier for this configuration; used only in "
+        "the saved-preset filename.",
+    "oxidizer_mass_flow_rate":
+        "Steady-state N₂O mass flow rate through the injector.",
+    "chamber_pressure":
+        "Combustion-chamber stagnation pressure.",
+    "fuel_external_diameter":
+        "Outer diameter of the fuel grain.",
+    "fuel_length":
+        "Fuel grain length.",
+    "initial_internal_fuel_diameter":
+        "Initial port diameter (only used for hotfire). The other sim "
+        "types solve for it.",
+    "fuel_grain_density":
+        "Bulk density of the solid fuel. Paraffin: ~900 kg/m³.",
+    "regression_rate_scaling_coefficient":
+        "'a' in ṙ = a·G^n (SI: m/s, G in kg/m²/s). Paraffin/N₂O: ~1.3e-4.",
+    "regression_rate_exponent":
+        "'n' in ṙ = a·G^n. Paraffin/N₂O: ~0.555.",
+    "liquid_oxidizer_type":
+        "Chemical species of the liquid oxidizer.",
+    "solid_fuel_type":
+        "Chemical species of the solid fuel.",
+    "target_apogee":
+        "Design apogee target. The convergence solvers iterate the "
+        "burn duration to hit this.",
+    "launch_site_altitude":
+        "Elevation of the launch site above sea level.",
+    "dry_mass":
+        "Rocket dry mass.",
+    "rocket_external_diameter":
+        "Airframe outer diameter. Used with the drag coefficient for "
+        "aerodynamic loads.",
+    "drag_coefficient":
+        "Rocket drag coefficient.",
+    "launch_angle":
+        "Angle of the launch rail from vertical (deg). 0° = straight up.",
 }
 
 

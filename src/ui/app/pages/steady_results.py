@@ -24,6 +24,10 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
 from src.ui.app import theme, results_utils
+from src.ui.app.services import i18n
+from src.ui.app.widgets.graph_picker import GraphPicker
+from src.ui.app.widgets.search_entry import SearchEntry
+from src.ui.app.widgets.help_icon import HelpIcon
 
 
 class SteadyResultsPage(ctk.CTkFrame):
@@ -36,6 +40,9 @@ class SteadyResultsPage(ctk.CTkFrame):
         self._result_dict: dict | None = None
         self._unit_system: str = "SI"     # SI / IMP / MRT
         self._unit_buttons: dict = {}
+        # Cached row widgets — populated by _refresh_panels(), iterated by
+        # _set_unit_system() so we can update in place instead of rebuilding.
+        self._rows: list = []
         self._build()
 
     # ===================================================================
@@ -45,10 +52,21 @@ class SteadyResultsPage(ctk.CTkFrame):
     def _build(self) -> None:
         self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=0, minsize=220)
-        self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)   # tabview row expands
+
+        # ---- filter bar (row 0, spans both columns) ---------------------
+        filter_row = ctk.CTkFrame(self, fg_color="transparent")
+        filter_row.grid(row=0, column=0, columnspan=2, sticky="ew",
+                        padx=theme.PAD_M, pady=(theme.PAD_M, 0))
+        self._filter_var = ctk.StringVar()
+        SearchEntry(
+            filter_row, textvariable=self._filter_var,
+            placeholder=i18n.t("filter.placeholder"),
+        ).pack(fill="x", expand=True)
+        self._filter_var.trace_add("write", lambda *_: self._apply_filter())
 
         self.tabs = ctk.CTkTabview(self, anchor="w")
-        self.tabs.grid(row=0, column=0, sticky="nsew",
+        self.tabs.grid(row=1, column=0, sticky="nsew",
                        padx=(theme.PAD_M, theme.PAD_S), pady=theme.PAD_M)
 
         self._inputs_tab  = self.tabs.add("Rocket inputs")
@@ -62,7 +80,7 @@ class SteadyResultsPage(ctk.CTkFrame):
 
         # sidebar
         sidebar = ctk.CTkFrame(self, fg_color="transparent")
-        sidebar.grid(row=0, column=1, sticky="ns",
+        sidebar.grid(row=1, column=1, sticky="ns",
                      padx=(theme.PAD_S, theme.PAD_M), pady=theme.PAD_M)
         self._build_sidebar(sidebar)
 
@@ -72,35 +90,37 @@ class SteadyResultsPage(ctk.CTkFrame):
             text_color=("gray35", "gray65"),
             font=ctk.CTkFont(size=theme.SIZE_SMALL),
         )
-        self.status_label.grid(row=1, column=0, columnspan=2, sticky="ew",
+        self.status_label.grid(row=2, column=0, columnspan=2, sticky="ew",
                                padx=theme.PAD_M, pady=(0, theme.PAD_S))
 
     def _build_sidebar(self, parent) -> None:
-        ctk.CTkLabel(parent, text="Actions",
+        ctk.CTkLabel(parent, text=i18n.t("action.actions"),
                      font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
                      anchor="w").pack(fill="x", pady=(0, theme.PAD_S))
 
-        ctk.CTkButton(parent, text="Copy to clipboard",
+        ctk.CTkButton(parent, text=i18n.t("action.copy"),
                       width=200, height=36,
                       command=self._on_copy).pack(pady=theme.PAD_XS)
-        ctk.CTkButton(parent, text="Export to sheets (.csv)",
+        ctk.CTkButton(parent, text=i18n.t("action.export_csv"),
                       width=200, height=36,
                       command=self._on_export).pack(pady=theme.PAD_XS)
 
-        ctk.CTkLabel(parent, text="Graphs",
+        ctk.CTkLabel(parent, text=i18n.t("action.graphs"),
                      font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold"),
                      anchor="w").pack(fill="x", pady=(theme.PAD_L, theme.PAD_XS))
 
-        ctk.CTkButton(parent, text="Show select graphs",
+        ctk.CTkButton(parent, text=i18n.t("action.show_graphs"),
                       width=200, height=36,
-                      command=self._on_select_graphs).pack(pady=theme.PAD_XS)
-        ctk.CTkButton(parent, text="Show all graphs",
-                      width=200, height=36,
-                      command=self._on_all_graphs).pack(pady=theme.PAD_XS)
+                      command=self._on_open_graph_picker).pack(pady=theme.PAD_XS)
 
-        ctk.CTkLabel(parent, text="Units",
+        # Units header + inline help-icon
+        units_row = ctk.CTkFrame(parent, fg_color="transparent")
+        units_row.pack(fill="x", pady=(theme.PAD_L, theme.PAD_XS))
+        ctk.CTkLabel(units_row, text=i18n.t("action.units"),
                      font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold"),
-                     anchor="w").pack(fill="x", pady=(theme.PAD_L, theme.PAD_XS))
+                     anchor="w").pack(side="left")
+        HelpIcon(units_row, i18n.t("help.units")).pack(side="left",
+                                                       padx=(theme.PAD_XS, 0))
         self._unit_buttons = results_utils.build_unit_buttons(
             parent, self._unit_system, on_change=self._set_unit_system,
         )
@@ -126,6 +146,7 @@ class SteadyResultsPage(ctk.CTkFrame):
         self._result_dict = None
         self._clear_scroll(self._inputs_scroll)
         self._clear_scroll(self._outputs_scroll)
+        self._rows = []
         self._unit_system = "SI"
         if self._unit_buttons:
             results_utils.refresh_unit_buttons(self._unit_buttons, self._unit_system)
@@ -142,6 +163,7 @@ class SteadyResultsPage(ctk.CTkFrame):
     def _refresh_panels(self) -> None:
         self._clear_scroll(self._inputs_scroll)
         self._clear_scroll(self._outputs_scroll)
+        self._rows = []
         if self._result_dict is None:
             return
 
@@ -202,16 +224,53 @@ class SteadyResultsPage(ctk.CTkFrame):
 
     def _render_kv_row(self, parent, key: str, value) -> None:
         """3-column row: pretty-name | value (converted to current unit
-        system) | unit label.  Delegates to the shared helper so the two
-        results pages stay in sync."""
-        results_utils.render_kv_row(parent, key, value, self._unit_system)
+        system) | unit label.  Delegates to the shared helper and caches
+        the widget so unit-system toggles can update it in place."""
+        row = results_utils.render_kv_row(parent, key, value, self._unit_system)
+        self._rows.append(row)
 
     def _set_unit_system(self, system: str) -> None:
         if system == self._unit_system:
             return
         self._unit_system = system
         results_utils.refresh_unit_buttons(self._unit_buttons, system)
-        self._refresh_panels()
+        # Fast path: iterate the cached KVRow widgets and re-configure
+        # their value/unit labels rather than destroying and rebuilding
+        # every panel.  Roughly 10× faster than _refresh_panels() and
+        # eliminates the visible relayout flicker.
+        for row in self._rows:
+            try:
+                row.update_system(system)
+            except AttributeError:
+                # non-KVRow row (shouldn't happen, but stay safe)
+                pass
+        # Unit-label text just changed — re-apply the filter so rows
+        # containing e.g. "psi" still match after switching to IMP.
+        self._apply_filter()
+
+    def _apply_filter(self) -> None:
+        """Show/hide cached KVRow widgets based on the current filter
+        query.  Two passes: first pack_forget everything, then re-pack
+        matching rows in original creation order.  Full re-pack keeps
+        the sibling ordering correct as the filter narrows and widens."""
+        try:
+            query = self._filter_var.get()
+        except AttributeError:
+            return
+        # Pass 1 — hide everything (cheap, just pack manager state).
+        for row in self._rows:
+            try:
+                if row.winfo_manager() == "pack":
+                    row.pack_forget()
+            except AttributeError:
+                pass
+        # Pass 2 — re-pack matches in creation order.
+        for row in self._rows:
+            try:
+                if row.matches(query):
+                    row.pack(fill="x", pady=1)
+            except AttributeError:
+                pass
 
     # ===================================================================
     # Actions
@@ -266,13 +325,7 @@ class SteadyResultsPage(ctk.CTkFrame):
             messagebox.showerror("Export failed",
                                  f"{type(exc).__name__}: {exc}")
 
-    def _on_select_graphs(self) -> None:
-        self._show_flight_plots(only_selected=True)
-
-    def _on_all_graphs(self) -> None:
-        self._show_flight_plots(only_selected=False)
-
-    def _show_flight_plots(self, *, only_selected: bool) -> None:
+    def _on_open_graph_picker(self) -> None:
         if self._result_dict is None:
             messagebox.showinfo("No results", "No results loaded.")
             return
@@ -284,9 +337,21 @@ class SteadyResultsPage(ctk.CTkFrame):
                 "trajectory time series — nothing to plot.",
             )
             return
-        # Lazy-import matplotlib so app startup isn't slower for users who
-        # never open the results page.
+        # (pretty_label, wire_key, default_checked)
+        items = [
+            (i18n.t("graph.st.kinematics"), "kinematics", True),
+            (i18n.t("graph.st.thrust"),     "thrust",     True),
+            (i18n.t("graph.st.forces"),     "forces",     False),
+        ]
+        GraphPicker(self, items=items, on_confirm=self._render_steady_graphs)
+
+    def _render_steady_graphs(self, selected: list[str]) -> None:
+        if not selected:
+            return
+        fd = self._result_dict.get("flight_dict") or {}
+        # Lazy-import matplotlib so cold startup stays fast.
         import matplotlib.pyplot as plt
+        from src.ui.app.services.mpl_bringup import lift_all_figures
 
         t   = fd.get("time", [])
         alt = fd.get("altitude", [])
@@ -296,35 +361,19 @@ class SteadyResultsPage(ctk.CTkFrame):
         drag= fd.get("drag_force", [])
         grv = fd.get("grav_force", [])
 
-        if only_selected:
-            # Kinematics (three subplots) + thrust curve
+        if "kinematics" in selected:
             fig, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=True,
                                      num="Kinematics")
             axes[0].plot(t, alt); axes[0].set_ylabel("Altitude [m]")
             axes[1].plot(t, vel); axes[1].set_ylabel("Velocity [m/s]")
-            axes[2].plot(t, acc); axes[2].set_ylabel("Accel [m/s²]"); axes[2].set_xlabel("Time [s]")
+            axes[2].plot(t, acc); axes[2].set_ylabel("Accel [m/s²]")
+            axes[2].set_xlabel("Time [s]")
             for a in axes:
                 a.grid(True, linestyle="--", alpha=0.5)
             fig.suptitle("Rocket kinematics", fontweight="bold")
             fig.tight_layout(rect=[0, 0, 1, 0.96])
 
-            fig2, ax2 = plt.subplots(figsize=(10, 5), num="Thrust curve")
-            ax2.plot(t, thr, color="#e63946")
-            ax2.set_xlabel("Time [s]"); ax2.set_ylabel("Thrust [N]")
-            ax2.grid(True, linestyle="--", alpha=0.5)
-            fig2.suptitle("Thrust curve", fontweight="bold")
-            fig2.tight_layout(rect=[0, 0, 1, 0.96])
-        else:
-            # All available graphs: kinematics + thrust + forces breakdown
-            fig, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=True,
-                                     num="Kinematics")
-            axes[0].plot(t, alt); axes[0].set_ylabel("Altitude [m]")
-            axes[1].plot(t, vel); axes[1].set_ylabel("Velocity [m/s]")
-            axes[2].plot(t, acc); axes[2].set_ylabel("Accel [m/s²]"); axes[2].set_xlabel("Time [s]")
-            for a in axes: a.grid(True, linestyle="--", alpha=0.5)
-            fig.suptitle("Rocket kinematics", fontweight="bold")
-            fig.tight_layout(rect=[0, 0, 1, 0.96])
-
+        if "thrust" in selected:
             fig2, ax2 = plt.subplots(figsize=(10, 5), num="Thrust curve")
             ax2.plot(t, thr, color="#e63946")
             ax2.set_xlabel("Time [s]"); ax2.set_ylabel("Thrust [N]")
@@ -332,6 +381,7 @@ class SteadyResultsPage(ctk.CTkFrame):
             fig2.suptitle("Thrust curve", fontweight="bold")
             fig2.tight_layout(rect=[0, 0, 1, 0.96])
 
+        if "forces" in selected:
             fig3, ax3 = plt.subplots(figsize=(10, 5), num="Forces")
             if thr:  ax3.plot(t, thr,  label="Thrust",  color="#e63946")
             if drag: ax3.plot(t, drag, label="Drag",    color="#118ab2")
@@ -343,7 +393,11 @@ class SteadyResultsPage(ctk.CTkFrame):
             fig3.suptitle("Forces vs. time", fontweight="bold")
             fig3.tight_layout(rect=[0, 0, 1, 0.96])
 
-        plt.show()
+        # `plt.show(block=False)` returns immediately so we can lift the
+        # freshly-created windows to the front (Windows sometimes lets
+        # them slip behind the main UI during initial paint).
+        plt.show(block=False)
+        lift_all_figures()
 
     # ===================================================================
     # Utilities

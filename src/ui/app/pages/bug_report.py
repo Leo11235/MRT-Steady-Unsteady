@@ -1,113 +1,19 @@
 """
-Bug-report page — fill in a title + description, click "Send report",
-the app POSTs the report to Web3Forms (which then emails it to the
-maintainer).  Fully self-contained: no mail client involved, no user
-follow-up needed.
-
-------------------------------------------------------------------------
-ONE-TIME SETUP — fill in the access key below.
-
-  1.  Go to https://web3forms.com and click "Get Access Key".
-  2.  Enter the email address that should receive bug reports.  Web3Forms
-      sends you a confirmation email; click the link inside to verify.
-  3.  Once verified, they show you a UUID-shaped access key that looks
-      like  "abc12345-6789-4abc-def0-1234567890ab".
-  4.  Paste that key into WEB3FORMS_ACCESS_KEY below.
-
-That's it.  Every bug submission from the app will land as an email in
-the inbox you registered — with the report title as the subject line and
-the description in the body.  Free up to 1000 submissions/month.
-------------------------------------------------------------------------
+Bug-report page.  All the Web3Forms transport lives in
+`services.bug_report_client`; this file is now pure UI code.
 """
 
 from __future__ import annotations
 
-import json
 import urllib.error
-import urllib.request
 
 import customtkinter as ctk
 
 from src.ui.app import theme
-
-
-# ============================================================================
-# Web3Forms configuration — paste your access key here.
-# ============================================================================
-
-WEB3FORMS_ACCESS_KEY = "455cf761-6cfd-40a1-8efd-225140582053"
-WEB3FORMS_ENDPOINT   = "https://api.web3forms.com/submit"
-
-
-def _is_form_configured() -> bool:
-    """
-    Check that WEB3FORMS_ACCESS_KEY has been replaced with something that
-    looks like a real UUID.
-
-    We validate FORMAT (uuid-ish, dashes in the right places) rather than
-    match a sentinel string, because a global find-and-replace of the
-    placeholder would also rewrite any check that depended on it.
-    """
-    k = WEB3FORMS_ACCESS_KEY
-    if not k or "PASTE" in k.upper():
-        return False
-    # UUIDs are 36 chars including 4 dashes (8-4-4-4-12).
-    if len(k) < 30:
-        return False
-    if k.count("-") != 4:
-        return False
-    return True
-
-
-def submit_bug_report(title: str, description: str,
-                      timeout_s: float = 15.0) -> None:
-    """
-    POST the report to Web3Forms.
-
-    Raises:
-        RuntimeError  if the access key isn't configured yet, or Web3Forms
-                      returns anything other than success.
-        URLError      if the network request itself fails (offline, DNS,
-                      firewall, etc.).
-    """
-    if not _is_form_configured():
-        raise RuntimeError(
-            "Bug-report Web3Forms access key is not configured.  Open "
-            "src/ui/app/pages/bug_report.py and paste your access key "
-            "into WEB3FORMS_ACCESS_KEY at the top of the file."
-        )
-
-    # Web3Forms accepts JSON directly and has good defaults for building the
-    # email subject from a `subject` field and body from `message`.
-    payload = {
-        "access_key":  WEB3FORMS_ACCESS_KEY,
-        "subject":     title or "Bug report (no title)",
-        "from_name":   "MRT-Sim bug reporter",
-        "message":     description,
-        # Marks the submission in Web3Forms' dashboard, useful for filtering.
-        "botcheck":    "",   # empty honeypot; leave blank
-        "_source":     "mrt-sim-ui",
-    }
-    data = json.dumps(payload).encode("utf-8")
-
-    req = urllib.request.Request(
-        WEB3FORMS_ENDPOINT, data=data, method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "Accept":       "application/json",
-            "User-Agent":   "Mozilla/5.0 (MRT-Sim bug-reporter)",
-        },
-    )
-    with urllib.request.urlopen(req, timeout=timeout_s) as response:
-        raw = response.read().decode("utf-8", errors="replace")
-        try:
-            body = json.loads(raw)
-        except Exception:
-            body = {"success": False, "message": raw[:200]}
-        # Web3Forms returns 200 with { "success": bool, "message": str }.
-        if response.status != 200 or not body.get("success"):
-            msg = body.get("message") or f"HTTP {response.status}"
-            raise RuntimeError(f"Web3Forms rejected the report: {msg}")
+from src.ui.app.services.bug_report_client import (
+    submit_bug_report,
+    friendly_network_error_hint,
+)
 
 
 # =============================================================================
@@ -191,8 +97,8 @@ class BugReportPage(ctk.CTkFrame):
         self._send_btn = ctk.CTkButton(
             action_row, text="Send report", width=160, height=40,
             font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
-            fg_color=("#2a9d8f", "#2a9d8f"),
-            hover_color=("#21867a", "#21867a"),
+            fg_color=theme.ACCENT_SLATE,
+            hover_color=theme.ACCENT_SLATE_HOVER,
             command=self._on_send,
         )
         self._send_btn.pack(side="left")
@@ -245,20 +151,20 @@ class BugReportPage(ctk.CTkFrame):
                 w.pack_forget()
 
         if state == "idle":
-            self._status_label.configure(text="", text_color=("gray35", "gray65"))
+            self._status_label.configure(text="", text_color=theme.TEXT_MUTED)
             self._send_btn.configure(state="normal", text="Send report")
 
         elif state == "sending":
             self._status_label.configure(
                 text=message or "Sending …",
-                text_color=("gray35", "gray65"),
+                text_color=theme.TEXT_MUTED,
             )
             self._send_btn.configure(state="disabled", text="Sending…")
 
         elif state == "error_empty":
             self._status_label.configure(
                 text=message or "Please write a description of the issue.",
-                text_color=("#b00020", "#ff6b6b"),
+                text_color=theme.ERROR,
             )
             self._send_btn.configure(state="normal", text="Send report")
 
@@ -266,7 +172,7 @@ class BugReportPage(ctk.CTkFrame):
             self._status_label.configure(
                 text=message or "Couldn't send the report. "
                                 "Copy it below and pass it on by hand.",
-                text_color=("#b00020", "#ff6b6b"),
+                text_color=theme.ERROR,
             )
             self._send_btn.configure(state="normal", text="Try again")
             self._copy_btn.pack(side="left", padx=(0, theme.PAD_S))
@@ -274,7 +180,7 @@ class BugReportPage(ctk.CTkFrame):
         elif state == "success":
             self._status_label.configure(
                 text=message or "Report sent — thank you!",
-                text_color=("#2a9d8f", "#5eead4"),
+                text_color=theme.SUCCESS,
             )
             self._send_btn.configure(state="disabled", text="Sent ✓")
             self._home_btn.pack(side="left", padx=(0, theme.PAD_S))
@@ -308,25 +214,8 @@ class BugReportPage(ctk.CTkFrame):
                 f"Server rejected the report: HTTP {exc.code} {exc.reason}",
             )
         except urllib.error.URLError as exc:
-            reason = getattr(exc, "reason", exc)
-            reason_text = str(reason)
-            rl = reason_text.lower()
-            if "certificate" in rl or "ssl" in rl:
-                hint = ("SSL certificate verification failed.  On Windows the "
-                        "usual fix is:  pip install --upgrade certifi  "
-                        "(or, on macOS, run "
-                        "'Install Certificates.command' from your "
-                        "Applications/Python folder).")
-            elif "getaddrinfo" in rl or "name or service not known" in rl:
-                hint = ("DNS lookup failed — confirm you can reach "
-                        "api.web3forms.com in a browser.")
-            elif "timed out" in rl or "timeout" in rl:
-                hint = ("Connection timed out — a firewall or proxy may be "
-                        "blocking api.web3forms.com.")
-            elif "refused" in rl:
-                hint = "Connection refused by api.web3forms.com."
-            else:
-                hint = "Network error."
+            reason_text = str(getattr(exc, "reason", exc))
+            hint = friendly_network_error_hint(reason_text)
             self._set_state(
                 "error_send",
                 f"{hint}\n(Detail: {reason_text})",
@@ -351,5 +240,5 @@ class BugReportPage(ctk.CTkFrame):
         self.clipboard_append(text)
         self._status_label.configure(
             text="Copied. Paste into an email, chat, or GitHub issue.",
-            text_color=("#2a9d8f", "#5eead4"),
+            text_color=theme.SUCCESS,
         )

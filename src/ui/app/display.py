@@ -26,12 +26,44 @@ from typing import Optional
 # =============================================================================
 
 # Simulation type ---------------------------------------------------------------
+# The English dict stays as-is because a lot of code uses it as a
+# lookup table.  For the i18n path, sim_type_display() and
+# sim_type_display_map() consult the current language.
 SIM_TYPE_DISPLAY: dict[str, str] = {
     "hotfire":               "Hotfire",
     "fuel_mass_convergence": "Fuel mass convergence",
     "parametric_study":      "Parametric study",
 }
 SIM_TYPE_VALUE: dict[str, str] = {v: k for k, v in SIM_TYPE_DISPLAY.items()}
+
+_SIM_TYPE_KEYS: dict[str, str] = {
+    "hotfire":               "simtype.hotfire",
+    "fuel_mass_convergence": "simtype.convergence",
+    "parametric_study":      "simtype.parametric",
+}
+
+
+def sim_type_display(wire: str) -> str:
+    """Translated display string for a wire simulation-type key."""
+    from src.ui.app.services import i18n
+    key = _SIM_TYPE_KEYS.get(wire)
+    if key is None:
+        return wire
+    return i18n.t(key)
+
+
+def sim_type_display_map() -> dict[str, str]:
+    """{wire -> translated display}."""
+    return {wire: sim_type_display(wire) for wire in SIM_TYPE_DISPLAY}
+
+
+def sim_type_value_from_display(display: str) -> str:
+    """Reverse lookup: translated display -> wire.  Falls back to the
+    English map if the display string wasn't produced by i18n."""
+    for wire in SIM_TYPE_DISPLAY:
+        if sim_type_display(wire) == display:
+            return wire
+    return SIM_TYPE_VALUE.get(display, display)
 
 
 # Parametric variable names -----------------------------------------------------
@@ -246,14 +278,20 @@ FIELD_KIND: dict[str, str] = {
     # ====================  STEADY FIELDS  ====================
     "oxidizer_mass_flow_rate":          "mass_flow",
     "chamber_pressure":                 "pressure",
+    # Diameter-flavoured keys are the new UI-side ones; the radius keys
+    # remain here so old saved presets and result files still get proper
+    # unit conversion when browsed.
     "fuel_external_radius":             "length",
+    "fuel_external_diameter":           "length",
     "fuel_length":                      "length",
     "initial_internal_fuel_radius":     "length",
+    "initial_internal_fuel_diameter":   "length",
     "fuel_grain_density":               "density",
     "target_apogee":                    "length",
     "launch_site_altitude":             "length",
     "dry_mass":                         "mass",
     "rocket_external_radius":           "length",
+    "rocket_external_diameter":         "length",
     "launch_angle":                     "angle",
 
     # ====================  UNSTEADY FIELDS  ====================
@@ -272,25 +310,33 @@ FIELD_KIND: dict[str, str] = {
     "sigmoid_half_time_s":                  "time",
     # CV3 — injector
     "injector_hole_area_m2":                "area",
+    "injector_hole_diameter_m":             "length",
     "feed_pressure_loss_Pa":                "pressure",
     # CV4 — chamber
     "chamber_fuel_length_m":                "length",
     "chamber_fuel_density_kgm3":            "density",
     "chamber_fuel_external_radius_m":       "length",
+    "chamber_fuel_external_diameter_m":     "length",
     "chamber_fuel_internal_radius_m":       "length",
+    "chamber_fuel_internal_diameter_m":     "length",
     "chamber_fuel_mass_kg":                 "mass",
     "pre_chamber_volume_m3":                "volume",
     "post_chamber_volume_m3":               "volume",
     # CV5 — nozzle
     "nozzle_throat_radius_m":               "length",
+    "nozzle_throat_diameter_m":             "length",
     "nozzle_exit_radius_m":                 "length",
+    "nozzle_exit_diameter_m":               "length",
     # CV6 — trajectory
     "rocket_dry_mass_kg":                   "mass",
     "rocket_frontal_area_m2":               "area",
+    "rocket_outer_diameter_m":              "length",
     "rocket_launch_angle_deg":              "angle",
     "drogue_parachute_frontal_area_m2":     "area",
+    "drogue_parachute_diameter_m":          "length",
     "main_parachute_deployment_altitude_agl_m": "length",
     "main_parachute_frontal_area_m2":       "area",
+    "main_parachute_diameter_m":            "length",
     "launch_site_altitude_asl_m":           "length",
     # Fields without units (dimensionless or text) are deliberately omitted.
 }

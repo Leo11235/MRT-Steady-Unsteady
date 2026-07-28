@@ -45,12 +45,14 @@ class LabeledField(ctk.CTkFrame):
         numeric: bool = False,
         label_width: int = 220,
         on_change: Optional[Callable[[str], None]] = None,
+        help_text: Optional[str] = None,
     ) -> None:
         super().__init__(master, fg_color="transparent")
         self._numeric  = numeric
         self._required = required
         self._on_change = on_change
         self._locked = False
+        self._help_text = help_text
 
         # ---- resolve unit list + internal unit -------------------------
         if units is not None:
@@ -71,7 +73,9 @@ class LabeledField(ctk.CTkFrame):
                                        (self._unit_options[0] if self._unit_options else ""))
 
         # ---- label -----------------------------------------------------
-        label_text = (label + " *") if required else label
+        # (Required fields used to append " *" but the marker was noisy;
+        # required-ness is still tracked internally for validation.)
+        label_text = label
         self._label = ctk.CTkLabel(self, text=label_text, anchor="w",
                                    width=label_width)
         self._label.pack(side="left", padx=(0, theme.PAD_S))
@@ -84,6 +88,18 @@ class LabeledField(ctk.CTkFrame):
         self._entry = ctk.CTkEntry(self, textvariable=self.var,
                                    placeholder_text=placeholder)
         self._entry.pack(side="left", fill="x", expand=True)
+
+        # ---- tooltip (optional) ---------------------------------------
+        # Attached to BOTH the label and the entry so the user gets the
+        # help text no matter which half of the row they hover over.
+        if help_text:
+            try:
+                from src.ui.app.widgets.tooltip import Tooltip
+                Tooltip(self._label, help_text)
+                Tooltip(self._entry, help_text)
+            except Exception:
+                # Tooltips are optional polish; never crash the form.
+                pass
 
         # ---- units dropdown (only if there is more than one option) ----
         self._unit_menu = None

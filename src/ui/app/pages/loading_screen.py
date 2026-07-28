@@ -27,15 +27,26 @@ from __future__ import annotations
 
 import ctypes
 import queue
+import re
 import sys
 import threading
+import time
 import traceback
 from typing import Any, Callable, Optional
 
 import customtkinter as ctk
 
 from src.ui.app import theme
+from src.ui.app.services import i18n
 from src.ui.app.widgets.loading_bar import RocketLoadingBar
+
+
+# Match phase markers the backend emits, e.g. "phase_1", "phase 4a",
+# "Phase 3 complete", "PHASE_4C: 12.34 s".  We just need to catch the
+# phase identifier and any adjacent 'complete' word.
+_PHASE_RE = re.compile(
+    r"\b[Pp]hase[_\s]*([0-9]+[a-c]?)\b",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -169,8 +180,8 @@ class LoadingScreen(ctk.CTkFrame):
             terminal_wrap,
             wrap="none",
             font=ctk.CTkFont(family="Consolas", size=12),
-            fg_color=("#101418", "#101418"),       # always-dark "terminal" look
-            text_color=("#c5e1a5", "#c5e1a5"),     # soft phosphor green
+            fg_color=theme.TERMINAL_BG,            # always-dark "terminal" look
+            text_color=theme.TERMINAL_FG,          # soft phosphor green
             border_width=1,
             border_color=("gray30", "gray30"),
         )
@@ -190,10 +201,19 @@ class LoadingScreen(ctk.CTkFrame):
         self._status_label = ctk.CTkLabel(
             bar_wrap,
             text="",
-            text_color=("gray45", "gray60"),
+            text_color=theme.TEXT_FAINT,
             font=ctk.CTkFont(size=theme.SIZE_SMALL, slant="italic"),
         )
         self._status_label.grid(row=1, column=0, sticky="w", padx=4)
+
+        # Progress ETA — "Phase 3 · 34 s elapsed"
+        self._eta_label = ctk.CTkLabel(
+            bar_wrap,
+            text="",
+            text_color=theme.TEXT_MUTED,
+            font=ctk.CTkFont(size=theme.SIZE_SMALL),
+        )
+        self._eta_label.grid(row=1, column=0, sticky="e", padx=4)
 
     # ===================================================================
     # Public API — called by AppShell.start_loading_run
@@ -224,8 +244,12 @@ class LoadingScreen(ctk.CTkFrame):
         self._terminal.configure(state="normal")
         self._terminal.delete("0.0", "end")
         self._terminal.configure(state="disabled")
-        self._status_label.configure(text="Starting …",
-                                     text_color=("gray45", "gray60"))
+        self._status_label.configure(text=i18n.t("loading.starting"),
+                                     text_color=theme.TEXT_FAINT)
+        # Progress tracking state — reset on every run.
+        self._run_start_ts = time.monotonic()
+        self._current_phase: Optional[str] = None
+        self._eta_label.configure(text="")
         self._output_q = queue.Queue()
         self._result_q = queue.Queue()
         self._cancelled = False
@@ -323,8 +347,8 @@ class LoadingScreen(ctk.CTkFrame):
         self._teardown_capture()
         self._bar.stop()
         self._status_label.configure(
-            text="Simulation complete.",
-            text_color=("#2a9d8f", "#5eead4"),
+            text=i18n.t("loading.complete"),
+            text_color=theme.SUCCESS,
         )
         self._drain_queue()
         self._busy = False
@@ -339,8 +363,8 @@ class LoadingScreen(ctk.CTkFrame):
         self._teardown_capture()
         self._bar.stop()
         self._status_label.configure(
-            text=f"Failed: {type(exc).__name__}",
-            text_color=("#b00020", "#ff6b6b"),
+            text=f"{i18n.t('loading.failed')}: {type(exc).__name__}",
+            text_color=theme.ERROR,
         )
         # show the traceback in the terminal too
         self._terminal.configure(state="normal")
@@ -409,13 +433,37 @@ class LoadingScreen(ctk.CTkFrame):
                 traceback.print_exc()
             return   # don't reschedule; _teardown_capture already cancelled
 
+        # Refresh the ETA / elapsed-time label independently of new
+        # terminal chunks — that way the timer keeps ticking even when
+        # the backend is silent.
+        self._refresh_eta()
+
         # Keep polling as long as the run is in progress.  Once finished,
         # _teardown_capture cancels this id and we stop scheduling.
         if self._busy:
             self._poll_after_id = self.after(self.POLL_MS, self._poll)
 
+    def _refresh_eta(self) -> None:
+        """Update the '(Phase N ·) 34 s elapsed' label."""
+        try:
+            start = getattr(self, "_run_start_ts", None)
+            if start is None:
+                return
+            elapsed_s = int(time.monotonic() - start)
+            elapsed_str = (f"{elapsed_s // 60}m {elapsed_s % 60}s"
+                           if elapsed_s >= 60 else f"{elapsed_s}s")
+            parts: list[str] = []
+            if self._current_phase:
+                parts.append(f"{i18n.t('loading.phase')} {self._current_phase}")
+            parts.append(f"{elapsed_str} {i18n.t('loading.elapsed')}")
+            self._eta_label.configure(text="  ·  ".join(parts))
+        except Exception:
+            pass
+
     def _drain_queue(self) -> None:
-        """Append every queued chunk into the terminal in one Tk operation."""
+        """Append every queued chunk into the terminal in one Tk operation.
+        Also scans the chunk for phase markers so the ETA label can show
+        the current phase name."""
         chunks: list[str] = []
         try:
             while True:
@@ -425,6 +473,14 @@ class LoadingScreen(ctk.CTkFrame):
         if not chunks:
             return
         text = "".join(chunks)
+        # Scan for the last phase marker in this batch (backend often
+        # prints many lines at once, we want the freshest).
+        matches = _PHASE_RE.findall(text)
+        if matches:
+            new_phase = matches[-1]
+            if new_phase != self._current_phase:
+                self._current_phase = new_phase
+                self._refresh_eta()
         self._terminal.configure(state="normal")
         self._terminal.insert("end", text)
         self._terminal.see("end")

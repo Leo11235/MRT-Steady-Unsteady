@@ -16,6 +16,8 @@ import tkinter as tk
 import customtkinter as ctk
 
 from src.ui.app import theme
+from src.ui.app.services import i18n
+from src.ui.app.services.shortcuts import ShortcutRouter
 from src.ui.app.pages.main_menu import MainMenuPage
 from src.ui.app.pages.steady_page import SteadyPage
 from src.ui.app.pages.unsteady_page import UnsteadyPage
@@ -25,6 +27,7 @@ from src.ui.app.pages.settings_page import SettingsPage
 from src.ui.app.pages.loading_screen import LoadingScreen
 from src.ui.app.pages.steady_results import SteadyResultsPage
 from src.ui.app.pages.unsteady_results import UnsteadyResultsPage
+from src.ui.app.pages.patchnotes import PatchnotesPage
 
 
 # How long (ms) the "Confirm cancel" state sticks around before reverting
@@ -46,6 +49,7 @@ class AppShell(ctk.CTk):
         "loading":           LoadingScreen,
         "steady_results":    SteadyResultsPage,
         "unsteady_results":  UnsteadyResultsPage,
+        "patchnotes":        PatchnotesPage,
     }
 
     def __init__(self) -> None:
@@ -57,7 +61,11 @@ class AppShell(ctk.CTk):
 
         # ---- window chrome -----------------------------------------------
         self.title(theme.APP_TITLE)
-        self.geometry(f"{theme.WINDOW_W}x{theme.WINDOW_H}")
+        # NOTE: we deliberately DON'T call self.geometry(...) before the
+        # zoom attempt below.  Setting an explicit initial geometry gets
+        # baked in as the "unzoomed" size, and on some Windows setups Tk
+        # briefly falls back to it during startup — which produces the
+        # "blank fullscreen for a second, then shrinks" flicker.
         self.minsize(*theme.MIN_WINDOW)
         self._start_maximized()
 
@@ -68,17 +76,17 @@ class AppShell(ctk.CTk):
 
         self.home_btn = ctk.CTkButton(
             self.top_bar,
-            text="⌂  Home",
+            text=i18n.t("topbar.home"),
             width=110,
             command=lambda: self.go("main"),
         )
         # Cancel button — replaces Home while we're on the loading page.
         self.cancel_btn = ctk.CTkButton(
             self.top_bar,
-            text="✕  Cancel",
+            text=i18n.t("topbar.cancel"),
             width=140,
             fg_color=theme.MRT_RED_THEMED,
-            hover_color=("#7a131a", "#a01a26"),
+            hover_color=theme.MRT_RED_HOVER,
             command=self._on_cancel_click,
         )
         # cancel-button state machine
@@ -104,7 +112,20 @@ class AppShell(ctk.CTk):
         # know where to send the user back.
         self._pre_loading_page: str | None = None
 
+        # Global keyboard shortcuts.  The router owns the bind_all calls;
+        # we forward every fire event to _dispatch_shortcut which then
+        # delegates to the current page (if it implements handle_shortcut)
+        # or handles it centrally (Esc while on the loading page).
+        self.shortcut_router = ShortcutRouter(self, self._dispatch_shortcut)
+
         self.go("main")
+
+        # Re-apply zoom after the first widget-build pass.  On Windows,
+        # Tk sometimes drops the zoomed state during initial geometry
+        # negotiation; re-asserting it here (once idle, and again 100ms
+        # later) removes the "blank fullscreen → shrink to default" flash.
+        self.after_idle(self._start_maximized)
+        self.after(100, self._start_maximized)
 
     # ----------------------------------------------------------------------
     # Startup — maximize the window on every OS we ship for.
@@ -152,7 +173,10 @@ class AppShell(ctk.CTk):
         """Switch to the named page (case-sensitive key in PAGES)."""
         # Navigating HOME wipes any editable state on the pages that
         # implement reset_to_defaults() — steady, unsteady, bug report.
+        # First, check if any dirty page objects to the reset.
         if page_name == "main" and self.current_page not in (None, "main"):
+            if not self._confirm_discard_if_dirty():
+                return   # user cancelled — stay on the current page
             for _name, _page in self.pages.items():
                 if hasattr(_page, "reset_to_defaults"):
                     try:
@@ -165,7 +189,12 @@ class AppShell(ctk.CTk):
         self.current_page = page_name
 
         # update title
-        title = getattr(page, "TITLE", "")
+        # Prefer a translated title if one exists; fall back to the page's
+        # TITLE class attribute otherwise.  Translation key convention:
+        # "page.<key>", where <key> is the shell's PAGES dict key.
+        i18n_key = f"page.{page_name}"
+        translated = i18n.t(i18n_key)
+        title = translated if translated != i18n_key else getattr(page, "TITLE", "")
         self.page_title.configure(text=title)
 
         # ---- chrome: which top-bar button is shown? --------------------
@@ -181,9 +210,13 @@ class AppShell(ctk.CTk):
             page.on_show()
 
     def _refresh_top_bar_button(self) -> None:
-        """Swap between Home and Cancel based on the active page."""
+        """Swap between Home and Cancel based on the active page.
+
+        Home is suppressed on `settings` because that page owns its own
+        Cancel / Save buttons that already handle navigation.
+        """
         want_cancel = (self.current_page == "loading")
-        want_home   = (self.current_page not in ("main", "loading"))
+        want_home   = (self.current_page not in ("main", "loading", "settings"))
 
         if want_cancel:
             if self.home_btn.winfo_ismapped():
@@ -223,9 +256,9 @@ class AppShell(ctk.CTk):
         """state ∈ {'cancel', 'confirm'}"""
         self._clear_cancel_timeout()
         if state == "cancel":
-            self.cancel_btn.configure(text="✕  Cancel", width=140)
+            self.cancel_btn.configure(text=i18n.t("topbar.cancel"), width=140)
         elif state == "confirm":
-            self.cancel_btn.configure(text="Confirm cancel", width=180)
+            self.cancel_btn.configure(text=i18n.t("topbar.confirm_cancel"), width=200)
             # Auto-revert after N seconds if the user doesn't click again.
             self._cancel_reset_after_id = self.after(
                 _CONFIRM_CANCEL_TIMEOUT_MS,
@@ -257,6 +290,96 @@ class AppShell(ctk.CTk):
         target = self._pre_loading_page or "main"
         self._pre_loading_page = None
         self.go(target)
+
+    # ----------------------------------------------------------------------
+    # Keyboard-shortcut dispatch
+    # ----------------------------------------------------------------------
+
+    def _dispatch_shortcut(self, action: str) -> None:
+        """Called by ShortcutRouter whenever a bound key is pressed.
+
+        - "cancel" while on the loading screen: reuses the Cancel-button
+          state machine.  First press arms the confirm state; second press
+          within the timeout window actually cancels.  Everywhere else
+          Esc is ignored.
+        - Anything else: forward to the current page's handle_shortcut()
+          if it defines one.
+        """
+        if action == "cancel":
+            if self.current_page == "loading":
+                self._on_cancel_click()
+            return
+
+        page = self.pages.get(self.current_page or "")
+        if page is not None and hasattr(page, "handle_shortcut"):
+            try:
+                page.handle_shortcut(action)
+            except Exception:
+                pass
+
+    def refresh_shortcuts(self) -> None:
+        """Called by the Settings page after the user rebinds actions."""
+        from src.ui.app.services.shortcuts import load_bindings
+        self.shortcut_router.rebind(load_bindings())
+
+    def rebuild_all_pages(self) -> None:
+        """Nuke every cached page and rebuild the current one.  Used by
+        the language switcher — CustomTkinter has no live-retranslate,
+        so the only reliable way to get every label / button / tab
+        header into the new language is to rebuild them from scratch.
+
+        Front-end top-bar buttons get their text refreshed here too so
+        Home / Cancel switch language without a page navigation."""
+        current = self.current_page or "main"
+
+        # Refresh top-bar chrome that lives outside the page stack.
+        try:
+            self.home_btn.configure(text=i18n.t("topbar.home"))
+        except Exception:
+            pass
+        try:
+            self.cancel_btn.configure(text=i18n.t("topbar.cancel"))
+        except Exception:
+            pass
+
+        # Destroy every cached page.
+        for _name, page in list(self.pages.items()):
+            try:
+                page.destroy()
+            except Exception:
+                pass
+        self.pages.clear()
+
+        # Rebuild the page the user was on.  If we were on "loading" or
+        # some transient page, drop back to "main" — safer than trying
+        # to re-enter a mid-run state.
+        target = current if current not in ("loading",) else "main"
+        self.current_page = None
+        self.go(target)
+
+    # ----------------------------------------------------------------------
+    # Dirty-check on Home
+    # ----------------------------------------------------------------------
+
+    def _confirm_discard_if_dirty(self) -> bool:
+        """If any cached page reports is_dirty(), pop a confirm dialog.
+        Returns True if the user chose to discard (or nothing was dirty)."""
+        dirty = False
+        for _name, page in self.pages.items():
+            if hasattr(page, "is_dirty"):
+                try:
+                    if page.is_dirty():
+                        dirty = True
+                        break
+                except Exception:
+                    pass
+        if not dirty:
+            return True
+        from tkinter import messagebox
+        return messagebox.askyesno(
+            i18n.t("confirm.discard_title"),
+            i18n.t("confirm.discard_body"),
+        )
 
     # ----------------------------------------------------------------------
     # Loading-screen helper

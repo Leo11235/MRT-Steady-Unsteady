@@ -7,7 +7,7 @@
     "rocket_inputs": {
         "oxidizer_mass_flow_rate": 3.012,
         "chamber_pressure": 3447000,
-        "fuel_external_radius": 0.0762,
+        "fuel_external_diameter": 0.1524,          // m  (was fuel_external_radius: 0.0762)
         "fuel_length": 0.6096,
         "fuel_grain_density": 900,
         "regression_rate_scaling_coefficient": 0.000132,
@@ -16,7 +16,7 @@
         "solid_fuel_type": "EICOSANE (PARAFFIN)",
         "rocket_name": "Ancalagon",
         "dry_mass": 88.89,
-        "rocket_external_radius": 0.10287,
+        "rocket_external_diameter": 0.20574,       // m  (was rocket_external_radius: 0.10287)
         "drag_coefficient": 0.641606,
         "target_apogee": 13716,
         "launch_site_altitude": 364,

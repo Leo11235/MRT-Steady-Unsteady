@@ -2,6 +2,8 @@ import re, json
 from pathlib import Path
 from math import pi
 
+from src.backend.common.input_normalizer import normalize_steady_inputs
+
 _STEADY_DIR = Path(__file__).resolve().parent
 _STATIC_DATA_DIR = _STEADY_DIR / "static_data"
 
@@ -14,22 +16,25 @@ def load_steady_config(input_file_path):
     content = re.sub(r'//.*?$|/\*.*?\*/', '', content, flags=re.MULTILINE | re.DOTALL)
     # parse the cleaned JSON string
     input_file = json.loads(content)
-    
+
     # any simulation settings provided by the user override the default sim settings in static data
     simulation_settings_override = input_file.get('simulation_settings', {})
     rocket_inputs = input_file['rocket_inputs']
-    
+
+    # convert any UI-side diameter keys into the radius/area keys the rest of the steady physics expects 
+    normalize_steady_inputs(rocket_inputs)
+
     # get default sim settings
     default_simulation_settings = initialize_default_simulation_settings()
-        
-    # override simulation settings and constants as needed 
+
+    # override simulation settings and constants as needed
     simulation_settings = {
         **default_simulation_settings,
         **simulation_settings_override
     }
-        
+
     validate_simulation_inputs(rocket_inputs, simulation_settings)
-    
+
     return rocket_inputs, simulation_settings
 
 
@@ -130,9 +135,9 @@ def calculate_initial_radius(rocket_inputs):
     Re = rocket_inputs["fuel external radius"]
     p  = rocket_inputs["fuel grain density"]
     Mf = rocket_inputs["fuel_mass"]
-
     # solve Mf = π L (Re² − Ri²) p  →  Ri = sqrt(Re² − Mf / (π L p))
     return (Re**2 - Mf / (pi * Lf * p)) ** 0.5
+
 def calculate_fuel_mass(rocket_inputs, rocket_parameters):
     Lf = rocket_inputs["fuel length"]
     Ri0 = rocket_parameters["initial internal fuel radius"]

@@ -8,9 +8,11 @@ from pathlib import Path
 import customtkinter as ctk
 
 from src.ui.app import theme
+from src.ui.app.services.emoji_cache import render_emoji
+from src.ui.app.services import i18n
 
 try:
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image
     _HAS_PIL = True
 except Exception:
     _HAS_PIL = False
@@ -22,47 +24,6 @@ def _asset_path(name: str) -> Path:
         return Path(sys._MEIPASS) / "src" / "ui" / "assets" / name
     # source layout: src/ui/app/pages/main_menu.py  →  src/ui/assets/
     return Path(__file__).resolve().parents[2] / "assets" / name
-
-
-# Render an emoji glyph at an arbitrary size as a MONOCHROME white
-# silhouette (using the font's outline paths, not its color bitmaps),
-# so it matches the button text's colour rather than showing the
-# emoji's built-in colours.  Returns None if PIL isn't available or
-# no suitable font is found on this platform.
-def _make_emoji_image(char: str, size: int):
-    if not _HAS_PIL:
-        return None
-    # Prefer monochrome symbol fonts first (they have proper outline
-    # shapes that PIL can fill with an arbitrary colour); fall back to
-    # color-emoji fonts (whose outline layer PIL will also fill mono).
-    font_candidates = [
-        "seguisym.ttf",                # Windows: Segoe UI Symbol (mono)
-        r"C:\Windows\Fonts\seguisym.ttf",
-        "Symbola.ttf",                 # Cross-platform mono symbol font
-        "DejaVuSans.ttf",              # Linux mono fallback
-        "seguiemj.ttf",                # Windows: Segoe UI Emoji (fallback)
-        r"C:\Windows\Fonts\seguiemj.ttf",
-        "AppleColorEmoji.ttc",         # macOS
-        "/System/Library/Fonts/Apple Color Emoji.ttc",
-        "NotoColorEmoji.ttf",          # Linux (Noto)
-        "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
-    ]
-    font = None
-    for name in font_candidates:
-        try:
-            font = ImageFont.truetype(name, size)
-            break
-        except (OSError, IOError):
-            continue
-    if font is None:
-        return None
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    # NOT embedded_color — that would keep the emoji's native colours.
-    # Plain fill uses the font's outline path filled solid white, so
-    # the glyph blends into the button's text colour.
-    d.text((0, 0), char, font=font, fill=(255, 255, 255, 255))
-    return img
 
 
 class MainMenuPage(ctk.CTkFrame):
@@ -84,14 +45,14 @@ class MainMenuPage(ctk.CTkFrame):
         # ---- hero text -------------------------------------------------
         ctk.CTkLabel(
             wrap,
-            text="Steady-Unsteady",
+            text=i18n.t("menu.hero"),
             font=ctk.CTkFont(size=theme.SIZE_HERO, weight="bold"),
             text_color=theme.MRT_RED_THEMED,
         ).pack(pady=(theme.PAD_S, theme.PAD_XS))
 
         ctk.CTkLabel(
             wrap,
-            text="Hybrid Rocket Engine Simulator",
+            text=i18n.t("menu.subtitle"),
             font=ctk.CTkFont(size=theme.SIZE_BODY),
             text_color=theme.MRT_RED_THEMED,
         ).pack(pady=(0, theme.PAD_XL))
@@ -101,14 +62,14 @@ class MainMenuPage(ctk.CTkFrame):
         primary.pack()
 
         ctk.CTkButton(
-            primary, text="Steady",
+            primary, text=i18n.t("menu.steady"),
             width=220, height=90,
             font=ctk.CTkFont(size=theme.SIZE_TITLE, weight="bold"),
             command=lambda: self.on_navigate("steady"),
         ).pack(side="left", padx=theme.PAD_M)
 
         ctk.CTkButton(
-            primary, text="Unsteady",
+            primary, text=i18n.t("menu.unsteady"),
             width=220, height=90,
             font=ctk.CTkFont(size=theme.SIZE_TITLE, weight="bold"),
             command=lambda: self.on_navigate("unsteady"),
@@ -121,23 +82,25 @@ class MainMenuPage(ctk.CTkFrame):
         secondary.pack(pady=(theme.PAD_XL, 0))
 
         ctk.CTkButton(
-            secondary, text="Browse saved results…",
+            secondary, text=i18n.t("menu.browse_results"),
             width=SECONDARY_W, height=SECONDARY_H,
             command=lambda: self.on_navigate("results"),
         ).pack(pady=theme.PAD_XS)
 
         # Report-a-bug button: keep the button itself unchanged (same
         # width/height/font), but render the snail emoji at ~2x the
-        # normal text size, coloured to match the button text.
+        # normal text size, coloured to match the button text.  The
+        # PIL image is cached in services.emoji_cache so re-entering
+        # this page later doesn't re-run the font search.
         snail_px = 24
-        snail_pil = _make_emoji_image("🐌", snail_px)
+        snail_pil = render_emoji("🐌", snail_px)
         if snail_pil is not None:
             snail_ctk = ctk.CTkImage(
                 light_image=snail_pil, dark_image=snail_pil,
                 size=(snail_px, snail_px),
             )
             ctk.CTkButton(
-                secondary, text="Report a bug ",
+                secondary, text=i18n.t("menu.report_bug") + " ",
                 image=snail_ctk, compound="right",
                 width=SECONDARY_W, height=SECONDARY_H,
                 command=lambda: self.on_navigate("bug"),
@@ -145,16 +108,38 @@ class MainMenuPage(ctk.CTkFrame):
         else:
             # PIL/emoji font unavailable — fall back to inline text emoji.
             ctk.CTkButton(
-                secondary, text="Report a bug  🐌",
+                secondary, text=i18n.t("menu.report_bug") + "  🐌",
                 width=SECONDARY_W, height=SECONDARY_H,
                 command=lambda: self.on_navigate("bug"),
             ).pack(pady=theme.PAD_XS)
 
         ctk.CTkButton(
-            secondary, text="Settings",
+            secondary, text=i18n.t("menu.settings"),
             width=SECONDARY_W, height=SECONDARY_H,
             command=lambda: self.on_navigate("settings"),
         ).pack(pady=theme.PAD_XS)
+
+        # Small version chip so users know which release they're on.
+        # Click opens the patchnotes page (release-notes browser).
+        # Sits directly below the last secondary button so it's easy to
+        # find but doesn't dominate the layout.
+        try:
+            from src.ui.app.version import VERSION as _APP_VERSION
+        except Exception:
+            _APP_VERSION = "unknown"
+        ctk.CTkButton(
+            secondary,
+            text=f"v{_APP_VERSION}",
+            width=80, height=24,
+            corner_radius=12,
+            fg_color="transparent",
+            hover_color=theme.CARD_BG,
+            text_color=theme.TEXT_MUTED,
+            border_width=1,
+            border_color=theme.TEXT_FAINT,
+            font=ctk.CTkFont(size=theme.SIZE_SMALL),
+            command=lambda: self.on_navigate("patchnotes"),
+        ).pack(pady=(theme.PAD_S, 0))
 
     # ------------------------------------------------------------------
 

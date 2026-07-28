@@ -2,109 +2,143 @@
 #
 # PyInstaller spec for the MRT Steady-Unsteady Simulator GUI.
 #
-# Usage  (run from the project root, i.e. the folder containing this src/ tree):
+# Usage  (run from the PROJECT ROOT — the folder containing this src/ tree):
 #     pyinstaller src/ui/build.spec
 #
-# The same command works on Windows, macOS, and Linux. The output goes to
-# dist/MRT-Sim<ext> where <ext> is `.exe` on Windows, nothing on Linux,
-# `.app` if Apple-bundled.
+# Output: dist/MRT-Steady-Unsteady/     (one-folder mode)
 #
 # Cross-OS notes:
-#   - PyInstaller does NOT cross-compile. Run this on the OS you want to ship for.
-#   - CustomTkinter ships its themes as JSON files that PyInstaller doesn't
-#     auto-detect. We collect them explicitly below.
-#   - matplotlib + scipy + numpy all need a few hidden imports; we let PyInstaller's
-#     own hooks pick those up automatically (they ship a hook for each).
+#   - PyInstaller does NOT cross-compile.  Build on the OS you want to
+#     ship for (Windows in our case).
+#   - CoolProp ships fluid-property binary data that PyInstaller misses;
+#     we `collect_all` it below.
+#   - CustomTkinter ships its theme JSONs; its bundled hook usually
+#     handles them, but we also `collect_data_files` explicitly.
+#   - The UI resolves writable user_data/ to %APPDATA%\MRT-Steady-Unsteady\
+#     when frozen (see backend_bridge._per_user_data_dir()).  We bundle
+#     the read-only *templates* and *default settings* inside the exe so
+#     the first-launch seed step has something to copy.
 
 from pathlib import Path
-import sys
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_all
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 # ---------------------------------------------------------------------------
 # Project layout
 # ---------------------------------------------------------------------------
 
-# spec files run with cwd == project root when invoked as
-#   `pyinstaller src/ui/build.spec`
+# `pyinstaller` sets CWD to the folder it's invoked from — we require
+# the project root, which is the folder containing user_data/.
 project_root = Path.cwd()
+entry_script = project_root / "src" / "ui" / "main.py"
 
-entry_script   = project_root / "src" / "ui" / "main.py"
-icon_file      = None   # set to a path (.ico on Win, .icns on Mac) when we have one
+icon_file = project_root / "src" / "ui" / "assets" / "MRT_logo.ico"
+if not icon_file.exists():
+    icon_file = None
+
 
 # ---------------------------------------------------------------------------
 # Extra data files to bundle
 # ---------------------------------------------------------------------------
 
-# 1.  CustomTkinter's theme + asset files
+# 1. CustomTkinter theme + asset files
 customtkinter_data = collect_data_files("customtkinter")
 
-# 2.  The simulator's static lookup tables (CEA, N2O, schemas, ...)
-backend_static_dirs = [
+# 2. CoolProp's fluid data + shared library
+coolprop_datas, coolprop_binaries, coolprop_hiddenimports = collect_all("CoolProp")
+
+# 2b. rocketcea — its __init__ reads _version.py relative to itself, and
+#     the CEA thermo/trans libraries live inside the package.  Missing
+#     these causes "FileNotFoundError: rocketcea\\_version.py" at import.
+rocketcea_datas, rocketcea_binaries, rocketcea_hiddenimports = collect_all("rocketcea")
+
+# 2c. pypropep — computes steady chamber temperature.  Ships the
+#     propellant tables + PROPEP data files that PyInstaller misses.
+try:
+    pypropep_datas, pypropep_binaries, pypropep_hiddenimports = collect_all("pypropep")
+except Exception:
+    # pypropep isn't installed on non-frozen dev machines; skip silently.
+    pypropep_datas, pypropep_binaries, pypropep_hiddenimports = [], [], []
+
+# 3. Simulator backend static-data folders (CEA tables, N2O lookups, etc.)
+static_data_tuples = []
+for d in (
     project_root / "src" / "backend" / "steady"   / "static_data",
     project_root / "src" / "backend" / "unsteady" / "static_data",
-]
-static_data_tuples = []
-for d in backend_static_dirs:
+):
     if not d.exists():
         continue
     for f in d.rglob("*"):
         if f.is_file():
-            # (source on disk, destination inside the bundle relative to the exe)
             dest_rel = f.parent.relative_to(project_root)
             static_data_tuples.append((str(f), str(dest_rel)))
 
-# 3.  UI assets (logo, icons, etc.)
-ui_assets_dir = project_root / "src" / "ui" / "assets"
+# 4. UI assets (logo PNG + ICO, any future icons)
 ui_assets_tuples = []
+ui_assets_dir = project_root / "src" / "ui" / "assets"
 if ui_assets_dir.exists():
     for f in ui_assets_dir.rglob("*"):
         if f.is_file():
             dest_rel = f.parent.relative_to(project_root)
             ui_assets_tuples.append((str(f), str(dest_rel)))
 
-# 4.  Default UI settings (committed baseline used by reset-to-defaults)
-ui_default_settings = project_root / "user_data" / "default_ui_settings.json"
-ui_default_settings_tuples = []
-if ui_default_settings.exists():
-    ui_default_settings_tuples.append(
-        (str(ui_default_settings), "user_data")
-    )
+# 5. Read-only user_data resources — copied by the seed step on first
+#    launch into %APPDATA%\MRT-Steady-Unsteady\.  Ship the defaults +
+#    the two template configs.
+seed_files = [
+    project_root / "user_data" / "default_ui_settings.json",
+    project_root / "user_data" / "simulation_configs" / "steady"   / "steady_example.jsonc",
+    project_root / "user_data" / "simulation_configs" / "steady"   / "steady_parametric_example.jsonc",
+    project_root / "user_data" / "simulation_configs" / "unsteady" / "unsteady_example.jsonc",
+]
+seed_tuples = [
+    (str(f), str(f.parent.relative_to(project_root)))
+    for f in seed_files if f.exists()
+]
 
-datas = (customtkinter_data + static_data_tuples
-         + ui_assets_tuples + ui_default_settings_tuples)
+datas = (
+    customtkinter_data
+    + coolprop_datas
+    + rocketcea_datas
+    + pypropep_datas
+    + static_data_tuples
+    + ui_assets_tuples
+    + seed_tuples
+)
+
 
 # ---------------------------------------------------------------------------
 # Hidden imports
 # ---------------------------------------------------------------------------
-#
-# PyInstaller usually detects what we use, but a few packages need a nudge
-# because they're imported lazily inside the simulator backend.
+
 hiddenimports = (
     collect_submodules("matplotlib")
     + collect_submodules("customtkinter")
+    + collect_submodules("scipy")          # scipy.integrate.LSODA loads lazily
+    + coolprop_hiddenimports
+    + rocketcea_hiddenimports
+    + pypropep_hiddenimports
     + [
         "tkinter",
-        "PIL._tkinter_finder",
-        # add backend modules here if PyInstaller misses them
+        "PIL._tkinter_finder",             # Pillow's Tk-image bridge
         "src.backend.unsteady.analysis.unsteady_results",
     ]
 )
 
 
+# ---------------------------------------------------------------------------
+# Analysis -> PYZ -> EXE -> COLLECT  (one-folder distribution)
+# ---------------------------------------------------------------------------
+
 a = Analysis(
     [str(entry_script)],
     pathex=[str(project_root)],
-    binaries=[],
+    binaries=coolprop_binaries + rocketcea_binaries + pypropep_binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],
-    excludes=[
-        # we don't ship the steady PROPEP wrapper from the UI binary yet;
-        # drop it if it gets pulled in and bloats the bundle
-        # "pypropep",
-    ],
+    excludes=[],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=None,
@@ -115,16 +149,25 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=None)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    name="MRT-Sim",
+    [],
+    exclude_binaries=True,
+    name="MRT-Steady-Unsteady",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,          # GUI app — no console window on Windows
+    upx=False,
+    console=False,
+    disable_windowed_traceback=False,
     icon=str(icon_file) if icon_file else None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name="MRT-Steady-Unsteady",
 )

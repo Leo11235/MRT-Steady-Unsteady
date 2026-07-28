@@ -28,6 +28,10 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
 from src.ui.app import theme, results_utils, backend_bridge
+from src.ui.app.services import i18n
+from src.ui.app.widgets.graph_picker import GraphPicker
+from src.ui.app.widgets.search_entry import SearchEntry
+from src.ui.app.widgets.help_icon import HelpIcon
 
 
 # Every plot toggle understood by display_unsteady_results.  Used to
@@ -74,6 +78,8 @@ class UnsteadyResultsPage(ctk.CTkFrame):
         self._result_dict: dict | None = None
         self._unit_system: str = "SI"
         self._unit_buttons: dict = {}
+        # KVRow instances cached so _set_unit_system can update in place.
+        self._rows: list = []
         self._build()
 
     # ===================================================================
@@ -83,10 +89,21 @@ class UnsteadyResultsPage(ctk.CTkFrame):
     def _build(self) -> None:
         self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=0, minsize=220)
-        self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)   # tabview row expands
+
+        # ---- filter bar (row 0, spans both columns) ---------------------
+        filter_row = ctk.CTkFrame(self, fg_color="transparent")
+        filter_row.grid(row=0, column=0, columnspan=2, sticky="ew",
+                        padx=theme.PAD_M, pady=(theme.PAD_M, 0))
+        self._filter_var = ctk.StringVar()
+        SearchEntry(
+            filter_row, textvariable=self._filter_var,
+            placeholder=i18n.t("filter.placeholder"),
+        ).pack(fill="x", expand=True)
+        self._filter_var.trace_add("write", lambda *_: self._apply_filter())
 
         self.tabs = ctk.CTkTabview(self, anchor="w")
-        self.tabs.grid(row=0, column=0, sticky="nsew",
+        self.tabs.grid(row=1, column=0, sticky="nsew",
                        padx=(theme.PAD_M, theme.PAD_S), pady=theme.PAD_M)
 
         self._inputs_tab   = self.tabs.add("Rocket inputs")
@@ -108,7 +125,7 @@ class UnsteadyResultsPage(ctk.CTkFrame):
 
         # sidebar
         sidebar = ctk.CTkFrame(self, fg_color="transparent")
-        sidebar.grid(row=0, column=1, sticky="ns",
+        sidebar.grid(row=1, column=1, sticky="ns",
                      padx=(theme.PAD_S, theme.PAD_M), pady=theme.PAD_M)
         self._build_sidebar(sidebar)
 
@@ -118,35 +135,37 @@ class UnsteadyResultsPage(ctk.CTkFrame):
             text_color=("gray35", "gray65"),
             font=ctk.CTkFont(size=theme.SIZE_SMALL),
         )
-        self.status_label.grid(row=1, column=0, columnspan=2, sticky="ew",
+        self.status_label.grid(row=2, column=0, columnspan=2, sticky="ew",
                                padx=theme.PAD_M, pady=(0, theme.PAD_S))
 
     def _build_sidebar(self, parent) -> None:
-        ctk.CTkLabel(parent, text="Actions",
+        ctk.CTkLabel(parent, text=i18n.t("action.actions"),
                      font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
                      anchor="w").pack(fill="x", pady=(0, theme.PAD_S))
 
-        ctk.CTkButton(parent, text="Copy to clipboard",
+        ctk.CTkButton(parent, text=i18n.t("action.copy"),
                       width=200, height=36,
                       command=self._on_copy).pack(pady=theme.PAD_XS)
-        ctk.CTkButton(parent, text="Export to sheets (.csv)",
+        ctk.CTkButton(parent, text=i18n.t("action.export_csv"),
                       width=200, height=36,
                       command=self._on_export).pack(pady=theme.PAD_XS)
 
-        ctk.CTkLabel(parent, text="Graphs",
+        ctk.CTkLabel(parent, text=i18n.t("action.graphs"),
                      font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold"),
                      anchor="w").pack(fill="x", pady=(theme.PAD_L, theme.PAD_XS))
 
-        ctk.CTkButton(parent, text="Show select graphs",
+        ctk.CTkButton(parent, text=i18n.t("action.show_graphs"),
                       width=200, height=36,
-                      command=self._on_select_graphs).pack(pady=theme.PAD_XS)
-        ctk.CTkButton(parent, text="Show all graphs",
-                      width=200, height=36,
-                      command=self._on_all_graphs).pack(pady=theme.PAD_XS)
+                      command=self._on_open_graph_picker).pack(pady=theme.PAD_XS)
 
-        ctk.CTkLabel(parent, text="Units",
+        # Units header + inline help-icon
+        units_row = ctk.CTkFrame(parent, fg_color="transparent")
+        units_row.pack(fill="x", pady=(theme.PAD_L, theme.PAD_XS))
+        ctk.CTkLabel(units_row, text=i18n.t("action.units"),
                      font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold"),
-                     anchor="w").pack(fill="x", pady=(theme.PAD_L, theme.PAD_XS))
+                     anchor="w").pack(side="left")
+        HelpIcon(units_row, i18n.t("help.units")).pack(side="left",
+                                                       padx=(theme.PAD_XS, 0))
         self._unit_buttons = results_utils.build_unit_buttons(
             parent, self._unit_system, on_change=self._set_unit_system,
         )
@@ -172,6 +191,7 @@ class UnsteadyResultsPage(ctk.CTkFrame):
                   self._overall_scroll, self._phases_scroll,
                   self._warn_scroll):
             self._clear_scroll(f)
+        self._rows = []
         self._unit_system = "SI"
         if self._unit_buttons:
             results_utils.refresh_unit_buttons(self._unit_buttons, self._unit_system)
@@ -190,6 +210,7 @@ class UnsteadyResultsPage(ctk.CTkFrame):
                   self._overall_scroll, self._phases_scroll,
                   self._warn_scroll):
             self._clear_scroll(f)
+        self._rows = []
         if self._result_dict is None:
             return
 
@@ -259,6 +280,9 @@ class UnsteadyResultsPage(ctk.CTkFrame):
         warnings = self._result_dict.get("warnings")
         self._render_warnings(self._warn_scroll, warnings)
 
+        # Re-apply any active filter so newly-built rows respect it.
+        self._apply_filter()
+
     def _render_dict_section(self, parent, title: str, d: dict) -> None:
         ctk.CTkLabel(parent, text=title,
                      font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
@@ -268,15 +292,44 @@ class UnsteadyResultsPage(ctk.CTkFrame):
 
     def _render_kv_row(self, parent, key: str, value) -> None:
         """3-column row (name | value | unit) via shared helper — keeps
-        the two results pages visually in sync and unit-aware."""
-        results_utils.render_kv_row(parent, key, value, self._unit_system)
+        the two results pages visually in sync and unit-aware.  We cache
+        the returned KVRow so unit-system toggles can update it in
+        place rather than tearing the whole panel down."""
+        row = results_utils.render_kv_row(parent, key, value, self._unit_system)
+        self._rows.append(row)
 
     def _set_unit_system(self, system: str) -> None:
         if system == self._unit_system:
             return
         self._unit_system = system
         results_utils.refresh_unit_buttons(self._unit_buttons, system)
-        self._refresh_panels()
+        # Fast in-place update — see steady_results._set_unit_system.
+        for row in self._rows:
+            try:
+                row.update_system(system)
+            except AttributeError:
+                pass
+        # Re-apply filter (unit labels just changed).
+        self._apply_filter()
+
+    def _apply_filter(self) -> None:
+        """Show/hide cached KVRow widgets based on the filter query."""
+        try:
+            query = self._filter_var.get()
+        except AttributeError:
+            return
+        for row in self._rows:
+            try:
+                if row.winfo_manager() == "pack":
+                    row.pack_forget()
+            except AttributeError:
+                pass
+        for row in self._rows:
+            try:
+                if row.matches(query):
+                    row.pack(fill="x", pady=1)
+            except AttributeError:
+                pass
 
     def _render_phase_table(self, parent, by_phase: dict) -> None:
         # One CTk-drawn "table": one bordered row per phase, with the
@@ -301,7 +354,9 @@ class UnsteadyResultsPage(ctk.CTkFrame):
             inner = ctk.CTkFrame(group, fg_color="transparent")
             inner.pack(fill="x", padx=theme.PAD_S)
             for k, v in entry.items():
-                results_utils.render_kv_row(inner, k, v, self._unit_system)
+                # Route through _render_kv_row so the phase rows also get
+                # cached in self._rows and participate in fast unit-switching.
+                self._render_kv_row(inner, k, v)
             ctk.CTkFrame(group, height=6, fg_color="transparent") \
                 .pack()   # bottom pad
 
@@ -434,20 +489,63 @@ class UnsteadyResultsPage(ctk.CTkFrame):
             messagebox.showerror("Export failed",
                                  f"{type(exc).__name__}: {exc}")
 
-    def _on_select_graphs(self) -> None:
-        if not self._require_result_file():
-            return
-        # Only the kinematics + thrust plots.
-        kwargs = {name: False for name in _ALL_PLOT_TOGGLES}
-        kwargs["rocket_kinematics"] = True
-        kwargs["thrust_vs_time"]    = True
-        self._invoke_display(**kwargs)
+    # --- Graph picker (replaces the old select/all buttons) -----------
 
-    def _on_all_graphs(self) -> None:
+    # Ordered list of (wire_toggle_name, default_checked).  Order maps
+    # 1-to-1 to the backend's unsteady_results() parameters; adding a
+    # new plot in the backend needs a matching entry here.  The initial
+    # "checked" state is a curated shortlist (kinematics + thrust +
+    # thrust-with-events) that keeps the picker useful even for someone
+    # who just hits Show without ticking anything else.
+    _GRAPH_CATALOG: tuple[tuple[str, bool], ...] = (
+        ("performance_panel",              True),
+        ("events_warnings_panel",          False),
+        ("thrust_vs_time",                 True),
+        ("thrust_with_event_markers",      True),
+        ("rocket_kinematics",              True),
+        ("injector_mass_flow_vs_time",     False),
+        ("of_ratio_vs_time",               False),
+        ("chamber_temperature_vs_time",    False),
+        ("tank_pressure_vs_time",          False),
+        ("tank_temperature_vs_time",       False),
+        ("chamber_pressure_vs_time",       False),
+        ("oxidizer_inventory_vs_time",     False),
+        ("fuel_grain_state_vs_time",       False),
+        ("injector_pressure_drop_vs_time", False),
+        ("nozzle_exit_conditions_vs_time", False),
+        ("nozzle_flow_regime_vs_time",     False),
+        ("combustion_properties_vs_time",  False),
+        ("ambient_atmosphere_vs_time",     False),
+        ("isp_vs_time",                    False),
+        ("rocket_total_mass_vs_time",      False),
+        ("trajectory_map",                 False),
+        ("of_vs_port_radius",              False),
+        ("thrust_vs_chamber_pressure",     False),
+        ("solver_step_size",               False),
+        ("nan_map",                        False),
+        ("mass_conservation_check",        False),
+        ("rocket_cross_section",           False),
+        ("nozzle_profile",                 False),
+    )
+
+    def _on_open_graph_picker(self) -> None:
         if not self._require_result_file():
             return
-        # Defaults = all plots on.
-        self._invoke_display()
+        # (pretty_label, wire_key, default_checked)
+        items = [
+            (i18n.t(f"graph.us.{key}"), key, default)
+            for key, default in self._GRAPH_CATALOG
+        ]
+        GraphPicker(self, items=items, on_confirm=self._render_selected_graphs)
+
+    def _render_selected_graphs(self, selected: list[str]) -> None:
+        if not selected:
+            return
+        if not self._require_result_file():
+            return
+        # Build kwargs — every catalog toggle off except the picked ones.
+        kwargs = {key: (key in selected) for key, _ in self._GRAPH_CATALOG}
+        self._invoke_display(**kwargs)
 
     def _require_result_file(self) -> bool:
         if self._result_path is None or not self._result_path.exists():
@@ -458,19 +556,22 @@ class UnsteadyResultsPage(ctk.CTkFrame):
         return True
 
     def _invoke_display(self, **kwargs) -> None:
-        """Call display_unsteady_results on the current result file.
-        Runs synchronously on the main thread; matplotlib windows block
-        until closed (which is expected UX for this button)."""
+        """Call the backend's unsteady_results() with per-plot toggles,
+        then lift every freshly-created figure to the foreground."""
         try:
             from src.backend.unsteady.analysis.unsteady_results import (
-                display_unsteady_results,
+                unsteady_results as _display,
             )
-            display_unsteady_results(
+            from src.ui.app.services.mpl_bringup import lift_all_figures
+            _display(
                 json_filename=self._result_path.name,
                 json_filepath=self._result_path.parent,
                 display_graphs=True,
                 **kwargs,
             )
+            # Backend has already called plt.show(); lift any figures it
+            # opened so they don't slide behind the main UI.
+            lift_all_figures()
         except Exception as exc:
             messagebox.showerror("Could not display graphs",
                                  f"{type(exc).__name__}: {exc}")
