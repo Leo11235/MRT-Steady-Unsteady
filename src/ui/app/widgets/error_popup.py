@@ -26,22 +26,21 @@ def show_simulation_error(
     error_title_prefix: str,
     error_body_prefix: str,
 ) -> None:
-    """
-    Open the modal error popup.  Blocks input to the underlying window
-    until the user clicks a button.
+    """Open the modal error popup.  Blocks input to the underlying
+    window until the user clicks a button.
 
     Parameters
     ----------
     parent            : any widget from which winfo_toplevel() returns the shell.
     exc               : the exception raised by the backend.
     tb                : formatted traceback string.
-    cfg               : the config dict that was used; pretty-printed into
-                        the bug-report pre-fill body.
+    cfg               : the config dict that was used; passed to the bug
+                        page as its own structured field.
     back_button_text  : label for the "back" action, e.g. "Back to Steady".
     back_target       : shell key to navigate to on Back, e.g. "steady".
     error_title_prefix: e.g. "Error while running steady" — the bug-report
                         title becomes "<prefix>: <ExcName>".
-    error_body_prefix : first sentence of the bug-report body, e.g.
+    error_body_prefix : first sentence of the diagnostics block, e.g.
                         "While running steady, the following message stack
                         occurred:".
     """
@@ -84,36 +83,33 @@ def show_simulation_error(
 
     def go_report():
         win.destroy()
+
+        # Grab the loading page's captured terminal output (if any).
         loading = shell.pages.get("loading")
         terminal_text = (loading.get_terminal_text() if loading is not None
                          else "(terminal output unavailable)")
+
+        # Config gets sent as its own structured Web3Forms field, so
+        # it does NOT go into the diagnostics blob.
         try:
             cfg_json = json.dumps(cfg, indent=4)
         except Exception:
             cfg_json = repr(cfg)
 
-        # Include the app version at the top of every auto-generated
-        # bug body so triaging against a specific release is trivial.
-        try:
-            from src.ui.app.version import VERSION as _APP_VERSION
-        except Exception:
-            _APP_VERSION = "unknown"
-
         title = f"{error_title_prefix}: {type(exc).__name__}"
-        body = (
-            f"App version: {_APP_VERSION}\n\n"
+        diagnostics = (
             f"{error_body_prefix}\n\n"
             f"{terminal_text}\n\n"
-            f"{tb}\n"
-            "The following simulation inputs were used:\n\n"
-            f"{cfg_json}\n"
+            f"{tb}"
         )
+
         try:
             bug_page = shell._ensure_page("bug")
         except Exception:
             bug_page = None
         if bug_page is not None:
-            bug_page.prefill(title, body)
+            bug_page.prefill(title=title, diagnostics=diagnostics,
+                             config_json=cfg_json)
         shell.go("bug")
 
     ctk.CTkButton(
