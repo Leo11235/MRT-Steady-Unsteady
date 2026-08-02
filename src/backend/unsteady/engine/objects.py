@@ -302,14 +302,17 @@ class History:
         with open(file_path, "w") as f:
             json.dump(sim_results, f, indent=4)
             
-        print(f"\nSimulation data exported to:\n -> {file_path}")
+        print(f"\nSimulation data exported")
         
         # save as pdf/png if requested
         if rocket_inputs_metadata.get("save_to_pdf") and rocket_inputs_metadata.get("save_to_png"):
+            print(f"\nCreating graphs...")
             unsteady_results(json_filename=filename, json_filepath=output_dir, display_graphs=False, save_to_pdf=True, save_to_png=True)
         elif rocket_inputs_metadata.get("save_to_pdf"):
+            print(f"\nCreating graphs...")
             unsteady_results(json_filename=filename, json_filepath=output_dir, display_graphs=False, save_to_pdf=True, save_to_png=False)
         elif rocket_inputs_metadata.get("save_to_png"):
+            print(f"\nCreating graphs...")
             unsteady_results(json_filename=filename, json_filepath=output_dir, display_graphs=False, save_to_pdf=False, save_to_png=True)
         
         return file_path

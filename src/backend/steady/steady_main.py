@@ -100,7 +100,7 @@ def run_steady(rocket_inputs_filename: str,
     with open(sim_filepath, "w", encoding="utf-8") as f:
         json.dump(export_data, f, indent=4)
         
-    print(f"\nSimulation data exported to:\n -> {sim_filepath}")
+    print(f"\nSimulation data exported.")
 
 # HELPERS
 # prints all items of a dictionary in a nice way

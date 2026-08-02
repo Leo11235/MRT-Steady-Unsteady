@@ -149,6 +149,9 @@ class UnsteadyResultsPage(ctk.CTkFrame):
         ctk.CTkButton(parent, text=i18n.t("action.export_csv"),
                       width=200, height=36,
                       command=self._on_export).pack(pady=theme.PAD_XS)
+        ctk.CTkButton(parent, text="Show in folder",
+                      width=200, height=36,
+                      command=self._on_show_in_folder).pack(pady=theme.PAD_XS)
 
         ctk.CTkLabel(parent, text=i18n.t("action.graphs"),
                      font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold"),
@@ -434,6 +437,16 @@ class UnsteadyResultsPage(ctk.CTkFrame):
     # ===================================================================
     # Actions
     # ===================================================================
+
+    def _on_show_in_folder(self) -> None:
+        if self._result_path is None or not self._result_path.exists():
+            messagebox.showinfo(
+                "No file to show",
+                "There's no saved file for this run yet.",
+            )
+            return
+        from src.ui.app.services.os_utils import reveal_in_file_explorer
+        reveal_in_file_explorer(self._result_path)
 
     def _on_copy(self) -> None:
         if self._result_dict is None:

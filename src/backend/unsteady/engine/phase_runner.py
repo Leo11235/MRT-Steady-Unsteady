@@ -33,7 +33,7 @@ def run_unsteady(rocket_inputs_filename: str, rocket_inputs_filepath: str | Path
     
     # load rocket inputs and simulation settings
     rocket_inputs_full_filepath = Path(f"{rocket_inputs_filepath}") / f"{rocket_inputs_filename}"
-    print(f"Loading rocket inputs from {rocket_inputs_full_filepath}\n")
+    print(f"Loading rocket inputs from config\n")
     config = load_unsteady_config(rocket_inputs_full_filepath)
     rocket_inputs = config["rocket_inputs"]
     sim_settings = config["simulation_settings"]
@@ -178,7 +178,7 @@ def run_unsteady(rocket_inputs_filename: str, rocket_inputs_filepath: str | Path
             
             event_name = active_events[triggered_idx].__name__
             history.log_event(current_time, "PHASE_TRANSITION", f"Event '{event_name}' triggered. Exiting {active_phase} to {next_phase}")
-            print(f"\n>>> [{event_name}] -> {active_phase.capitalize()} transitioned to {next_phase} at t = {current_time:.3f} s")
+            print(f"\n>>> [{event_name}] --> {active_phase.capitalize()} transitioned to {next_phase} at t={current_time:.3f} s")
             active_phase = next_phase
             
         else:
@@ -188,14 +188,14 @@ def run_unsteady(rocket_inputs_filename: str, rocket_inputs_filepath: str | Path
     # TERMINAL ABORT HANDLING
     if active_phase == "terminal_002_liquid_quench":
         history.log_event(current_time, "ABORT_002", "Catastrophic liquid quench detected. Halting simulation.")
-        print("\n[ABORT 002] Catastrophic liquid quench detected. Execution stopped.")
+        print("\n[ABORT] Catastrophic liquid quench detected. Execution stopped.")
     elif active_phase == "terminal_apogee_abort":
         history.log_event(current_time, "ABORT_APOGEE", "Apogee reached during powered ascent. Halting simulation.")
         print("\n[ABORT] Apogee reached during powered ascent. Execution stopped.")
     elif active_phase == "terminal_success_landed":
         print("\n[SUCCESS] Rocket landed")
 
-    print("\nSimulation Complete! Ready for export.")
+    print("\nSimulation complete. Exporting...")
     finalized_warnings = finalize_warnings(warnings_dict) if rocket_inputs_metadata.get("warnings", True) else None # keep warnings by default if not specified
     
     return history.export(rocket_inputs, finalized_warnings, rocket_inputs_metadata)

@@ -9,4 +9,4 @@ We keep them separate so a version bump can go through code review the
 same way a normal edit does.
 """
 
-VERSION = "1.1.0"
+VERSION = "1.4"

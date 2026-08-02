@@ -23,7 +23,25 @@ from src.ui.app.version import VERSION
 
 PATCHNOTES: list[dict] = [
     {
-        "version": "1.1.0",
+        "version": "1.4",
+        "date":    "2026-08-02",
+        "notes": [
+            "Improved bug reporting",
+            "Added \"Show in folder\" button for simulation results",
+            "Cleaned terminal screen printout in loading page",
+            
+            "Fixed various bugs (unsteady crash at fuel burnout while "
+            "the tank still had liquid; sigmoid valve model rejecting "
+            "configs that omitted an input it didn't actually use; "
+            "division-by-zero crashes during the phase-1 ignition "
+            "transient, especially with slow-opening linear valves; "
+            "deleting a saved run left its PDF/PNG folder behind; "
+            "\"Show in folder\" button opening Documents instead of the "
+            "run's actual folder)",
+        ],
+    },
+    {
+        "version": "1.3",
         "date":    "2026-07-27",
         "notes": [
             "Added this patchnotes page. Click the version chip on the "
@@ -32,13 +50,13 @@ PATCHNOTES: list[dict] = [
             "Inputs now use diameters instead of radii and areas across "
             "the whole program",
             
-            "Every unsteady physics model dropdown now shows a short description of the model.",
+            "Every unsteady physics model dropdown now shows a short description of the model",
             
-            "Added hover tooltips everywhere.",
+            "Added hover tooltips everywhere",
         ],
     },
     {
-        "version": "1.0.2",
+        "version": "1.2",
         "date":    "2026-07-24",
         "notes": [
             "Fixed 'Simulation ran but produced no result file' error in "
@@ -46,9 +64,11 @@ PATCHNOTES: list[dict] = [
             "writing results into the read-only install directory; the "
             "UI now reconciles files back into the writable per-user "
             "location automatically.",
+            
             "Fixed missing rocketcea data-file error on first frozen run.",
             "Fixed missing pypropep data-file error (steady sims complaining "
             "about missing chamber temperature).",
+            
             "Bug reports now include the app version at the top of the "
             "auto-filled body AND as a dedicated field in the email.",
             "Version footer added to the home screen so you can always "
@@ -56,7 +76,7 @@ PATCHNOTES: list[dict] = [
         ],
     },
     {
-        "version": "1.0.1",
+        "version": "1.1",
         "date":    "2026-07-22",
         "notes": [
             "First installer-based release. App now installs from a "
@@ -67,7 +87,7 @@ PATCHNOTES: list[dict] = [
         ],
     },
     {
-        "version": "1.0.0",
+        "version": "1.0",
         "date":    "2026-07-18",
         "notes": [
             "Initial release. Steady-state and unsteady simulations, "

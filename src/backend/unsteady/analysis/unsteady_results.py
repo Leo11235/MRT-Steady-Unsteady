@@ -25,6 +25,7 @@ import json
 import math
 from pathlib import Path
 from typing import Callable, Optional
+import warnings
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -33,6 +34,10 @@ from matplotlib.figure import Figure
 from matplotlib.patches import Patch, Rectangle, FancyBboxPatch, Polygon
 from matplotlib.backends.backend_pdf import PdfPages
 
+
+# ignore matplotlib warnings
+warnings.filterwarnings("ignore", category=UserWarning,   module=r".*matplotlib.*")
+warnings.filterwarnings("ignore", category=RuntimeWarning, module=r".*matplotlib.*")
 
 # =============================================================================
 # Phase metadata

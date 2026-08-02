@@ -11,7 +11,6 @@ generate_CEA_table calls runCEA to generate a lookup table for the main simulati
 import json
 import numpy as np
 from pathlib import Path
-print("Caching data temporary NASA-CEA data in ", end="")
 from rocketcea.cea_obj import CEA_Obj
 from rocketcea.cea_obj import add_new_fuel
 

@@ -114,6 +114,17 @@ class ResultsBrowserPage(ctk.CTkFrame):
         )
         self._open_btn.pack(side="left")
 
+        # Delete — red, two-click state machine
+        self._delete_btn = ctk.CTkButton(
+            actions, text=i18n.t("browser.delete"),
+            width=120, height=36,
+            fg_color=theme.MRT_RED_THEMED,
+            hover_color=theme.MRT_RED_HOVER,
+            state="disabled",
+            command=self._on_delete_click,
+        )
+        self._delete_btn.pack(side="left", padx=(theme.PAD_S, 0))
+
         # Rename — outlined secondary
         self._rename_btn = ctk.CTkButton(
             actions, text=i18n.t("browser.rename"),
@@ -126,16 +137,17 @@ class ResultsBrowserPage(ctk.CTkFrame):
         )
         self._rename_btn.pack(side="left", padx=(theme.PAD_S, 0))
 
-        # Delete — red, two-click state machine
-        self._delete_btn = ctk.CTkButton(
-            actions, text=i18n.t("browser.delete"),
-            width=120, height=36,
-            fg_color=theme.MRT_RED_THEMED,
-            hover_color=theme.MRT_RED_HOVER,
+        # Show in folder — outlined secondary, matches Rename styling.
+        self._reveal_btn = ctk.CTkButton(
+            actions, text="Show in folder",
+            width=140, height=36,
+            fg_color="transparent",
+            text_color=("gray25", "gray75"),
+            border_width=1,
             state="disabled",
-            command=self._on_delete_click,
+            command=self._reveal_selected,
         )
-        self._delete_btn.pack(side="left", padx=(theme.PAD_S, 0))
+        self._reveal_btn.pack(side="left", padx=(theme.PAD_S, 0))
 
         # ---- inline status line under the actions --------------------
         self._status_label = ctk.CTkLabel(
@@ -274,6 +286,7 @@ class ResultsBrowserPage(ctk.CTkFrame):
             self._open_btn.configure(state="disabled")
             self._rename_btn.configure(state="disabled")
             self._delete_btn.configure(state="disabled")
+            self._reveal_btn.configure(state="disabled")
             return
 
         _kind, path = self._selected
@@ -285,6 +298,7 @@ class ResultsBrowserPage(ctk.CTkFrame):
         self._open_btn.configure(state="normal")
         self._rename_btn.configure(state="normal")
         self._delete_btn.configure(state="normal")
+        self._reveal_btn.configure(state="normal")
 
     # ----------------------------------------------------------------------
     # Open results
@@ -315,6 +329,17 @@ class ResultsBrowserPage(ctk.CTkFrame):
                 text=f"{type(exc).__name__}: {exc}",
                 text_color=theme.ERROR,
             )
+
+    # ----------------------------------------------------------------------
+    # Reveal in native file browser
+    # ----------------------------------------------------------------------
+
+    def _reveal_selected(self) -> None:
+        if self._selected is None:
+            return
+        _kind, path = self._selected
+        from src.ui.app.services.os_utils import reveal_in_file_explorer
+        reveal_in_file_explorer(path)
 
     # ----------------------------------------------------------------------
     # Rename
@@ -378,8 +403,17 @@ class ResultsBrowserPage(ctk.CTkFrame):
             self._set_delete_state("confirm")
             return
         _kind, path = self._selected
+        # A single "run" is the .json file plus (optionally) a sibling
+        # folder with the same stem containing the PDF/PNG bundle
+        # produced by save_to_pdf / save_to_png.  Delete both so the
+        # user doesn't have orphan folders piling up.
         try:
-            path.unlink()
+            if path.exists():
+                path.unlink()
+            sibling_folder = path.with_suffix("")
+            if sibling_folder.is_dir():
+                import shutil
+                shutil.rmtree(sibling_folder, ignore_errors=True)
         except Exception as exc:
             self._status_label.configure(
                 text=f"{type(exc).__name__}: {exc}",

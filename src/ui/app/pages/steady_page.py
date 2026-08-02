@@ -257,18 +257,29 @@ class SteadyPage(ctk.CTkFrame):
         # unit, preserving the internal order on every toggle).
         self._hotfire_only_section = ctk.CTkFrame(wrap, fg_color="transparent")
         # NOT packed initially — _refresh_visibility will pack it when hotfire.
-        self._add_field(self._hotfire_only_section, "initial_internal_fuel_diameter",
-                        label="Initial internal fuel diameter",
-                        kind="length",
-                        numeric=True)
+
+        # "Fill in either X or Y" note sits above the two alternates so
+        # users see the rule before they see the fields.
         ctk.CTkLabel(
             self._hotfire_only_section,
-            text="(only used for hotfires)",
+            text=("Fill in EITHER 'Initial internal fuel diameter' OR "
+                  "'Fuel mass' — the solver derives the other. (Only used "
+                  "for hotfires.)"),
             anchor="w",
             text_color=("gray35", "gray65"),
             font=ctk.CTkFont(size=theme.SIZE_SMALL, slant="italic"),
             wraplength=820,
-        ).pack(fill="x", padx=(220 + theme.PAD_S, 0), pady=(0, theme.PAD_S))
+        ).pack(fill="x", padx=(220 + theme.PAD_S, 0),
+               pady=(theme.PAD_S, theme.PAD_XS))
+
+        self._add_field(self._hotfire_only_section, "initial_internal_fuel_diameter",
+                        label="Initial internal fuel diameter",
+                        kind="length",
+                        numeric=True)
+        self._add_field(self._hotfire_only_section, "fuel_mass",
+                        label="Fuel mass",
+                        kind="mass",
+                        numeric=True)
 
         # ---- Advanced section (with lock icon) ---------------------------
         self._divider(wrap)
@@ -603,8 +614,8 @@ class SteadyPage(ctk.CTkFrame):
             # Skip values that are parametrized (those live in sim_settings)
             if key in parametrized:
                 continue
-            # Skip hotfire-only field if not hotfire
-            if (key == "initial_internal_fuel_diameter"
+            # Skip hotfire-only fields if not hotfire
+            if (key in ("initial_internal_fuel_diameter", "fuel_mass")
                     and self.sim_type_var.get() != "hotfire"):
                 continue
             # Skip Rocket Body fields entirely when hotfire

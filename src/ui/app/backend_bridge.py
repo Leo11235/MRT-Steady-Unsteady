@@ -375,11 +375,14 @@ def validate_steady_config(config: dict) -> list[str]:
             if ri.get(key) in (None, ""):
                 errors.append(f"missing required (kinematics): {key}")
 
-    # hotfire needs either initial_internal_fuel_radius OR fuel_mass
+    # Hotfire needs either the initial internal fuel diameter OR the
+    # fuel mass — the solver derives the missing one.
+    # NOTE: the UI writes the DIAMETER key; the backend normalizer
+    # converts it to the radius key the physics loop expects.
     if sim_type == "hotfire":
-        if not (ri.get("initial_internal_fuel_radius") or ri.get("fuel_mass")):
+        if not (ri.get("initial_internal_fuel_diameter") or ri.get("fuel_mass")):
             errors.append("hotfire requires one of: "
-                          "initial_internal_fuel_radius, fuel_mass")
+                          "initial_internal_fuel_diameter, fuel_mass")
 
     # parametric study needs at least one parametric variable
     if sim_type == "parametric_study":

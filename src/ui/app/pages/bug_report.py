@@ -26,6 +26,56 @@ _DESC_PLACEHOLDER = (
 )
 
 
+def _bind_isolated_scroll(widget) -> None:
+    """Make wheel-scrolling over `widget` scroll only `widget`, so the
+    event doesn't bubble up to any enclosing CTkScrollableFrame.
+
+    Handles:
+      - Vertical wheel on Win/Mac (<MouseWheel>) and Linux (<Button-4/5>)
+      - Horizontal wheel on Win/Mac (<Shift-MouseWheel>) and Linux
+        (<Button-6/7>, trackpad two-finger swipe)
+
+    The handlers manually call yview_scroll / xview_scroll, then return
+    "break" to stop tk from propagating the event further.
+    """
+    def _y(event):
+        if getattr(event, "delta", 0):
+            # Win/Mac: delta is ±120 per wheel notch (or larger).
+            widget.yview_scroll(int(-event.delta / 120), "units")
+        elif getattr(event, "num", 0) == 4:
+            widget.yview_scroll(-1, "units")
+        elif getattr(event, "num", 0) == 5:
+            widget.yview_scroll(1, "units")
+        return "break"
+
+    def _x(event):
+        if getattr(event, "delta", 0):
+            widget.xview_scroll(int(-event.delta / 120), "units")
+        elif getattr(event, "num", 0) == 6:
+            widget.xview_scroll(-1, "units")
+        elif getattr(event, "num", 0) == 7:
+            widget.xview_scroll(1, "units")
+        return "break"
+
+    # CustomTkinter's CTkTextbox.bind() requires add="+" (or add=True).
+    # Wrap each bind in try/except so platform-specific sequences that
+    # tk doesn't recognise (e.g. Windows tk raises "bad button number"
+    # on <Button-6>/<Button-7>, which are Linux-only) don't kill the
+    # whole page init.
+    for seq, handler in (
+        ("<MouseWheel>",       _y),   # Win/Mac vertical
+        ("<Shift-MouseWheel>", _x),   # Win/Mac horizontal
+        ("<Button-4>",         _y),   # Linux vertical up
+        ("<Button-5>",         _y),   # Linux vertical down
+        ("<Button-6>",         _x),   # Linux horizontal left
+        ("<Button-7>",         _x),   # Linux horizontal right
+    ):
+        try:
+            widget.bind(seq, handler, add="+")
+        except Exception:
+            pass
+
+
 class BugReportPage(ctk.CTkFrame):
     TITLE = "Report a bug"
 
@@ -142,13 +192,19 @@ class BugReportPage(ctk.CTkFrame):
             text_color=theme.TEXT_MUTED,
         )
         self._diag.pack(fill="x")
+        # Isolate the textbox's wheel scrolling from the outer
+        # scrollable frame — without this, scrolling inside the
+        # diagnostics box also scrolls the whole bug-report page.
+        _bind_isolated_scroll(self._diag)
         # Not packed yet — happens dynamically in _set_diagnostics.
         # Do NOT pack self._diag_container here.
 
         self._config_json = ""   # populated by prefill; sent as its own field
 
         # ---- Environment (always shown) -------------------------------
-        self._section_header(wrap, "Environment")
+        # Keep a reference to the header widget so _set_diagnostics()
+        # can pack the diagnostics container BEFORE it (see below).
+        self._env_header = self._section_header(wrap, "Environment")
         self._env = collect_environment()
         env_text = (
             f"App version:    {self._env.get('app_version', '?')}\n"
@@ -200,16 +256,20 @@ class BugReportPage(ctk.CTkFrame):
     # Small layout helpers
     # ---------------------------------------------------------------------
 
-    def _section_header(self, parent, text: str) -> None:
-        """A muted-red divider header for a form section."""
-        ctk.CTkLabel(
+    def _section_header(self, parent, text: str):
+        """A muted-red divider header for a form section.
+        Returns the label widget so callers can use it as a pack-order
+        anchor when inserting dynamically-shown sections."""
+        label = ctk.CTkLabel(
             parent, text=text,
             font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
             text_color=theme.MRT_RED_THEMED,
             anchor="w",
-        ).pack(fill="x", pady=(theme.PAD_L, theme.PAD_XS))
+        )
+        label.pack(fill="x", pady=(theme.PAD_L, theme.PAD_XS))
         ctk.CTkFrame(parent, height=1, fg_color=theme.TEXT_FAINT) \
             .pack(fill="x", pady=(0, theme.PAD_S))
+        return label
 
     def _labeled_entry(self, parent, label_text: str,
                        variable: ctk.StringVar,
@@ -258,7 +318,13 @@ class BugReportPage(ctk.CTkFrame):
 
     def _set_diagnostics(self, text: str) -> None:
         """Populate the read-only diagnostics box, or hide the whole
-        section if there's nothing to show."""
+        section if there's nothing to show.
+
+        When shown, the diagnostics container is inserted just BEFORE
+        the Environment section header so it sits between Description
+        and Environment.  If hidden, Environment shifts up next to
+        Description with no gap.
+        """
         # Enable temporarily so we can rewrite content.
         self._diag.configure(state="normal")
         self._diag.delete("0.0", "end")
@@ -266,7 +332,8 @@ class BugReportPage(ctk.CTkFrame):
             self._diag.insert("0.0", text)
             if not self._diag_container.winfo_ismapped():
                 self._diag_container.pack(fill="x",
-                                          pady=(theme.PAD_L, theme.PAD_S))
+                                          pady=(theme.PAD_L, theme.PAD_S),
+                                          before=self._env_header)
         else:
             if self._diag_container.winfo_ismapped():
                 self._diag_container.pack_forget()

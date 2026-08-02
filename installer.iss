@@ -28,7 +28,7 @@
 
 #define AppName             "MRT-Steady-Unsteady"
 #define AppDisplayName      "MRT Steady-Unsteady Simulator"
-#define AppVersion          "1.1.0"
+#define AppVersion          "1.1.1"
 #define AppPublisher        "McGill Rocket Team"
 #define AppURL              "https://github.com/Leo11235/MRT-Steady-Unsteady"
 #define AppExeName          "MRT-Steady-Unsteady.exe"
