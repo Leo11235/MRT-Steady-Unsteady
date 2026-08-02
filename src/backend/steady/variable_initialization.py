@@ -69,6 +69,7 @@ def initialize_default_simulation_settings():
     sim_settings = json.loads(cleaned)
     return sim_settings
 
+
 def validate_simulation_inputs(rocket_inputs, simulation_settings):
     """
     For a given simulation type ('fuel mass convergence', 'parametric study', 'hotfire', or 'optimize values for unsteady'),
@@ -79,69 +80,62 @@ def validate_simulation_inputs(rocket_inputs, simulation_settings):
     file = _STATIC_DATA_DIR / "input_schema.jsonc"
     with open(file, 'r', encoding='utf-8') as f:
         content = f.read()
-    # remove comments
     cleaned = re.sub(r'//.*', '', content)
     cleaned = re.sub(r'/\*.*?\*/', '', cleaned, flags=re.DOTALL)
-    # parse cleaned file into dict
     input_schema = json.loads(cleaned)
-    
-    # first, validate base requirements needed for all simulation types
-    for item in input_schema["base_requirements"]:    
+
+    sim_type = simulation_settings.get("simulation_type")
+
+    # any variable being swept by a parametric study is filled in per point by the solver, so it counts as satisfied for these checks even though it isn't a static value in rocket_inputs
+    parametrized_keys: set = set()
+    if sim_type == "parametric_study":
+        ps = simulation_settings.get("parametric_study_settings") or {}
+        if isinstance(ps, dict):
+            parametrized_keys = set(ps.keys())
+
+    # base requirements: needed for every simulation type
+    for item in input_schema["base_requirements"]:
+        if item in parametrized_keys:
+            continue
         if item not in rocket_inputs:
             raise ValueError(f"Missing required rocket input: '{item}'")
 
-    # validate items required for kinematics (all simulation types except hotfire)
-    if simulation_settings.get("simulation_type") == ("fuel_mass_convergence" or "parametric_study" or "optimize_values_for_unsteady"):
-        for item in input_schema["kinematics_requirements"]:    
-            if item not in rocket_inputs:
-                raise ValueError(f"Missing required rocket input: '{item}'")
-    
-    # validate items required for hotfire (either fuel mass in inner diameter)
-    if simulation_settings.get("simulation_type") == ("hotfire"):
-        alternatives = input_schema["hotfire_requirements"][0] # ["initial_internal_fuel_radius", "fuel_mass"]
-        if not any(opt in rocket_inputs for opt in alternatives):
-            raise ValueError(f"Hotfire requires one of: {alternatives}")
-    
-    
-    if simulation_settings.get("simulation_type") == "hotfire":
-        # base requirements
-        for item in input_schema["base_requirements"]:
+    # kinematics: needed for everything except plain hotfire
+    if sim_type in ("fuel_mass_convergence", "parametric_study",
+                    "optimize_values_for_unsteady"):
+        for item in input_schema["kinematics_requirements"]:
+            if item in parametrized_keys:
+                continue
             if item not in rocket_inputs:
                 raise ValueError(f"Missing required rocket input: '{item}'")
 
-        # one-of requirements
+    # hotfire: exactly one of the alternates must be present, and if only one is given we derive the other so downstream physics has both to work with
+    if sim_type == "hotfire":
         alternatives = input_schema["hotfire_requirements"][0]
         has = [opt for opt in alternatives if opt in rocket_inputs]
         if len(has) == 0:
             raise ValueError(f"Hotfire requires one of: {alternatives}")
 
-        # compute missing value
         if "fuel_mass" not in rocket_inputs:
-            rocket_inputs["fuel_mass"] = calculate_fuel_mass(rocket_inputs, {"initial internal fuel radius": rocket_inputs["initial_internal_fuel_radius"]})
+            rocket_inputs["fuel_mass"] = calculate_fuel_mass(rocket_inputs)
         elif "initial_internal_fuel_radius" not in rocket_inputs:
-            rocket_inputs["initial_internal_fuel_radius"] = calculate_initial_radius(rocket_inputs)
-    
-    # validate additional parametric study inputs
-    if simulation_settings.get("simulation_type") == ("parametric_study" or "optimize_values_for_unsteady"):
-        # note, "optimize values for unsteady" is just a preset parametric study
-        # for now, no controls. But this is where we could validate the parametric section of the simulation settings in the future
-        pass
-
+            rocket_inputs["initial_internal_fuel_radius"] = \
+                calculate_initial_radius(rocket_inputs)
 
 
 # helpers
 def calculate_initial_radius(rocket_inputs):
-    Lf = rocket_inputs["fuel length"]
-    Re = rocket_inputs["fuel external radius"]
-    p  = rocket_inputs["fuel grain density"]
+    Lf = rocket_inputs["fuel_length"]
+    Re = rocket_inputs["fuel_external_radius"]
+    p  = rocket_inputs["fuel_grain_density"]
     Mf = rocket_inputs["fuel_mass"]
-    # solve Mf = π L (Re² − Ri²) p  →  Ri = sqrt(Re² − Mf / (π L p))
+    # Mf = π L (Re² − Ri²) p  →  Ri = sqrt(Re² − Mf / (π L p))
     return (Re**2 - Mf / (pi * Lf * p)) ** 0.5
 
-def calculate_fuel_mass(rocket_inputs, rocket_parameters):
-    Lf = rocket_inputs["fuel length"]
-    Ri0 = rocket_parameters["initial internal fuel radius"]
-    Re = rocket_inputs["fuel external radius"]
-    p = rocket_inputs["fuel grain density"]
 
+def calculate_fuel_mass(rocket_inputs):
+    Lf  = rocket_inputs["fuel_length"]
+    Ri0 = rocket_inputs["initial_internal_fuel_radius"]
+    Re  = rocket_inputs["fuel_external_radius"]
+    p   = rocket_inputs["fuel_grain_density"]
     return pi * Lf * (Re**2 - Ri0**2) * p

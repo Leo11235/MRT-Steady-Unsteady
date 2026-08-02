@@ -37,7 +37,7 @@ PATCHNOTES: list[dict] = [
             "transient, especially with slow-opening linear valves; "
             "deleting a saved run left its PDF/PNG folder behind; "
             "\"Show in folder\" button opening Documents instead of the "
-            "run's actual folder)",
+            "run's actual folder; steady mode keys not getting validated properly for hotfire and parametric study)",
         ],
     },
     {

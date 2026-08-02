@@ -2,13 +2,11 @@ from src.backend.steady.PROPEP.pyPROPEP import runPROPEP
 from src.backend.steady import kinematics, prop_calculations
 
 def simulate_hotfire(rocket_inputs, rocket_parameters, simulation_settings, constants_dict):
-    # step 1
-    prop_calculations.CV2_calculations(rocket_inputs, rocket_parameters)
-    # step 2: propep
-    runPROPEP(rocket_inputs, rocket_parameters)
-    # step 3
-    prop_calculations.CV3_calculations(rocket_inputs, rocket_parameters, constants_dict)
-    # output
+    # populate rocket_parameters with values from rocket_inputs
+    rocket_parameters.setdefault("initial_internal_fuel_radius", rocket_inputs["initial_internal_fuel_radius"],)
+    
+    _simulate_engine_burn(rocket_inputs, rocket_parameters, simulation_settings, constants_dict)
+    
     return rocket_parameters
 
 # converges on an ideal fuel mass given a target apogee; returns rocket_inputs, rocket_parameters, flight_dict
@@ -29,12 +27,12 @@ def simulate_fuel_mass_convergence(rocket_inputs, rocket_parameters, simulation_
     i=1
     while(True):
         # simulate rocket
-        rocket_parameters = simulate_hotfire(rocket_inputs, rocket_parameters, simulation_settings, constants_dict)
+        rocket_parameters = _simulate_engine_burn(rocket_inputs, rocket_parameters, simulation_settings, constants_dict)
         flight_dict = kinematics.simulate_rocket_ascent(rocket_inputs, rocket_parameters, simulation_settings, constants_dict)
         
         # get apogee
         rocket_parameters["reached_apogee"] = flight_dict["altitude"][-1]
-        if correct_apogee_reached(rocket_inputs, rocket_parameters, tolerance):
+        if _correct_apogee_reached(rocket_inputs, rocket_parameters, tolerance):
             print(f'    LOOP {i} - FINAL APOGEE: {round(rocket_parameters["reached_apogee"], 1)} meters ({round(abs(rocket_parameters["reached_apogee"] - rocket_inputs["target_apogee"]), 5)} meters off from target)')
             return (rocket_parameters, flight_dict)
         else: 
@@ -65,5 +63,15 @@ def simulate_fuel_mass_convergence(rocket_inputs, rocket_parameters, simulation_
         i+=1
 
 # helper function to check whether the desired apogee was reached for the rocket
-def correct_apogee_reached(rocket_inputs, rocket_parameters, tolerance):
+def _correct_apogee_reached(rocket_inputs, rocket_parameters, tolerance):
     return abs(rocket_parameters["reached_apogee"] - rocket_inputs["target_apogee"]) <= tolerance
+
+def _simulate_engine_burn(rocket_inputs, rocket_parameters, simulation_settings, constants_dict):
+    # step 1
+        prop_calculations.CV2_calculations(rocket_inputs, rocket_parameters)
+        # step 2: propep
+        runPROPEP(rocket_inputs, rocket_parameters)
+        # step 3
+        prop_calculations.CV3_calculations(rocket_inputs, rocket_parameters, simulation_settings, constants_dict)
+        # output
+        return rocket_parameters

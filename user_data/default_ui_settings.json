@@ -1,4 +1,11 @@
 {
     "_comment_": "Baseline UI settings.  Committed to the repo.  Reset-to-defaults copies this file over user_data/ui_settings.json.  Add new keys here whenever you add a new setting.",
-    "default_output_units": "SI"
+    "default_output_units": "SI", 
+    "language": "en",
+    "shortcuts": {
+        "run": "<Control-r>",
+        "save": "<Control-s>",
+        "load": "<Control-o>",
+        "cancel": "<Escape>"
+    }
 }

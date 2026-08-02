@@ -11,14 +11,14 @@ def CV2_calculations(rocket_inputs, rocket_parameters): # control volume 2 = com
 
 # PROPEP calculations fall here
 
-def CV3_calculations(rocket_inputs, rocket_parameters, constants_dict): # CV3 = nozzle
+def CV3_calculations(rocket_inputs, rocket_parameters, simulation_settings, constants_dict): # CV3 = nozzle
     rocket_parameters["average_fuel_mass_flow_rate"] = calculate_Mf(rocket_inputs, rocket_parameters)
     rocket_parameters["total_propellant_mass_flow_rate"] = rocket_inputs["oxidizer_mass_flow_rate"] + rocket_parameters["average_fuel_mass_flow_rate"]
     rocket_parameters["burntime"] = calculate_Tburn(rocket_inputs, rocket_parameters)
     rocket_parameters["nozzle_throat_area"] = calculate_At(rocket_inputs, rocket_parameters, constants_dict)
     rocket_parameters["nozzle_throat_radius"] = calculate_Rt(rocket_inputs, rocket_parameters)
 
-    #rocket_parameters["nozzle_gas_exit_pressure"] = calculate_Pe(rocket_inputs, rocket_parameters, constants_dict)
+    # rocket_parameters["nozzle_gas_exit_pressure"] = calculate_Pe(rocket_inputs, rocket_parameters, constants_dict)
     # playing with exit pressure gives better results, very strange
     # in an ideal nozzle, exit pressure should be the same as 1 atm
     rocket_parameters["nozzle_gas_exit_pressure"] = 101325 * 0.95926
@@ -31,8 +31,11 @@ def CV3_calculations(rocket_inputs, rocket_parameters, constants_dict): # CV3 = 
     rocket_parameters["thrust"] = calculate_F(rocket_inputs, rocket_parameters, constants_dict)
     rocket_parameters["Isp"] = calculate_Isp(rocket_inputs, rocket_parameters, constants_dict)
     rocket_parameters["total_impulse"] = calculate_Ns(rocket_inputs, rocket_parameters)
-    rocket_parameters["wet_mass"] = calculate_Mw(rocket_inputs, rocket_parameters)
-    rocket_parameters["thrust_to_weight_ratio"] = calculate_TtW(rocket_inputs, rocket_parameters, constants_dict)
+    
+    # calculate only for non-hotfires
+    if simulation_settings['simulation_type'] != 'hotfire':
+        rocket_parameters["wet_mass"] = calculate_Mw(rocket_inputs, rocket_parameters)
+        rocket_parameters["thrust_to_weight_ratio"] = calculate_TtW(rocket_inputs, rocket_parameters, constants_dict)
 
 
 ### CALCULATIONS BELOW ###
