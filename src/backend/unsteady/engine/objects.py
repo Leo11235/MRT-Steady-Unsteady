@@ -90,14 +90,12 @@ class History:
 
     # record an event with the appropriate timestep
     def log_event(self, t: float, event_type: str, message: str):
-        if event_type == "PHASE_TRANSITION": 
+        # PHASE_TRANSITION and any ABORT_* event get logged the same way
+        if event_type == "PHASE_TRANSITION" or event_type.startswith("ABORT"): 
             self.events_log.append({
                 "t_s": t,
                 "event_type": event_type,
                 "message": message})
-            
-        # elif event_type == "WARNING":
-        #     return ##### need to finish
 
         else: 
             raise ValueError(f"Unrecognized event type: '{event_type}'.")
