@@ -116,8 +116,20 @@ class SteadyResultsPage(ctk.CTkFrame):
                       width=200, height=36,
                       command=self._on_open_graph_picker).pack(pady=theme.PAD_XS)
 
-        # Units header + inline help-icon
+        # Parametric graph — built once, packed only when the loaded
+        # result actually contains a parametric_results block.
+        self._parametric_btn = ctk.CTkButton(
+            parent, text="Parametric graph",
+            width=200, height=36,
+            command=self._on_open_parametric_dialog,
+        )
+        # NOT packed here; _refresh_panels controls visibility.
+
+        # Units header + inline help-icon.  Saved as an attribute so
+        # dynamically-shown buttons (like the Parametric graph button)
+        # can pack themselves BEFORE it and land in the right slot.
         units_row = ctk.CTkFrame(parent, fg_color="transparent")
+        self._sidebar_units_row = units_row
         units_row.pack(fill="x", pady=(theme.PAD_L, theme.PAD_XS))
         ctk.CTkLabel(units_row, text=i18n.t("action.units"),
                      font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold"),
@@ -153,6 +165,10 @@ class SteadyResultsPage(ctk.CTkFrame):
         self._unit_system = "SI"
         if self._unit_buttons:
             results_utils.refresh_unit_buttons(self._unit_buttons, self._unit_system)
+        # Hide the Parametric graph button until a parametric result
+        # is loaded again.
+        if hasattr(self, "_parametric_btn") and self._parametric_btn.winfo_ismapped():
+            self._parametric_btn.pack_forget()
         self._set_status("")
 
     # ===================================================================
@@ -203,7 +219,8 @@ class SteadyResultsPage(ctk.CTkFrame):
                 },
             )
         param = self._result_dict.get("parametric_results")
-        if isinstance(param, dict):
+        is_parametric = isinstance(param, dict)
+        if is_parametric:
             combos = param.get("combinations") or []
             self._render_dict_section(
                 self._outputs_scroll, "Parametric study summary",
@@ -214,6 +231,21 @@ class SteadyResultsPage(ctk.CTkFrame):
                     ),
                 },
             )
+
+        # Show / hide the Parametric graph button depending on whether
+        # this run is a parametric study.  pack_forget when non-parametric
+        # so the button vanishes cleanly; pack when it is.
+        if is_parametric:
+            if not self._parametric_btn.winfo_ismapped():
+                # Pack BEFORE the units row so it lands right under the
+                # "Show graphs..." button instead of at the bottom.
+                self._parametric_btn.pack(
+                    pady=theme.PAD_XS,
+                    before=self._sidebar_units_row,
+                )
+        else:
+            if self._parametric_btn.winfo_ismapped():
+                self._parametric_btn.pack_forget()
 
     def _render_dict_section(self, parent, title: str, d: dict) -> None:
         """A titled section with a two-column label:value grid."""
@@ -346,8 +378,8 @@ class SteadyResultsPage(ctk.CTkFrame):
         if not isinstance(fd, dict) or not fd.get("time"):
             messagebox.showinfo(
                 "No time-series available",
-                "This simulation type (probably hotfire) doesn't produce a "
-                "trajectory time series — nothing to plot.",
+                "This simulation type doesn't produce a "
+                "trajectory time series. Nothing to plot.",
             )
             return
         # (pretty_label, wire_key, default_checked)
@@ -411,6 +443,247 @@ class SteadyResultsPage(ctk.CTkFrame):
         # them slip behind the main UI during initial paint).
         plt.show(block=False)
         lift_all_figures()
+
+    # ===================================================================
+    # Parametric graph
+    # ===================================================================
+
+    # Output wire keys we consider "common" / most likely to be plotted.
+    # These bubble to the top of the output-variable dropdown.  Any other
+    # output variable falls into the second group.
+    _COMMON_OUTPUT_WIRES = (
+        "Isp",
+        "average_oxidizer_to_fuel_ratio",
+        "burntime",
+        "thrust",
+        "total_impulse",
+        "thrust_to_weight_ratio",
+    )
+
+    def _on_open_parametric_dialog(self) -> None:
+        """Open the modal for building 2D / 3D parametric graphs."""
+        if self._result_dict is None:
+            messagebox.showinfo("No results", "No results loaded.")
+            return
+        param = self._result_dict.get("parametric_results")
+        if not isinstance(param, dict):
+            messagebox.showinfo(
+                "Not a parametric run",
+                "This isn't a parametric-study result, so there's nothing "
+                "to plot.",
+            )
+            return
+
+        # Lazy imports so cold startup isn't slowed by matplotlib.
+        from src.backend.steady.parametric_plots import (
+            swept_variables, available_output_variables,
+        )
+        from src.ui.app.services.pretty_names import get_field_info
+        from src.ui.app.widgets.parametric_graph_dialog import (
+            ParametricGraphDialog,
+        )
+
+        swept_wire = swept_variables(param)
+        if not swept_wire:
+            messagebox.showinfo(
+                "No swept variables",
+                "The parametric result doesn't list any swept variables.",
+            )
+            return
+
+        output_wire = available_output_variables(param)
+        if not output_wire:
+            messagebox.showinfo(
+                "No output variables",
+                "The parametric result doesn't contain any output values.",
+            )
+            return
+
+        def _pretty(wire: str) -> str:
+            try:
+                pretty, _kind, _si = get_field_info(wire)
+                return pretty or wire
+            except Exception:
+                return wire
+
+        swept_pairs = [(_pretty(w), w) for w in swept_wire]
+
+        # Split output vars into the two dropdown groups, preserving the
+        # order defined in _COMMON_OUTPUT_WIRES for the top group.
+        common_wires = [w for w in self._COMMON_OUTPUT_WIRES if w in output_wire]
+        other_wires  = [w for w in output_wire if w not in self._COMMON_OUTPUT_WIRES]
+        output_var_groups = [
+            ("Common outputs",    [(_pretty(w), w) for w in common_wires]),
+            ("All other outputs", [(_pretty(w), w) for w in other_wires]),
+        ]
+
+        # Build the hold picker's per-var data: for each swept variable,
+        # a list of (display_string, si_value) pairs drawn from the actual
+        # grid the sim ran on, formatted in the current unit system.
+        from src.ui.app.services.pretty_names import (
+            unit_for_system, format_unit_label,
+        )
+        from src.ui.app import display as display_mod
+        variable_ranges = param.get("variable_ranges") or {}
+        system = self._unit_system
+
+        def _format_grid_value(v):
+            if isinstance(v, float) and v == int(v) and abs(v) < 1e15:
+                return str(int(v))
+            try:
+                return f"{float(v):.6g}"
+            except Exception:
+                return str(v)
+
+        hold_value_options: dict[str, list] = {}
+        hold_unit_labels:   dict[str, str]  = {}
+        for wire in swept_wire:
+            raw_values = list(variable_ranges.get(wire) or [])
+            try:
+                _p, kind, si_unit = get_field_info(wire)
+            except Exception:
+                kind, si_unit = None, None
+            if kind and si_unit:
+                target = unit_for_system(wire, kind, system)
+                hold_unit_labels[wire] = format_unit_label(target)
+                pairs = []
+                for raw in raw_values:
+                    try:
+                        display_val = display_mod.convert(
+                            float(raw), si_unit, target, kind,
+                        )
+                    except Exception:
+                        display_val = raw
+                    pairs.append((_format_grid_value(display_val), float(raw)))
+                hold_value_options[wire] = pairs
+            else:
+                # Unitless swept var — display raw values, no unit label.
+                hold_unit_labels[wire] = ""
+                hold_value_options[wire] = [
+                    (_format_grid_value(v), float(v)) for v in raw_values
+                ]
+
+        ParametricGraphDialog(
+            self,
+            swept_vars=swept_pairs,
+            output_var_groups=output_var_groups,
+            default_output="Isp",
+            hold_value_options=hold_value_options,
+            hold_unit_labels=hold_unit_labels,
+            on_confirm=self._render_parametric_graphs,
+        )
+
+    def _render_parametric_graphs(self, spec_2d, spec_3d) -> None:
+        """Callback from the parametric dialog.  Opens each requested
+        graph in its own matplotlib window (with values + axis labels
+        converted into the results page's current SI/IMP/MRT system)
+        and lifts them to the front."""
+        if spec_2d is None and spec_3d is None:
+            return
+        param = (self._result_dict or {}).get("parametric_results") or {}
+        if not param:
+            return
+
+        from src.backend.steady.parametric_plots import (
+            plot_parametric_2d, plot_parametric_3d,
+        )
+        from src.ui.app.services.pretty_names import (
+            get_field_info, unit_for_system, format_unit_label,
+        )
+        from src.ui.app import display as display_mod
+        from src.ui.app.services.mpl_bringup import lift_all_figures
+
+        system = self._unit_system
+
+        def _axis_info(wire: str):
+            """Return (labeled_axis_string, transform_callable) for a
+            given wire key, honouring the current unit system.
+            Transform is identity when the field is unitless."""
+            try:
+                pretty, kind, si_unit = get_field_info(wire)
+            except Exception:
+                return (wire, lambda v: v)
+            pretty = pretty or wire
+            if not kind or not si_unit:
+                return (pretty, lambda v: v)
+            target = unit_for_system(wire, kind, system)
+            unit_display = format_unit_label(target)
+            label = f"{pretty} ({unit_display})"
+            if target == si_unit:
+                return (label, lambda v: v)
+            def _fn(v, _kind=kind, _si=si_unit, _t=target):
+                try:
+                    return display_mod.convert(float(v), _si, _t, _kind)
+                except Exception:
+                    return v
+            return (label, _fn)
+
+        def _hold_label(wire: str, si_value) -> str:
+            """Format a held value with pretty name + display unit."""
+            try:
+                pretty, kind, si_unit = get_field_info(wire)
+            except Exception:
+                return f"{wire} = {si_value}"
+            pretty = pretty or wire
+            if not kind or not si_unit:
+                return f"{pretty} = {si_value}"
+            target = unit_for_system(wire, kind, system)
+            unit_display = format_unit_label(target)
+            try:
+                display_val = display_mod.convert(
+                    float(si_value), si_unit, target, kind,
+                )
+            except Exception:
+                display_val = si_value
+            if isinstance(display_val, float) and display_val == int(display_val):
+                num_str = str(int(display_val))
+            else:
+                try:
+                    num_str = f"{float(display_val):.6g}"
+                except Exception:
+                    num_str = str(display_val)
+            return f"{pretty} = {num_str} {unit_display}"
+
+        errors = []
+        if spec_2d is not None:
+            x_lbl, x_tf = _axis_info(spec_2d["x"])
+            y_lbl, y_tf = _axis_info(spec_2d["y"])
+            try:
+                plot_parametric_2d(
+                    param,
+                    x_var=spec_2d["x"], y_var=spec_2d["y"],
+                    holds=spec_2d.get("holds") or None,
+                    x_label=x_lbl, y_label=y_lbl,
+                    x_transform=x_tf, y_transform=y_tf,
+                    hold_label_fn=_hold_label,
+                )
+            except Exception as exc:
+                errors.append(f"2D plot: {type(exc).__name__}: {exc}")
+
+        if spec_3d is not None:
+            x_lbl, x_tf = _axis_info(spec_3d["x"])
+            y_lbl, y_tf = _axis_info(spec_3d["y"])
+            z_lbl, z_tf = _axis_info(spec_3d["z"])
+            try:
+                plot_parametric_3d(
+                    param,
+                    x_var=spec_3d["x"], y_var=spec_3d["y"],
+                    z_var=spec_3d["z"],
+                    holds=spec_3d.get("holds") or None,
+                    x_label=x_lbl, y_label=y_lbl, z_label=z_lbl,
+                    x_transform=x_tf, y_transform=y_tf, z_transform=z_tf,
+                    hold_label_fn=_hold_label,
+                )
+            except Exception as exc:
+                errors.append(f"3D plot: {type(exc).__name__}: {exc}")
+
+        lift_all_figures()
+
+        if errors:
+            messagebox.showerror(
+                "Couldn't build one or more graphs",
+                "\n".join(errors),
+            )
 
     # ===================================================================
     # Utilities

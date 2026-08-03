@@ -48,34 +48,44 @@ def show_simulation_error(
 
     win = ctk.CTkToplevel(parent)
     win.title("Simulation error")
-    win.geometry("480x230")
+    win.geometry("480x280")
     win.transient(shell)
     win.grab_set()
     win.resizable(False, False)
 
+    # Pack the buttons FIRST at the bottom of the window so they stay
+    # visible no matter how tall the exception-message textbox above
+    # them grows.
+    actions = ctk.CTkFrame(win, fg_color="transparent")
+    actions.pack(side="bottom", pady=(0, theme.PAD_M))
+
+    # Top-down: title, subtitle, then the scrollable exception details.
     ctk.CTkLabel(
         win, text="Error during simulation",
         font=ctk.CTkFont(size=theme.SIZE_H1, weight="bold"),
         text_color=theme.MRT_RED_THEMED,
-    ).pack(pady=(theme.PAD_L, theme.PAD_S))
+    ).pack(side="top", pady=(theme.PAD_L, theme.PAD_S))
 
     ctk.CTkLabel(
         win,
         text="Please verify all your inputs are correct, and run again.",
         font=ctk.CTkFont(size=theme.SIZE_BODY),
         wraplength=420, justify="center",
-    ).pack(pady=(0, theme.PAD_M), padx=theme.PAD_M)
+    ).pack(side="top", pady=(0, theme.PAD_M), padx=theme.PAD_M)
 
-    ctk.CTkLabel(
-        win,
-        text=f"{type(exc).__name__}: {exc}",
-        text_color=theme.TEXT_MUTED,
+    # Scrollable read-only textbox for the exception message.  Fixed
+    # height keeps the dialog compact; anything longer than that
+    # scrolls internally instead of pushing the buttons out of view.
+    err_box = ctk.CTkTextbox(
+        win, wrap="word", height=80,
         font=ctk.CTkFont(family="Consolas", size=theme.SIZE_SMALL),
-        wraplength=420, justify="center",
-    ).pack(pady=(0, theme.PAD_L), padx=theme.PAD_M)
-
-    actions = ctk.CTkFrame(win, fg_color="transparent")
-    actions.pack(pady=(0, theme.PAD_M))
+        fg_color=("gray92", "gray17"),
+        text_color=theme.TEXT_MUTED,
+    )
+    err_box.pack(side="top", fill="x",
+                 padx=theme.PAD_M, pady=(0, theme.PAD_M))
+    err_box.insert("0.0", f"{type(exc).__name__}: {exc}")
+    err_box.configure(state="disabled")
 
     def go_back():
         win.destroy()

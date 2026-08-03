@@ -5,6 +5,8 @@ __pycache__/
 # Per-user UI settings (each developer/operator has their own).
 # The committed baseline lives in user_data/default_ui_settings.json.
 user_data/ui_settings.json
+user_data/simulation_configs
+user_data/simulation_results
 
 # PyInstaller build artifacts
 build/

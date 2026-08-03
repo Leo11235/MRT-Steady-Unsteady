@@ -27,6 +27,16 @@ PARAMETRIZABLE_VARS: tuple[str, ...] = tuple(display_mod.PARAM_VAR_DISPLAY.keys(
 # Row
 # --------------------------------------------------------------------------
 
+def _format_number(v: float) -> str:
+    """Pretty float→string used when the unit dropdown converts entry
+    values in place.  Integers stay integers, floats get up to 6 sig
+    figures then trailing-zero-trimmed."""
+    if v == int(v) and abs(v) < 1e15:
+        return str(int(v))
+    s = f"{v:.6g}"
+    return s
+
+
 class _ParamRow(ctk.CTkFrame):
     """One {low, high, step} row inside a ParametricList."""
 
@@ -36,11 +46,25 @@ class _ParamRow(ctk.CTkFrame):
         self.var_name = var_name             # wire form (snake_case)
         self._on_remove = on_remove
 
+        # Unit-kind lookup determines whether this row gets a unit
+        # dropdown at all.  Fields like drag_coefficient (dimensionless)
+        # have no kind and render without one.
+        self._kind = display_mod.field_kind(var_name)
+        if self._kind and self._kind in display_mod.UNIT_KINDS:
+            self._internal_unit = display_mod.UNIT_KINDS[self._kind]["internal"]
+            self._unit_options  = list(
+                display_mod.UNIT_KINDS[self._kind]["options"]
+            )
+        else:
+            self._internal_unit = None
+            self._unit_options  = []
+        self._current_unit = self._internal_unit  # entries interpreted in this
+
         self.low_var  = ctk.StringVar()
         self.high_var = ctk.StringVar()
         self.step_var = ctk.StringVar()
 
-        # ---- header: pretty variable name + remove button --------------
+        # ---- header: pretty variable name + unit dropdown + remove ----
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.pack(fill="x", padx=theme.PAD_S, pady=(theme.PAD_S, 2))
 
@@ -50,6 +74,22 @@ class _ParamRow(ctk.CTkFrame):
             anchor="w",
             font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold"),
         ).pack(side="left")
+
+        # Unit dropdown lives immediately to the right of the label.
+        # Values in low/high/step are interpreted in whatever unit is
+        # currently selected here; to_dict() converts them back to the
+        # internal SI unit so the backend gets consistent numbers.
+        self._unit_var = None
+        if self._unit_options:
+            self._unit_var = ctk.StringVar(value=self._internal_unit)
+            ctk.CTkOptionMenu(
+                header,
+                variable=self._unit_var,
+                values=self._unit_options,
+                command=self._on_unit_change,
+                dynamic_resizing=False,
+                width=80,
+            ).pack(side="left", padx=(theme.PAD_S, 0))
 
         ctk.CTkButton(
             header, text="✕", width=24, height=24, corner_radius=12,
@@ -75,16 +115,62 @@ class _ParamRow(ctk.CTkFrame):
         _input("High end",  self.high_var)
         _input("Step size", self.step_var)
 
+    # ------------------------------------------------------------------
+    # Unit conversion
+    # ------------------------------------------------------------------
+
+    def _on_unit_change(self, new_unit: str) -> None:
+        """Convert every entry from the old selected unit to the new one
+        so the user sees consistent numbers when they change the unit."""
+        if not self._kind:
+            return
+        old_unit = self._current_unit
+        if old_unit == new_unit:
+            return
+        internal = self._internal_unit
+        for var in (self.low_var, self.high_var, self.step_var):
+            raw = var.get().strip()
+            if raw == "":
+                continue
+            try:
+                v = float(raw)
+            except ValueError:
+                continue
+            try:
+                v_internal = display_mod.to_internal(v, old_unit, internal)
+                v_new      = display_mod.from_internal(v_internal, internal, new_unit)
+            except Exception:
+                continue
+            var.set(_format_number(v_new))
+        self._current_unit = new_unit
+
+    # ------------------------------------------------------------------
+    # Round-trip
+    # ------------------------------------------------------------------
+
     def to_dict(self) -> dict:
+        """Convert whatever's in the entries (interpreted in the current
+        unit) to the internal SI unit so the backend gets a canonical
+        number regardless of what the user picked in the dropdown."""
+        internal = self._internal_unit
+        current  = self._current_unit
+        kind     = self._kind
+
         def num(s: str):
             s = s.strip()
             if s == "":
                 return None
             try:
                 v = float(s)
-                return int(v) if v.is_integer() else v
             except ValueError:
                 return s
+            if kind and internal and current and current != internal:
+                try:
+                    v = display_mod.to_internal(v, current, internal)
+                except Exception:
+                    pass
+            return int(v) if float(v).is_integer() else v
+
         return {
             "low_end":   num(self.low_var.get()),
             "high_end":  num(self.high_var.get()),
@@ -92,6 +178,11 @@ class _ParamRow(ctk.CTkFrame):
         }
 
     def from_dict(self, spec: dict) -> None:
+        """Loaded values live in the internal SI unit.  Snap the
+        dropdown back to internal and drop the values straight in."""
+        if self._unit_var is not None and self._internal_unit is not None:
+            self._current_unit = self._internal_unit
+            self._unit_var.set(self._internal_unit)
         self.low_var.set("" if spec.get("low_end")   is None else str(spec["low_end"]))
         self.high_var.set("" if spec.get("high_end")  is None else str(spec["high_end"]))
         self.step_var.set("" if spec.get("step_size") is None else str(spec["step_size"]))
