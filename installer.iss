@@ -28,7 +28,10 @@
 
 #define AppName             "MRT-Steady-Unsteady"
 #define AppDisplayName      "MRT Steady-Unsteady Simulator"
-#define AppVersion          "1.1.1"
+; Version is read from the top-level VERSION file so the installer,
+; the Python UI, and the Windows Add/Remove entry never drift apart.
+; Bump the version by editing that one file (single-line, e.g. "1.4").
+#define AppVersion          Trim(FileRead(FileOpen(SourcePath + "VERSION")))
 #define AppPublisher        "McGill Rocket Team"
 #define AppURL              "https://github.com/Leo11235/MRT-Steady-Unsteady"
 #define AppExeName          "MRT-Steady-Unsteady.exe"

@@ -96,6 +96,14 @@ seed_tuples = [
     for f in seed_files if f.exists()
 ]
 
+# Ship the top-level VERSION file at the root of the bundle so
+# version.py can read it in a frozen build (falls back to unknown
+# if it isn't present).
+version_file_tuples = []
+_version_file = project_root / "VERSION"
+if _version_file.exists():
+    version_file_tuples.append((str(_version_file), "."))
+
 datas = (
     customtkinter_data
     + coolprop_datas
@@ -104,6 +112,7 @@ datas = (
     + static_data_tuples
     + ui_assets_tuples
     + seed_tuples
+    + version_file_tuples
 )
 
 

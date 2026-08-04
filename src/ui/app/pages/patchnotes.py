@@ -26,9 +26,12 @@ PATCHNOTES: list[dict] = [
         "version": "1.4",
         "date":    "2026-08-02",
         "notes": [
-            "Improved bug reporting",
-            "Added \"Show in folder\" button for simulation results",
-            "Cleaned terminal screen printout in loading page",
+            "Improved bug reporting to collect more diagnostic information.",
+            "Added \"Show in folder\" button for simulation results.",
+            "Cleaned terminal screen printout in loading page.",
+            "Added steady parametric study graphing feature. You can now build 2D and 3D graphs from any parametric study.",
+            "Added parametric study input units for swept variables.",
+            "Error popup: long exception messages are now in a scrollable popup so Back/Report buttons always stay visible.",
             
             "Fixed various bugs (unsteady crash at fuel burnout while "
             "the tank still had liquid; sigmoid valve model rejecting "
@@ -44,15 +47,12 @@ PATCHNOTES: list[dict] = [
         "version": "1.3",
         "date":    "2026-07-27",
         "notes": [
-            "Added this patchnotes page. Click the version chip on the "
-            "home screen at any time to see what changed in each release.",
-            
             "Inputs now use diameters instead of radii and areas across "
-            "the whole program",
+            "the whole program.",
             
-            "Every unsteady physics model dropdown now shows a short description of the model",
+            "Every unsteady physics model dropdown now shows a short description of the model.",
             
-            "Added hover tooltips everywhere",
+            "Added hover tooltips everywhere.",
         ],
     },
     {
