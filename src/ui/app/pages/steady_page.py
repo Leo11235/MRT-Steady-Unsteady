@@ -80,6 +80,9 @@ class SteadyPage(ctk.CTkFrame):
         )
         self.save_data_var = ctk.BooleanVar(value=True)
         self.sim_name_var = ctk.StringVar(value="")
+        # Description is multi-line; backed by a CTkTextbox created in
+        # _build_sim_tab.  Nothing else touches this before then.
+        self._desc_widget = None
 
         # Preset tracking: when the user has loaded (or just saved) a preset,
         # we remember which file it was and what the config dict looked like
@@ -94,9 +97,12 @@ class SteadyPage(ctk.CTkFrame):
 
         # "Auto-save inputs as new preset" — when on, every Run also stamps
         # out a properly-named preset file rather than a temp one.  Default
-        # ON so runs are traceable out of the box; user can uncheck it if
-        # they're iterating rapidly and don't want the files.
-        self.auto_save_var = ctk.BooleanVar(value=True)
+        # Initial state pulled from settings — user can flip the default
+        # in Settings > Presets, or toggle per-run via the checkbox on
+        # this page.
+        self.auto_save_var = ctk.BooleanVar(
+            value=bool(user_settings.get("default_auto_save_inputs", True))
+        )
 
         # Visibility-control state
         self._rocket_body_fields: list[str] = []  # keys whose widgets sit on Rocket Body tab
@@ -174,6 +180,19 @@ class SteadyPage(ctk.CTkFrame):
         ctk.CTkEntry(row, textvariable=self.sim_name_var,
                      placeholder_text=i18n.t("label.sim_name_placeholder")) \
             .pack(side="left", fill="x", expand=True)
+
+        # Description — multi-line, optional.  ~5 visible lines with
+        # internal scrollbar.  Handy for test configs to describe what
+        # they're actually exercising.
+        desc_row = ctk.CTkFrame(wrap, fg_color="transparent")
+        desc_row.pack(fill="x", pady=theme.PAD_XS)
+        ctk.CTkLabel(desc_row, text="Description", width=220,
+                     anchor="nw").pack(side="left",
+                                       padx=(0, theme.PAD_S),
+                                       anchor="n")
+        self._desc_widget = ctk.CTkTextbox(desc_row, wrap="word",
+                                           height=110)
+        self._desc_widget.pack(side="left", fill="x", expand=True)
 
         # Simulation type — pretty display, wire-form storage
         row = ctk.CTkFrame(wrap, fg_color="transparent")
@@ -604,6 +623,9 @@ class SteadyPage(ctk.CTkFrame):
             sim_settings["parametric_study_settings"] = self.parametric_list.to_dict()
         if self.sim_name_var.get().strip():
             sim_settings["simulation_name"] = self.sim_name_var.get().strip()
+        # Description is always serialized (even when empty) so the
+        # schema stays stable across configs.
+        sim_settings["description"] = self._desc_text().rstrip()
 
         rocket_inputs: dict = {}
         parametrized = (
@@ -660,6 +682,7 @@ class SteadyPage(ctk.CTkFrame):
             self.save_data_var.set(bool(sim["save_output_data"]))
         if "simulation_name" in sim:
             self.sim_name_var.set(str(sim["simulation_name"]))
+        self._set_desc_text(str(sim.get("description", "") or ""))
 
         ps = sim.get("parametric_study_settings", {}) or {}
         self.parametric_list.from_dict(ps)
@@ -790,6 +813,33 @@ class SteadyPage(ctk.CTkFrame):
             )
             return
 
+        # Preflight input-range checks (steady side is a no-op stub
+        # for now; kept symmetric with unsteady so the wiring is ready
+        # when steady range checks land).
+        try:
+            from src.backend.common.preflight import preflight_steady
+            warnings = preflight_steady(cfg.get("rocket_inputs") or {})
+        except Exception:
+            warnings = {}
+
+        if warnings:
+            from src.ui.app.widgets.preflight_warning_dialog import (
+                PreflightWarningDialog,
+            )
+            PreflightWarningDialog(
+                self,
+                warnings=warnings,
+                on_proceed=lambda: self._launch_sim(cfg),
+                on_cancel=lambda: None,
+            )
+            return
+
+        self._launch_sim(cfg)
+
+    def _launch_sim(self, cfg: dict) -> None:
+        """Everything from 'preflight passed' to 'worker thread kicked
+        off' — kept separate so the preflight modal's Run-anyway
+        callback can call it directly."""
         # Ask the preset manager which file the backend should read.
         config_file_path, path_source = self._presets.pick_path_for_run(
             cfg,
@@ -929,14 +979,35 @@ class SteadyPage(ctk.CTkFrame):
     # Utilities
     # ===================================================================
 
+    def _desc_text(self) -> str:
+        """Current contents of the description textbox (safe before
+        _build_sim_tab runs — returns empty)."""
+        if self._desc_widget is None:
+            return ""
+        try:
+            return self._desc_widget.get("0.0", "end").rstrip("\n")
+        except Exception:
+            return ""
+
+    def _set_desc_text(self, text: str) -> None:
+        """Replace the description textbox contents."""
+        if self._desc_widget is None:
+            return
+        try:
+            self._desc_widget.delete("0.0", "end")
+            if text:
+                self._desc_widget.insert("0.0", text)
+        except Exception:
+            pass
+
     def _default_save_name(self, cfg: dict) -> str:
         sim = cfg.get("simulation_settings", {}) or {}
         ri  = cfg.get("rocket_inputs", {}) or {}
         name = sim.get("simulation_name") or ri.get("rocket_name")
         if name:
             safe = "_".join(str(name).split()).replace("/", "_").replace("\\", "_")
-            return f"steady_{safe}.jsonc"
-        return f"steady_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.jsonc"
+            return f"{safe}.jsonc"
+        return f"{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.jsonc"
 
     def _highlight_invalid_fields(self, cfg: dict) -> None:
         ri = cfg.get("rocket_inputs", {}) or {}
@@ -947,7 +1018,9 @@ class SteadyPage(ctk.CTkFrame):
         if sim_type in ("fuel_mass_convergence", "parametric_study"):
             required += list(backend_bridge.STEADY_KINEMATICS_REQUIRED)
         if sim_type == "hotfire":
-            if not ri.get("initial_internal_fuel_diameter") and not ri.get("fuel_mass"):
+            # Truthiness-safe: 0 shouldn't count as "missing".
+            if (ri.get("initial_internal_fuel_diameter") in (None, "")
+                    and ri.get("fuel_mass") in (None, "")):
                 required.append("initial_internal_fuel_diameter")
 
         parametrized = (
@@ -980,6 +1053,7 @@ class SteadyPage(ctk.CTkFrame):
         self.output_units_var.set(user_settings.get("default_output_units", "SI"))
         self.save_data_var.set(True)
         self.sim_name_var.set("")
+        self._set_desc_text("")
         # fields — clear ones that used to be blank; restore Advanced defaults
         for key, field in self.fields.items():
             if key in _ADVANCED_DEFAULTS:
@@ -992,9 +1066,11 @@ class SteadyPage(ctk.CTkFrame):
         # advanced section locked
         self._advanced_locked.set(True)
         self._apply_advanced_lock()
-        # preset tracking + auto-save
+        # preset tracking + auto-save (respect the current global default)
         self._presets.clear()
-        self.auto_save_var.set(True)
+        self.auto_save_var.set(
+            bool(user_settings.get("default_auto_save_inputs", True))
+        )
         # status
         self._set_status("")
         # visibility refresh (in case sim_type changed)

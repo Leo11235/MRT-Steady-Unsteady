@@ -44,6 +44,7 @@ from src.ui.app.services import recent_presets
 _DEFAULT_METADATA = {
     "simulation_type": "unsteady",
     "simulation_name": "",
+    "description":     "",
     "warnings":        True,
     "save_to_pdf":     True,
     "save_to_png":     False,
@@ -418,6 +419,9 @@ class UnsteadyPage(ctk.CTkFrame):
 
         # Metadata vars
         self.sim_name_var = ctk.StringVar(value=_DEFAULT_METADATA["simulation_name"])
+        # Description is multi-line; we back it with a CTkTextbox
+        # (created in _build_sim_tab), not a StringVar.
+        self._desc_widget = None
         self.output_units_var = ctk.StringVar(
             value=user_settings.get("default_output_units", "SI"),
         )
@@ -432,7 +436,11 @@ class UnsteadyPage(ctk.CTkFrame):
             presets_dir_fn=backend_bridge.unsteady_presets_dir,
             save_fn=backend_bridge.save_jsonc,
         )
-        self.auto_save_var = ctk.BooleanVar(value=True)
+        # Initial state pulled from settings — user can flip the default
+        # in Settings > Presets.
+        self.auto_save_var = ctk.BooleanVar(
+            value=bool(user_settings.get("default_auto_save_inputs", True))
+        )
 
         # Chamber's Advanced-section lock (🔒 by default)
         self._advanced_locked = ctk.BooleanVar(value=True)
@@ -524,6 +532,26 @@ class UnsteadyPage(ctk.CTkFrame):
         _sim_name_entry.pack(side="left", fill="x", expand=True)
         Tooltip(_sim_name_label, _sim_name_help)
         Tooltip(_sim_name_entry, _sim_name_help)
+
+        # Description — multi-line, optional.  Handy for annotating
+        # test configs ("this run tightens ullage to check tank stall").
+        # Backed by a CTkTextbox (5 visible lines, internal scrollbar).
+        _desc_help = ("Optional free-text notes about this run. Useful "
+                      "for test cases or unusual configurations. Stored "
+                      "in the results file's metadata.")
+        desc_row = ctk.CTkFrame(wrap, fg_color="transparent")
+        desc_row.pack(fill="x", pady=theme.PAD_XS)
+        _desc_label = ctk.CTkLabel(
+            desc_row, text="Description", width=220, anchor="nw",
+        )
+        _desc_label.pack(side="left", padx=(0, theme.PAD_S),
+                         anchor="n")
+        # ~5 visible lines at SIZE_BODY font, scrollbar for anything longer.
+        self._desc_widget = ctk.CTkTextbox(
+            desc_row, wrap="word", height=110,
+        )
+        self._desc_widget.pack(side="left", fill="x", expand=True)
+        Tooltip(_desc_label, _desc_help)
 
         # (Output-units dropdown removed — the SI/IMP/MRT toggle on the
         # results-page sidebar covers this use case.  output_units is
@@ -747,6 +775,9 @@ class UnsteadyPage(ctk.CTkFrame):
         # metadata
         metadata = dict(_DEFAULT_METADATA)
         metadata["simulation_name"] = self.sim_name_var.get().strip()
+        # Description is a multi-line optional textbox.  Always serialise
+        # (even when empty) so the schema stays stable across configs.
+        metadata["description"] = self._desc_text().rstrip()
         metadata["warnings"]    = bool(self.warnings_var.get())
         metadata["save_to_pdf"] = bool(self.save_pdf_var.get())
         metadata["save_to_png"] = bool(self.save_png_var.get())
@@ -807,6 +838,7 @@ class UnsteadyPage(ctk.CTkFrame):
 
         # metadata
         self.sim_name_var.set(str(meta.get("simulation_name", "")))
+        self._set_desc_text(str(meta.get("description", "") or ""))
         if "warnings"    in meta: self.warnings_var.set(bool(meta["warnings"]))
         if "save_to_pdf" in meta: self.save_pdf_var.set(bool(meta["save_to_pdf"]))
         if "save_to_png" in meta: self.save_png_var.set(bool(meta["save_to_png"]))
@@ -1013,6 +1045,35 @@ class UnsteadyPage(ctk.CTkFrame):
             )
             return
 
+        # Preflight input-range checks.  Uses the same normalizer +
+        # warn_initialization_limits the backend runs at load time, but
+        # gives the user a chance to bail before the sim starts.
+        try:
+            from src.backend.common.preflight import preflight_unsteady
+            warnings = preflight_unsteady(cfg.get("rocket_inputs") or {})
+        except Exception:
+            # Preflight failure is never fatal — if the check itself
+            # blows up we just skip it and hand off to the backend.
+            warnings = {}
+
+        if warnings:
+            from src.ui.app.widgets.preflight_warning_dialog import (
+                PreflightWarningDialog,
+            )
+            PreflightWarningDialog(
+                self,
+                warnings=warnings,
+                on_proceed=lambda: self._launch_sim(cfg),
+                on_cancel=lambda: None,
+            )
+            return
+
+        self._launch_sim(cfg)
+
+    def _launch_sim(self, cfg: dict) -> None:
+        """Everything from 'preflight passed' to 'worker thread kicked
+        off' — kept separate so the preflight modal's Run-anyway
+        callback can call it directly."""
         config_file_path, path_source = self._presets.pick_path_for_run(
             cfg,
             default_name=self._default_save_name(cfg),
@@ -1070,14 +1131,35 @@ class UnsteadyPage(ctk.CTkFrame):
     # Utilities
     # ===================================================================
 
+    def _desc_text(self) -> str:
+        """Current contents of the description textbox (safe to call
+        before _build_sim_tab has run — returns empty)."""
+        if self._desc_widget is None:
+            return ""
+        try:
+            return self._desc_widget.get("0.0", "end").rstrip("\n")
+        except Exception:
+            return ""
+
+    def _set_desc_text(self, text: str) -> None:
+        """Replace the description textbox contents."""
+        if self._desc_widget is None:
+            return
+        try:
+            self._desc_widget.delete("0.0", "end")
+            if text:
+                self._desc_widget.insert("0.0", text)
+        except Exception:
+            pass
+
     def _default_save_name(self, cfg: dict) -> str:
         ri = cfg.get("rocket_inputs", {}) or {}
         meta = ri.get("metadata", {}) or {}
         name = meta.get("simulation_name")
         if name:
             safe = "_".join(str(name).split()).replace("/", "_").replace("\\", "_")
-            return f"unsteady_{safe}.jsonc"
-        return f"unsteady_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.jsonc"
+            return f"{safe}.jsonc"
+        return f"{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.jsonc"
 
     def _set_status(self, text: str) -> None:
         self.status_label.configure(text=text)
@@ -1090,6 +1172,7 @@ class UnsteadyPage(ctk.CTkFrame):
         """Restore initial state (blank inputs + defaults for Advanced only)."""
         # metadata
         self.sim_name_var.set(_DEFAULT_METADATA["simulation_name"])
+        self._set_desc_text(_DEFAULT_METADATA["description"])
         self.output_units_var.set(user_settings.get("default_output_units", "SI"))
         self.warnings_var.set(_DEFAULT_METADATA["warnings"])
         self.save_pdf_var.set(_DEFAULT_METADATA["save_to_pdf"])
@@ -1104,9 +1187,11 @@ class UnsteadyPage(ctk.CTkFrame):
         # advanced lock re-engaged
         self._advanced_locked.set(True)
         self._apply_advanced_lock()
-        # preset tracking + auto-save
+        # preset tracking + auto-save (respect the current global default)
         self._presets.clear()
-        self.auto_save_var.set(True)
+        self.auto_save_var.set(
+            bool(user_settings.get("default_auto_save_inputs", True))
+        )
         # status
         self._set_status("")
         # reapply model-driven visibility (in case model changed)

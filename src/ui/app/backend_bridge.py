@@ -112,6 +112,26 @@ def _seed_frozen_writable_root(root: Path) -> None:
                 # Non-fatal — the app can still run without the seeds.
                 pass
 
+    # Also seed any bundled test configs so a fresh install has the
+    # test suite ready.  We just mirror any *.jsonc in the bundled
+    # tests folders into the writable ones.
+    for tests_rel in (
+        "user_data/simulation_configs/steady/tests",
+        "user_data/simulation_configs/unsteady/tests",
+    ):
+        src_tests = src_root / tests_rel
+        dst_tests = root / tests_rel
+        if not src_tests.is_dir():
+            continue
+        try:
+            dst_tests.mkdir(parents=True, exist_ok=True)
+            for src_f in src_tests.glob("*.jsonc"):
+                dst_f = dst_tests / src_f.name
+                if not dst_f.exists():
+                    shutil.copyfile(str(src_f), str(dst_f))
+        except Exception:
+            pass
+
 
 def project_root() -> Path:
     """WRITABLE root.  When frozen, returns the per-user data dir (and
@@ -163,6 +183,37 @@ def unsteady_results_dir() -> Path:
 # backend's dir into the writable %APPDATA% dir.  That way the UI's
 # downstream code always sees results where it expects them.
 
+# Canonical name for the per-run results JSON in the new layout.
+# The old backend wrote "sim_results.json"; we accept it as an alias
+# so runs produced before the rename still surface in the UI.
+_RUN_JSON_NAMES = ("sim_data.json", "sim_results.json")
+
+
+def _dir_run_json(sub: Path) -> Path | None:
+    """If `sub` is a new-layout run dir, return the path to its results
+    JSON (whichever of the accepted names is present).  None otherwise."""
+    for name in _RUN_JSON_NAMES:
+        p = sub / name
+        if p.exists():
+            return p
+    return None
+
+
+def _writable_run_handles(writable_dir: Path) -> set:
+    """Snapshot every run 'handle' (dir or file) currently in the
+    writable results dir.  Used by _reconcile_backend_output to detect
+    what's NEW after the sim finishes."""
+    snapshot: set = set()
+    if not writable_dir.exists():
+        return snapshot
+    for sub in writable_dir.iterdir():
+        if sub.is_dir() and _dir_run_json(sub) is not None:
+            snapshot.add(sub)
+        elif sub.is_file() and sub.suffix == ".json":
+            snapshot.add(sub)
+    return snapshot
+
+
 def _reconcile_backend_output(kind: str, before_writable: set) -> Path | None:
     """After the backend runs, find where the result JSON actually
     landed (either in the writable user_data or in the bundled
@@ -181,26 +232,51 @@ def _reconcile_backend_output(kind: str, before_writable: set) -> Path | None:
                     else steady_results_dir())
     writable_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Any new file in the writable dir? — happy path, source mode.
-    after_writable = set(writable_dir.glob("*.json"))
+    # 1. Any new run in the writable dir? — happy path, source mode.
+    #    Detects BOTH new-layout dirs (<name>/sim_data.json) and old-
+    #    layout files (<name>.json).
+    after_writable = _writable_run_handles(writable_dir)
     new_writable = sorted(after_writable - before_writable,
                           key=lambda p: p.stat().st_mtime, reverse=True)
     if new_writable:
         return new_writable[0]
 
     # 2. Frozen mode: the backend wrote inside _internal/user_data/...
-    #    Look for a fresh .json there and move it.
+    #    Look for anything fresh and move it into the writable dir.
     if _is_frozen():
         bundled_dir = (bundled_root() / "user_data" / "simulation_results"
                        / kind)
         if bundled_dir.exists():
+            import time
+            cutoff = time.time() - 120
+
+            # 2a. NEW LAYOUT: subdirectories containing the results JSON
+            #     (sim_data.json — or the legacy sim_results.json).
+            for sub in sorted(bundled_dir.iterdir(),
+                              key=lambda p: p.stat().st_mtime,
+                              reverse=True):
+                if not sub.is_dir():
+                    continue
+                if _dir_run_json(sub) is None:
+                    continue
+                if sub.stat().st_mtime < cutoff:
+                    continue
+                dst = writable_dir / sub.name
+                try:
+                    shutil.move(str(sub), str(dst))
+                    return dst
+                except Exception:
+                    try:
+                        shutil.copytree(str(sub), str(dst))
+                        return dst
+                    except Exception:
+                        pass
+
+            # 2b. OLD LAYOUT: bare .json files with an optional sibling
+            #     folder of the same stem.
             candidates = sorted(bundled_dir.glob("*.json"),
                                 key=lambda p: p.stat().st_mtime,
                                 reverse=True)
-            # Only files newer than ~120 s ago count as "just produced".
-            # (Prevents grabbing stale test fixtures on repeat runs.)
-            import time
-            cutoff = time.time() - 120
             for p in candidates:
                 if p.stat().st_mtime < cutoff:
                     break
@@ -257,22 +333,68 @@ def save_jsonc(path: Path, data: dict) -> None:
 # Unsteady — list & visualize saved results
 # =============================================================================
 
-def list_unsteady_results() -> list[Path]:
-    """All saved unsteady result JSONs, newest first."""
-    d = unsteady_results_dir()
-    if not d.exists():
+def _list_runs(base_dir: Path) -> list[Path]:
+    """Return every saved run inside `base_dir`, newest first.
+
+    Two supported layouts:
+      * New style: a directory named `<run_name>/` containing
+        `sim_data.json` (plus `graphs.pdf`, `graphs/*.png`, etc.).
+      * Old style: a bare `<run_name>.json` at the top level, optionally
+        with a sibling `<run_name>/` folder of PDFs/PNGs.
+
+    In both cases the returned Path IS the "handle" for that run —
+    directory for new style, JSON file for old style.  Downstream code
+    checks `path.is_dir()` when it needs to know which is which.
+    """
+    if not base_dir.exists():
         return []
-    return sorted(d.glob("*.json"), reverse=True)
+    entries: list[tuple[float, Path]] = []
+    seen: set[str] = set()
+    # New style: directories containing the results JSON (either
+    # canonical sim_data.json or the legacy sim_results.json name).
+    for sub in base_dir.iterdir():
+        if not sub.is_dir():
+            continue
+        if _dir_run_json(sub) is not None:
+            entries.append((sub.stat().st_mtime, sub))
+            seen.add(sub.name)
+    # Old style: bare *.json at the top level whose stem isn't already
+    # a new-style directory we picked up above.
+    for f in base_dir.glob("*.json"):
+        if f.stem in seen:
+            continue
+        entries.append((f.stat().st_mtime, f))
+    entries.sort(key=lambda t: t[0], reverse=True)
+    return [p for _, p in entries]
+
+
+def run_json_path(run_path: Path) -> Path:
+    """Given a run handle (directory in new layout, .json file in old),
+    return the path to the actual sim data JSON."""
+    if run_path.is_dir():
+        found = _dir_run_json(run_path)
+        # Fall back to the canonical name — caller likely raises a
+        # useful error downstream if the file truly doesn't exist.
+        return found if found is not None else run_path / "sim_data.json"
+    return run_path
+
+
+def run_display_name(run_path: Path) -> str:
+    """User-facing name for a run handle — directory name for new
+    layout, file stem for old."""
+    if run_path.is_dir():
+        return run_path.name
+    return run_path.stem
+
+
+def list_unsteady_results() -> list[Path]:
+    """All saved unsteady runs (new or old layout), newest first."""
+    return _list_runs(unsteady_results_dir())
 
 
 def list_steady_results() -> list[Path]:
-    """All saved steady result JSONs, newest first.  Filters out the
-    `_ui_run_*.jsonc` temp configs; keeps only the actual result JSONs
-    the simulator produces."""
-    d = steady_results_dir()
-    if not d.exists():
-        return []
-    return sorted(d.glob("*.json"), reverse=True)
+    """All saved steady runs (new or old layout), newest first."""
+    return _list_runs(steady_results_dir())
 
 
 def show_unsteady_results(results_file: Path) -> None:
@@ -379,8 +501,11 @@ def validate_steady_config(config: dict) -> list[str]:
     # fuel mass — the solver derives the missing one.
     # NOTE: the UI writes the DIAMETER key; the backend normalizer
     # converts it to the radius key the physics loop expects.
+    # Use `in (None, "")` (not `or`) so a legitimate 0 doesn't trip
+    # the falsy check — matches the pattern used in the base loop.
     if sim_type == "hotfire":
-        if not (ri.get("initial_internal_fuel_diameter") or ri.get("fuel_mass")):
+        if (ri.get("initial_internal_fuel_diameter") in (None, "")
+                and ri.get("fuel_mass") in (None, "")):
             errors.append("hotfire requires one of: "
                           "initial_internal_fuel_diameter, fuel_mass")
 
@@ -444,7 +569,7 @@ def run_steady(config: dict, config_file_path: Path | None = None) -> tuple[Path
     # 2. snapshot the WRITABLE results dir so we can spot the new file
     results = steady_results_dir()
     results.mkdir(parents=True, exist_ok=True)
-    before = set(results.glob("*.json"))
+    before = _writable_run_handles(results)
 
     try:
         # 3. invoke the simulator.
@@ -459,7 +584,7 @@ def run_steady(config: dict, config_file_path: Path | None = None) -> tuple[Path
             raise RuntimeError("Simulation ran but produced no result file")
 
         # 5. load & return
-        with open(result_path, "r", encoding="utf-8") as f:
+        with open(run_json_path(result_path), "r", encoding="utf-8") as f:
             results_dict = json.load(f)
         return result_path, results_dict
 
@@ -511,19 +636,24 @@ def validate_unsteady_config(config: dict) -> list[str]:
         if not block.get("model"):
             errors.append(f"{cv}: missing model")
 
-    # Tank: must have ONE of ullage_fraction / internal_length_m
+    # Tank: must have ONE of ullage_fraction / internal_length_m.
+    # Use `in (None, "")` (not `not X`) so a legit 0 doesn't trip the
+    # falsy check — matches the pattern used elsewhere.
     tank = cvs.get("CV1_tank") or {}
-    if (not tank.get("tank_ullage_fraction")
-            and not tank.get("tank_internal_length_m")):
+    if (tank.get("tank_ullage_fraction") in (None, "")
+            and tank.get("tank_internal_length_m") in (None, "")):
         errors.append("CV1_tank: provide one of "
                       "tank_ullage_fraction or tank_internal_length_m")
 
-    # Chamber: must have ONE of fuel_mass_kg / fuel_internal_radius_m
+    # Chamber: must have ONE of fuel_mass_kg / fuel_internal_diameter_m.
+    # NOTE: the UI writes the DIAMETER key ever since the v1.1.0 switch;
+    # checking for the old radius key here caused the alternate check
+    # to always think the diameter side was missing.
     chamber = cvs.get("CV4_chamber") or {}
-    if (not chamber.get("chamber_fuel_mass_kg")
-            and not chamber.get("chamber_fuel_internal_radius_m")):
+    if (chamber.get("chamber_fuel_mass_kg") in (None, "")
+            and chamber.get("chamber_fuel_internal_diameter_m") in (None, "")):
         errors.append("CV4_chamber: provide one of "
-                      "chamber_fuel_mass_kg or chamber_fuel_internal_radius_m")
+                      "chamber_fuel_mass_kg or chamber_fuel_internal_diameter_m")
 
     return errors
 
@@ -552,7 +682,7 @@ def run_unsteady(config: dict, config_file_path: Path | None = None) -> tuple[Pa
 
     results = unsteady_results_dir()
     results.mkdir(parents=True, exist_ok=True)
-    before = set(results.glob("*.json"))
+    before = _writable_run_handles(results)
 
     try:
         from src.backend.unsteady.engine.phase_runner import run_unsteady as _run_unsteady
@@ -564,7 +694,7 @@ def run_unsteady(config: dict, config_file_path: Path | None = None) -> tuple[Pa
         if result_path is None:
             raise RuntimeError("Simulation ran but produced no result file")
 
-        with open(result_path, "r", encoding="utf-8") as f:
+        with open(run_json_path(result_path), "r", encoding="utf-8") as f:
             results_dict = json.load(f)
         return result_path, results_dict
 

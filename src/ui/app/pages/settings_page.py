@@ -43,7 +43,11 @@ class SettingsPage(ctk.CTkFrame):
     # ---------------------------------------------------------------------
 
     def _build(self) -> None:
-        wrap = ctk.CTkFrame(self, fg_color="transparent")
+        # Scrollable so the whole page has a vertical scroll bar once
+        # content (Language, Units, Presets, Keybinds, Actions) exceeds
+        # the window height.  Same 70% width / 95% height layout as
+        # before — CTkScrollableFrame still accepts place().
+        wrap = ctk.CTkScrollableFrame(self, fg_color="transparent")
         wrap.place(relx=0.5, rely=0.05, anchor="n", relwidth=0.7, relheight=0.95)
 
         ctk.CTkLabel(
@@ -103,7 +107,35 @@ class SettingsPage(ctk.CTkFrame):
         ).pack(side="left", padx=(theme.PAD_M, 0))
 
         # =============================================================
-        # SECTION 3 — Keyboard shortcuts
+        # SECTION 3 — Presets
+        # =============================================================
+        ctk.CTkLabel(
+            wrap, text="Presets",
+            font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
+            anchor="w",
+        ).pack(fill="x", pady=(theme.PAD_L, theme.PAD_XS))
+        ctk.CTkFrame(wrap, height=1, fg_color=theme.DIVIDER) \
+            .pack(fill="x", pady=(0, theme.PAD_S))
+
+        # "Save rocket inputs by default" — controls the initial state
+        # of the auto-save checkbox on the Steady + Unsteady sim pages.
+        self._autosave_var = ctk.BooleanVar(value=True)
+        row = ctk.CTkFrame(wrap, fg_color="transparent")
+        row.pack(fill="x", pady=theme.PAD_XS)
+        ctk.CTkCheckBox(
+            row, text="Save rocket inputs by default",
+            variable=self._autosave_var,
+        ).pack(side="left")
+        ctk.CTkLabel(
+            row,
+            text="(controls whether the 'Auto-save inputs' checkbox on "
+                 "the sim pages starts ticked)",
+            text_color=theme.TEXT_FAINT,
+            font=ctk.CTkFont(size=theme.SIZE_SMALL, slant="italic"),
+        ).pack(side="left", padx=(theme.PAD_M, 0))
+
+        # =============================================================
+        # SECTION 4 — Keyboard shortcuts
         # =============================================================
         ctk.CTkLabel(
             wrap, text=i18n.t("settings.section.keybinds"),
@@ -198,6 +230,11 @@ class SettingsPage(ctk.CTkFrame):
             val = "SI"
         self._unit_var.set(val)
 
+        # Auto-save preset toggle — defaults to True if the key is
+        # missing so old settings files (pre-v1.5) still land in the
+        # sensible default state.
+        self._autosave_var.set(bool(s.get("default_auto_save_inputs", True)))
+
         lang = s.get("language", i18n.DEFAULT_LANGUAGE)
         if lang not in i18n.LANGUAGES:
             lang = i18n.DEFAULT_LANGUAGE
@@ -222,8 +259,9 @@ class SettingsPage(ctk.CTkFrame):
         display_to_wire = {v: k for k, v in i18n.LANGUAGE_DISPLAY.items()}
         lang = display_to_wire.get(self._lang_var.get(), i18n.DEFAULT_LANGUAGE)
         return {
-            "default_output_units": self._unit_var.get(),
-            "language":             lang,
+            "default_output_units":     self._unit_var.get(),
+            "default_auto_save_inputs": bool(self._autosave_var.get()),
+            "language":                 lang,
         }
 
     def _on_save(self) -> None:

@@ -44,7 +44,8 @@ def default_settings_path() -> Path:
 # =============================================================================
 
 _HARDCODED_DEFAULTS = {
-    "default_output_units": "SI",
+    "default_output_units":    "SI",
+    "default_auto_save_inputs": True,
 }
 
 

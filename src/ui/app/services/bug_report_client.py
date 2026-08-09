@@ -86,10 +86,33 @@ def submit_bug_report(
 
     # Split-out fields.  Only sent if populated; keeps empty rows out of
     # the email for manually-filed reports.
+    #
+    # Web3Forms free tier has a ~20 KB per-field limit; a long terminal
+    # blob (85k+ lines from an unsteady stall) blows through that and
+    # gets rejected outright.  Cap each large field at the tail so we
+    # keep the most recent output (where the failure is usually visible)
+    # and prepend a truncation notice.
     if diagnostics.strip():
-        payload["diagnostics"] = diagnostics
+        payload["diagnostics"] = _cap_field(diagnostics, max_lines=1000)
     if config_json.strip():
         payload["config_json"] = config_json
+
+
+_TRUNCATION_NOTICE = "[... {n} earlier lines truncated ...]\n"
+
+
+def _cap_field(text: str, *, max_lines: int) -> str:
+    """Trim `text` to at most `max_lines` lines, keeping the LAST ones
+    (where a failing sim's most useful output lives).  Prepends a note
+    saying how many lines were dropped."""
+    if not text:
+        return text
+    lines = text.splitlines()
+    if len(lines) <= max_lines:
+        return text
+    dropped = len(lines) - max_lines
+    kept    = lines[-max_lines:]
+    return _TRUNCATION_NOTICE.format(n=dropped) + "\n".join(kept)
 
     data = json.dumps(payload).encode("utf-8")
 

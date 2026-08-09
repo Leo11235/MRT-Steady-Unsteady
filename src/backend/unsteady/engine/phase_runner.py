@@ -25,6 +25,53 @@ from src.backend.unsteady.engine.warnings import (WARNINGS_REGISTRY, warn_initia
 import src.backend.unsteady.engine.rhs as rhs
 
 
+class SolverStalledError(RuntimeError):
+    """Raised by _StallDetector when solve_ivp advances less than
+    `min_dt_s` of sim time across `check_every` consecutive RHS
+    evaluations.  Typically means the operating point is physically
+    unstable (near-zero injector Δp, chuffing regime) and LSODA has
+    shrunk its step below any meaningful size."""
+
+
+class _StallDetector:
+    """Wraps a scipy RHS callable, counts evaluations, and raises
+    SolverStalledError when sim time isn't advancing.
+
+    Checks every `check_every` evals whether `t` moved forward by at
+    least `min_dt_s` since the previous check.  If not: bail.
+
+    Overhead is trivial — just an int increment on every eval plus a
+    subtraction once every `check_every`."""
+
+    def __init__(self, wrapped, check_every: int = 1000,
+                 min_dt_s: float = 1e-3) -> None:
+        self._wrapped     = wrapped
+        self._check_every = check_every
+        self._min_dt_s    = min_dt_s
+        self._eval_count      = 0
+        self._t_last_check    = None      # sim time seen at last checkpoint
+        self._eval_last_check = 0
+
+    def __call__(self, t, y, *args, **kwargs):
+        self._eval_count += 1
+        if self._eval_count - self._eval_last_check >= self._check_every:
+            if self._t_last_check is not None:
+                dt = t - self._t_last_check
+                if dt < self._min_dt_s:
+                    raise SolverStalledError(
+                        f"Solver stalled at t = {t:.6f} s: sim time advanced "
+                        f"only {dt*1000:.3f} ms across {self._check_every} "
+                        f"evaluations. This usually means the operating point "
+                        f"is physically unstable (chamber pressure very close "
+                        f"to tank pressure, so injector authority is near "
+                        f"zero). Try reducing the regression rate coefficient "
+                        f"or increasing the feed pressure loss."
+                    )
+            self._t_last_check    = t
+            self._eval_last_check = self._eval_count
+        return self._wrapped(t, y, *args, **kwargs)
+
+
 def run_unsteady(rocket_inputs_filename: str, rocket_inputs_filepath: str | Path = Path(f"{project_root}") / "user_data" / "simulation_configs" / "unsteady"):
     """
     The main function for running the unsteady simulation.
@@ -123,10 +170,22 @@ def run_unsteady(rocket_inputs_filename: str, rocket_inputs_filepath: str | Path
         cv_funcs = get_active_functions(rocket_inputs["CV_models"], active_phase)
         active_rhs = RHS_MAP[active_phase]
         active_events = TRANSITION_REGISTRY.get(active_phase, {}).get("events", [])
-        
+
         # Pull dynamic timeout from settings, fallback to 60.0 if not explicitly defined
         phase_timeout = sim_settings.get("phase_max_times", {}).get(active_phase, 60.0)
-        
+
+        # Wrap the RHS with a stall detector so an unstable operating
+        # point can't hang the sim forever.  Tunables live in
+        # sim_settings so they can be relaxed for very-slow-progress
+        # runs if needed.
+        _stall_check_every = sim_settings.get("solver", {}).get("stall_check_every", 1000)
+        _stall_min_dt_s    = sim_settings.get("solver", {}).get("stall_min_dt_s",    1e-3)
+        active_rhs = _StallDetector(
+            active_rhs,
+            check_every=_stall_check_every,
+            min_dt_s=_stall_min_dt_s,
+        )
+
         solution = solve_ivp(
             fun=active_rhs,
             t_span=(current_time, current_time + phase_timeout), 

@@ -254,11 +254,18 @@ class UnsteadyResultsPage(ctk.CTkFrame):
             self._render_dict_section(self._meta_scroll,
                                       "Rocket-inputs metadata", rocket_meta)
         if self._result_path is not None:
+            # For new-layout runs (directory) size is the sim_data.json's
+            # size, not the directory's own st_size.
+            _json_path = backend_bridge.run_json_path(self._result_path)
+            try:
+                _size = _json_path.stat().st_size / 1024
+                size_str = f"{_size:.1f}"
+            except OSError:
+                size_str = "?"
             self._render_dict_section(
                 self._meta_scroll, "File",
                 {"path": str(self._result_path),
-                 "size (KiB)": f"{self._result_path.stat().st_size / 1024:.1f}"
-                 if self._result_path.exists() else "?"},
+                 "size (KiB)": size_str},
             )
 
         # ------- Overall tab ----------------------------------------
@@ -576,9 +583,13 @@ class UnsteadyResultsPage(ctk.CTkFrame):
                 unsteady_results as _display,
             )
             from src.ui.app.services.mpl_bringup import lift_all_figures
+            # For new-layout runs the "file" the backend needs is
+            # <run_dir>/sim_data.json; for old-layout it's the JSON
+            # itself.  run_json_path() paves over the difference.
+            _json = backend_bridge.run_json_path(self._result_path)
             _display(
-                json_filename=self._result_path.name,
-                json_filepath=self._result_path.parent,
+                json_filename=_json.name,
+                json_filepath=_json.parent,
                 display_graphs=True,
                 **kwargs,
             )

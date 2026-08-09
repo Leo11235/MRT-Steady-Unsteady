@@ -49,7 +49,7 @@
                     // chamber: one of the following:
                 "chamber_fuel_mass_kg": 6.0,
                     // or:
-                "chamber_fuel_internal_diameter_m": 0.0      // was chamber_fuel_internal_radius_m: 0.0
+                "chamber_fuel_internal_diameter_m": ""      // was chamber_fuel_internal_radius_m: 0.0
             },
             "CV5_nozzle": {
                 "model": "1D_frozen",

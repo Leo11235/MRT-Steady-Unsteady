@@ -253,7 +253,11 @@ class LoadingScreen(ctk.CTkFrame):
         self._output_q = queue.Queue()
         self._result_q = queue.Queue()
         self._cancelled = False
-        self._bar.start()
+        # Bar is deliberately NOT started here — it kicks off on the
+        # first terminal write instead (see _drain_queue).  This gives
+        # honest feedback that the sim is actually producing output
+        # rather than pretending progress while imports are loading.
+        self._bar_started = False
         self._start_polling()
 
         # divert stdout/stderr into the queue (process-global, but only the
@@ -473,6 +477,14 @@ class LoadingScreen(ctk.CTkFrame):
         if not chunks:
             return
         text = "".join(chunks)
+        # First terminal output — start the loading bar now, not at
+        # start_loading_run time.  This way the bar doesn't animate
+        # during backend-side imports (rocketcea etc.) that can take
+        # a few seconds; the animation is honest about when work is
+        # actually happening.
+        if not self._bar_started:
+            self._bar_started = True
+            self._bar.start()
         # Scan for the last phase marker in this batch (backend often
         # prints many lines at once, we want the freshest).
         matches = _PHASE_RE.findall(text)

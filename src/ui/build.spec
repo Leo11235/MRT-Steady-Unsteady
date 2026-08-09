@@ -91,6 +91,16 @@ seed_files = [
     project_root / "user_data" / "simulation_configs" / "steady"   / "steady_parametric_example.jsonc",
     project_root / "user_data" / "simulation_configs" / "unsteady" / "unsteady_example.jsonc",
 ]
+# Also ship any *.jsonc files under simulation_configs/{steady,unsteady}/tests/
+# so a fresh install has the whole test suite ready to go.
+for _tests_dir in (
+    project_root / "user_data" / "simulation_configs" / "steady"   / "tests",
+    project_root / "user_data" / "simulation_configs" / "unsteady" / "tests",
+):
+    if _tests_dir.is_dir():
+        for _f in _tests_dir.glob("*.jsonc"):
+            seed_files.append(_f)
+
 seed_tuples = [
     (str(f), str(f.parent.relative_to(project_root)))
     for f in seed_files if f.exists()

@@ -243,8 +243,13 @@ class ResultsBrowserPage(ctk.CTkFrame):
                             corner_radius=6)
         wrap.pack(fill="x", padx=theme.PAD_XS, pady=1)
 
+        # New layout: path is a directory named after the run.
+        # Old layout: path is a .json file; strip the extension for
+        # display so the two flavours look identical in the list.
+        display = backend_bridge.run_display_name(path)
+
         btn = ctk.CTkButton(
-            wrap, text=path.name,
+            wrap, text=display,
             anchor="w",
             fg_color="transparent",
             text_color=("gray10", "gray90"),
@@ -290,8 +295,15 @@ class ResultsBrowserPage(ctk.CTkFrame):
             return
 
         _kind, path = self._selected
-        size_kb = path.stat().st_size / 1024 if path.exists() else 0.0
-        self._selected_label.configure(text=path.name)
+        # For new-layout runs (directory), size is the sim_data.json
+        # inside; for old-layout, it's the file itself.  Show the
+        # display name (dir name / file stem) rather than the raw file.
+        json_path = backend_bridge.run_json_path(path)
+        try:
+            size_kb = json_path.stat().st_size / 1024 if json_path.exists() else 0.0
+        except OSError:
+            size_kb = 0.0
+        self._selected_label.configure(text=backend_bridge.run_display_name(path))
         self._meta_label.configure(
             text=f"{path}\n{i18n.t('browser.size_kib')}: {size_kb:,.1f} KiB",
         )
@@ -308,8 +320,11 @@ class ResultsBrowserPage(ctk.CTkFrame):
         if self._selected is None:
             return
         kind, path = self._selected
+        # Layout-agnostic: fetch the actual JSON path (directory/sim_data.json
+        # for new layout, or path itself for old-layout .json files).
+        json_path = backend_bridge.run_json_path(path)
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(json_path, "r", encoding="utf-8") as f:
                 result_dict = json.load(f)
         except Exception as exc:
             self._status_label.configure(
@@ -322,6 +337,9 @@ class ResultsBrowserPage(ctk.CTkFrame):
         target = "steady_results" if kind == "steady" else "unsteady_results"
         try:
             results_page = shell._ensure_page(target)
+            # Pass the run HANDLE (dir or file), not the inner JSON path,
+            # so the results page's Show-in-folder button opens the run
+            # folder rather than the raw JSON.
             results_page.load_results(path, result_dict)
             shell.go(target)
         except Exception as exc:
@@ -350,10 +368,13 @@ class ResultsBrowserPage(ctk.CTkFrame):
             return
         _kind, path = self._selected
 
+        # Initial value shown to the user: run name without extension
+        # (new-style dir → dir name; old-style file → stem).
+        initial = backend_bridge.run_display_name(path)
         new_stem = simpledialog.askstring(
             i18n.t("browser.rename_title"),
             i18n.t("browser.rename_prompt"),
-            initialvalue=path.stem,
+            initialvalue=initial,
             parent=self.winfo_toplevel(),
         )
         if not new_stem:
@@ -366,7 +387,9 @@ class ResultsBrowserPage(ctk.CTkFrame):
             )
             return
 
-        new_path = path.with_name(safe + path.suffix)
+        # New layout renames the DIRECTORY; old layout renames the .json
+        # file and its sibling folder (if any).
+        new_path = path.with_name(safe + (path.suffix if not path.is_dir() else ""))
         if new_path == path:
             return
         if new_path.exists():
@@ -378,6 +401,16 @@ class ResultsBrowserPage(ctk.CTkFrame):
 
         try:
             path.rename(new_path)
+            # Old-layout: also drag the sibling PDF/PNG folder along
+            # so the two names stay in sync.
+            if not path.is_dir():
+                sibling_old = path.with_suffix("")
+                if sibling_old.is_dir():
+                    sibling_new = new_path.with_suffix("")
+                    try:
+                        sibling_old.rename(sibling_new)
+                    except Exception:
+                        pass
         except Exception as exc:
             self._status_label.configure(
                 text=f"{type(exc).__name__}: {exc}",
@@ -388,7 +421,8 @@ class ResultsBrowserPage(ctk.CTkFrame):
         self._selected = (self._selected[0], new_path)
         self._refresh_list()
         self._status_label.configure(
-            text=f"{i18n.t('browser.renamed_to')} {new_path.name}",
+            text=f"{i18n.t('browser.renamed_to')} "
+                 f"{backend_bridge.run_display_name(new_path)}",
             text_color=theme.SUCCESS,
         )
 
@@ -403,17 +437,19 @@ class ResultsBrowserPage(ctk.CTkFrame):
             self._set_delete_state("confirm")
             return
         _kind, path = self._selected
-        # A single "run" is the .json file plus (optionally) a sibling
-        # folder with the same stem containing the PDF/PNG bundle
-        # produced by save_to_pdf / save_to_png.  Delete both so the
-        # user doesn't have orphan folders piling up.
+        # New layout: path is a directory — rmtree it.
+        # Old layout: path is a .json file — unlink it and also
+        # rmtree the sibling PDF/PNG folder (same stem, no extension).
         try:
-            if path.exists():
-                path.unlink()
-            sibling_folder = path.with_suffix("")
-            if sibling_folder.is_dir():
-                import shutil
-                shutil.rmtree(sibling_folder, ignore_errors=True)
+            import shutil
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                if path.exists():
+                    path.unlink()
+                sibling_folder = path.with_suffix("")
+                if sibling_folder.is_dir():
+                    shutil.rmtree(sibling_folder, ignore_errors=True)
         except Exception as exc:
             self._status_label.configure(
                 text=f"{type(exc).__name__}: {exc}",
@@ -424,7 +460,8 @@ class ResultsBrowserPage(ctk.CTkFrame):
         self._selected = None
         self._refresh_list()
         self._status_label.configure(
-            text=f"{i18n.t('browser.deleted')} {path.name}",
+            text=f"{i18n.t('browser.deleted')} "
+                 f"{backend_bridge.run_display_name(path)}",
             text_color=theme.SUCCESS,
         )
         self._set_delete_state("idle")

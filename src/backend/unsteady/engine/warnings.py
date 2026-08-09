@@ -9,18 +9,31 @@ Warnings look for an log validity/runtime information. They do not affect the pr
 
 import math
 
+# input range checks
 # checks whether a whole bunch of rocket input values are within the model's validity range
-def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict): 
+# !!! this function is used directly by the frontend. Do not change the inputs, and only add to warning_dict if it would be reasonable for the user to get a popup warning them about that input. 
+def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = None): 
+    if warning_dict is None: 
+        warning_dict={}
+    
     ###### fuel grain
+    def _check_fuel_inner_outer_radii(r_f, R_f):
+        return
+    
     L_f = rocket_inputs["chamber_fuel_length_m"]
+    R_f = rocket_inputs["chamber_fuel_external_radius_m"]
+    m_f_tot = rocket_inputs["chamber_fuel_mass_kg"]
+    p_f = rocket_inputs["chamber_fuel_density_kgm3"]
+    
     if "chamber_fuel_internal_radius_m" in rocket_inputs:
+        # if the user provided fuel internal radius, check inputs
         r_f = rocket_inputs["chamber_fuel_internal_radius_m"]
     else:
-        # if the user provided fuel mass instead, calculate the implied r_f
-        m_f_tot = rocket_inputs["chamber_fuel_mass_kg"]
-        p_f = rocket_inputs["chamber_fuel_density_kgm3"]
-        R_f = rocket_inputs["chamber_fuel_external_radius_m"]
-        r_f = math.sqrt(R_f**2 - m_f_tot / (math.pi * p_f * L_f))
+        # if the user provided fuel mass instead, calculate the implied r_f, then check inputs
+        try: # triggers if inputs are gemoetrically valid
+            r_f = math.sqrt(R_f**2 - m_f_tot / (math.pi * p_f * L_f))
+        except ValueError: # triggers if inputs are physically impossible (ie inner diameter > outer diameter)
+            r_f = None
     
     if L_f < 0.2:
         warning_dict["init_short_fuel_grain"] = {
@@ -32,8 +45,16 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict):
     if r_f < 0.01:
         warning_dict["init_tight_fuel_port"] = {
             "severity": "warning",
-            "message": "Initial fuel port radius is extremely tight (< 1 cm). High risk of choked port flow and flame blowout.",
+            "message": f"Initial fuel port radius is extremely tight ({r_f/100} < 1 cm). High risk of choked port flow and flame blowout.",
             "radius_m": r_f
+        }
+        
+    if r_f is None or r_f > R_f:
+        warning_dict["init_inner_fuel_radius_exceeds_outer_fuel_radius"] = {
+            "severity": "critical", 
+            "message": f"Inner fuel radius ({r_f}{" m" if r_f is not None else ""}) either impossible to calculate or is larger than outer fuel radius ({R_f} m)", 
+            "inner_diameter": r_f, 
+            "outer_diameter": R_f
         }
     
     ##### tank ullage
@@ -51,6 +72,49 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict):
                 "message": "Tank ullage fraction is unusually high (> 30%). This reduces volumetric efficiency and total impulse.",
                 "ullage_fraction": ullage
             }
+    
+    ##### regression rate warnings
+    """
+    accepted value ranges for Paraffin/N2O
+        - fuel regression coefficient (a): [0.5e-4, 1e-3]
+        - fuel regression exponent (n): [0.3, 0.9]
+    
+    sources
+        - Karabeyoglu, Altman & Cantwell (2001), "Development and Testing of Paraffin-Based Hybrid Rocket Fuels"
+        - Karabeyoglu et al. (2004), "Combustion of Liquefying Hybrid Propellants" (JPP Vol 20 No 6)
+        - Sutton & Biblarz, Rocket Propulsion Elements, Chapter 15 (hybrids)
+    """
+    if "chamber_regression_rate_scaling_constant" in rocket_inputs: 
+        a = rocket_inputs["chamber_regression_rate_scaling_constant"]
+        if a < 0.5e-4:
+            warning_dict["init_low_chamber_regression_rate_scaling_constant"] = {
+                    "severity": "warning",
+                    "message": f"Regression rate constant ({a}) is unusually low. Recommended range is [0.5e-4, 1e-3]. ",
+                    "chamber_regression_rate_scaling_constant": a
+                }
+        elif a> 1e-3: 
+            warning_dict["init_high_chamber_regression_rate_scaling_constant"] = {
+                    "severity": "warning",
+                    "message": f"Regression rate constant ({a}) is unusually high. Recommended range is [0.5e-4, 1e-3]. ",
+                    "chamber_regression_rate_scaling_constant": a
+                }
+
+    if "chamber_regression_rate_exponent" in rocket_inputs:
+        n = rocket_inputs["chamber_regression_rate_exponent"]
+        if n < 0.3:
+            warning_dict["init_low_chamber_regression_rate_exponent"] = {
+                    "severity": "warning",
+                    "message": f"Regression rate exponent ({n}) is unusually low. Recommended range is [0.3, 0.9]. ",
+                    "chamber_regression_rate_exponent": n
+                }
+        elif n > 0.9:
+            warning_dict["init_high_chamber_regression_rate_exponent"] = {
+                    "severity": "warning",
+                    "message": f"Regression rate exponent ({n}) is unusually high. Recommended range is [0.3, 0.9]. ",
+                    "chamber_regression_rate_exponent": n
+                }
+    
+    
     
 
 # checks whether CEA is a good predictor for a given (OF, p_C) input to CEA

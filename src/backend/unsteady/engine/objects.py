@@ -265,17 +265,19 @@ class History:
         """
         Sends results to JSON storage
         """
+        
+        # timestamp name signature: YYYY_MM_DD_HH_MM_SS folder houses output data
+        if rocket_inputs.get("metadata", {}).get("simulation_name") != ("" or None):
+            foldername = rocket_inputs["metadata"]["simulation_name"]
+        else:
+            foldername = f"{datetime.now().strftime("%Y_%m_%d_%H_%M_%S")}"
+        
         # project anchor & target directory pathing
         project_root = Path(__file__).resolve().parents[4] 
-        output_dir = project_root / "user_data" / "simulation_results" / "unsteady"
+        output_dir = project_root / "user_data" / "simulation_results" / "unsteady" / foldername
         output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # timestamp name signature: YYYY_MM_DD_HH_MM_SS.json
-        if rocket_inputs.get("metadata", {}).get("simulation_name") != ("" or None):
-            filename = rocket_inputs["metadata"]["simulation_name"]
-        else:
-            filename = f"{datetime.now().strftime("%Y_%m_%d_%H_%M_%S")}.json"
-        file_path = output_dir / filename
+        output_json_name = "sim_data.json"
+        file_path = output_dir / output_json_name
         
         # helper to convert NaNs to None for JSON compatibility
         def sanitize_nans(array):
@@ -298,6 +300,7 @@ class History:
             "data": changing_data,
         }
         
+        # build the folder in <output_dir>/<run_name>, then write sim_data.json inside
         # write to JSON
         with open(file_path, "w") as f:
             json.dump(sim_results, f, indent=4)
@@ -307,12 +310,12 @@ class History:
         # save as pdf/png if requested
         if rocket_inputs_metadata.get("save_to_pdf") and rocket_inputs_metadata.get("save_to_png"):
             print(f"\nCreating graphs...")
-            unsteady_results(json_filename=filename, json_filepath=output_dir, display_graphs=False, save_to_pdf=True, save_to_png=True)
+            unsteady_results(json_filename=output_json_name, json_filepath=output_dir, display_graphs=False, save_to_pdf=True, save_to_png=True)
         elif rocket_inputs_metadata.get("save_to_pdf"):
             print(f"\nCreating graphs...")
-            unsteady_results(json_filename=filename, json_filepath=output_dir, display_graphs=False, save_to_pdf=True, save_to_png=False)
+            unsteady_results(json_filename=output_json_name, json_filepath=output_dir, display_graphs=False, save_to_pdf=True, save_to_png=False)
         elif rocket_inputs_metadata.get("save_to_png"):
             print(f"\nCreating graphs...")
-            unsteady_results(json_filename=filename, json_filepath=output_dir, display_graphs=False, save_to_pdf=False, save_to_png=True)
+            unsteady_results(json_filename=output_json_name, json_filepath=output_dir, display_graphs=False, save_to_pdf=False, save_to_png=True)
         
         return file_path

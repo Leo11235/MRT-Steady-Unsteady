@@ -35,9 +35,21 @@ from matplotlib.patches import Patch, Rectangle, FancyBboxPatch, Polygon
 from matplotlib.backends.backend_pdf import PdfPages
 
 
-# ignore matplotlib warnings
-warnings.filterwarnings("ignore", category=UserWarning,   module=r".*matplotlib.*")
-warnings.filterwarnings("ignore", category=RuntimeWarning, module=r".*matplotlib.*")
+# Ignore matplotlib warnings.  Note: we match by MESSAGE TEXT rather
+# than `module=` because Python's warnings machinery attributes the
+# source to the caller frame (this file), not to matplotlib itself,
+# so a `module=r".*matplotlib.*"` filter never fires.  The regex list
+# below covers the three noisy warnings matplotlib emits from our
+# non-main-thread figure creation flow.
+warnings.filterwarnings("ignore",
+    message=r".*Matplotlib GUI outside of the main thread.*",
+    category=UserWarning)
+warnings.filterwarnings("ignore",
+    message=r".*Tight layout not applied.*",
+    category=UserWarning)
+warnings.filterwarnings("ignore",
+    message=r".*More than 20 figures have been opened.*",
+    category=RuntimeWarning)
 
 # =============================================================================
 # Phase metadata
@@ -295,16 +307,16 @@ def _nth_recent_results_file(n: int = 0) -> tuple[str, Path]:
 
 def _per_run_output_dir(json_filename: str, json_filepath=None) -> Path:
     """
-    Create and return `<simulation_results>/unsteady/<json_basename>/`,
-    where <json_basename> is the filename without the .json extension.
+    outputs live directly inside the run folder itself (the directory that already holds sim_data.json).  
+    `json_filepath`, when passed by the engine, IS that run folder. 
+    When not passed (standalone script usage), fall back to <simulation_results>/unsteady/<basename>/.
     """
-    if json_filepath is None:
+    if json_filepath is not None:
+        out_dir = Path(json_filepath)
+    else:
         project_root = Path(__file__).resolve().parents[4]
         base_results = project_root / "user_data" / "simulation_results" / "unsteady"
-    else:
-        base_results = Path(json_filepath)
-    basename = Path(json_filename).stem
-    out_dir = base_results / basename
+        out_dir = base_results / Path(json_filename).stem
     out_dir.mkdir(parents=True, exist_ok=True)
     return out_dir
 
@@ -1729,24 +1741,24 @@ def _build_and_display_in_batches(plan: list, sim_results: dict,
 
 
 def _save_figures_to_pdf(figures: list[Figure], names: list[str],
-                         out_dir: Path) -> Path:
-    """Save all figures to a single PDF; returns the PDF path."""
-    pdf_path = out_dir / "unsteady_results.pdf"
+                         out_dir: Path) -> None:
+    # PDF sits at the run-dir root as `graphs.pdf`.
+    pdf_path = out_dir / "graphs.pdf"
     with PdfPages(pdf_path) as pdf:
-        for fig, name in zip(figures, names):
+        for fig in figures:
             pdf.savefig(fig, bbox_inches="tight")
-    print(f"  PDF saved -> {pdf_path}")
-    return pdf_path
+    print(f"  saved {pdf_path.name}")
 
 
 def _save_figures_to_png(figures: list[Figure], names: list[str],
-                         out_dir: Path) -> Path:
-    """Save each figure as its own PNG inside out_dir."""
+                         out_dir: Path) -> None:
+    # PNGs go into a `graphs/` subfolder inside the run dir.
+    png_dir = out_dir / "graphs"
+    png_dir.mkdir(parents=True, exist_ok=True)
     for i, (fig, name) in enumerate(zip(figures, names), start=1):
-        png_path = out_dir / f"{i:02d}_{name}.png"
+        png_path = png_dir / f"{i:02d}_{name}.png"
         fig.savefig(png_path, dpi=140, bbox_inches="tight")
-    print(f"  PNGs saved -> {out_dir}/ ({len(figures)} files)")
-    return out_dir
+    print(f"  saved {len(figures)} PNGs to {png_dir.name}/")
 
 
 # =============================================================================

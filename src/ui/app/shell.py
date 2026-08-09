@@ -93,6 +93,21 @@ class AppShell(ctk.CTk):
         self._cancel_state: str = "cancel"           # 'cancel' | 'confirm'
         self._cancel_reset_after_id: str | None = None
 
+        # Halt & report — second loading-only button.  Same worker-kill
+        # mechanism as Cancel, but instead of returning to the input
+        # page it navigates to the bug page with the terminal capture
+        # pre-filled.  Styled with an amber accent so users don't
+        # mistake it for Cancel.
+        self.halt_report_btn = ctk.CTkButton(
+            self.top_bar,
+            text="Halt & report bug",
+            width=180,
+            fg_color=("#f4a261", "#f4a261"),
+            hover_color=("#e08a4a", "#e08a4a"),
+            text_color=("#1a1a1a", "#1a1a1a"),
+            command=self._on_halt_report_click,
+        )
+
         self.page_title = ctk.CTkLabel(
             self.top_bar,
             text="",
@@ -228,12 +243,21 @@ class AppShell(ctk.CTk):
                     pady=theme.PAD_S,
                     before=self.page_title,
                 )
+            if not self.halt_report_btn.winfo_ismapped():
+                self.halt_report_btn.pack(
+                    side="left",
+                    padx=(0, theme.PAD_S),
+                    pady=theme.PAD_S,
+                    before=self.page_title,
+                )
             # Whenever we (re-)enter the loading page, reset the state to
             # plain 'Cancel' — no lingering 'Confirm cancel' from a past run.
             self._set_cancel_state("cancel")
         else:
             if self.cancel_btn.winfo_ismapped():
                 self.cancel_btn.pack_forget()
+            if self.halt_report_btn.winfo_ismapped():
+                self.halt_report_btn.pack_forget()
             self._clear_cancel_timeout()
 
             if want_home:
@@ -290,6 +314,43 @@ class AppShell(ctk.CTk):
         target = self._pre_loading_page or "main"
         self._pre_loading_page = None
         self.go(target)
+
+    def _on_halt_report_click(self) -> None:
+        """Kill the running sim and route to the bug page with the
+        loading screen's terminal capture pre-filled.  Single click
+        (no confirm) because the intent is unambiguous: the user has
+        already decided they hit a bug and want to report it."""
+        loading = self.pages.get("loading")
+        terminal_text = ""
+        if loading is not None:
+            try:
+                terminal_text = loading.get_terminal_text()
+            except Exception:
+                terminal_text = "(terminal output unavailable)"
+            try:
+                loading.cancel()
+            except Exception:
+                pass
+
+        title = "User halted simulation"
+        diagnostics = (
+            "The user halted the simulation from the loading screen.\n"
+            "Terminal output up to the halt point is below.\n\n"
+            f"{terminal_text}"
+        )
+        try:
+            bug_page = self._ensure_page("bug")
+        except Exception:
+            bug_page = None
+        if bug_page is not None:
+            try:
+                bug_page.prefill(title=title, diagnostics=diagnostics,
+                                 config_json="")
+            except Exception:
+                pass
+
+        self._pre_loading_page = None
+        self.go("bug")
 
     # ----------------------------------------------------------------------
     # Keyboard-shortcut dispatch
