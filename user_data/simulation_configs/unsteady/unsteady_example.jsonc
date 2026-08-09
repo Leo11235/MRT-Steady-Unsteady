@@ -1,8 +1,7 @@
 {
     "rocket_inputs": {
         "metadata": {
-            "simulation_type": "unsteady", // can be "steady" or "unsteady"
-            // optional inputs:
+            "simulation_type": "unsteady", // can be "steady", "unsteady", "steady_test", "unsteady_test"
             "simulation_name": "", // str, optional
             "warnings": true, // true or false; whether to include warnings in the final report
             "save_to_pdf": true, // whether to save all output plots to a pdf file
@@ -22,7 +21,7 @@
                     // tank: one of the following:
                 "tank_ullage_fraction": 0.1,
                     // or:
-                "tank_internal_length_m": 0.0
+                "tank_internal_length_m": ""
             },
             "CV2_valve": {
                 "model": "sigmoid",

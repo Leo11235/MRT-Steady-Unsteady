@@ -54,10 +54,34 @@ def preflight_unsteady(rocket_inputs: dict) -> dict:
     warnings: dict = {}
     try:
         warn_initialization_limits(flat, warnings)
-    except Exception:
-        # Preflight is best-effort — a bug in the warning code should
-        # never block a user from running their sim.
-        pass
+    except KeyError as e:
+        # A missing required field means the run would crash anyway —
+        # surface it as a critical preflight warning so the user sees
+        # a modal and can fix inputs before the backend dies with a
+        # bare traceback.  `e` stringifies to the missing key name
+        # (already quoted by Python).
+        warnings["preflight_missing_field"] = {
+            "severity": "critical",
+            "message": (
+                f"Preflight could not complete: required input "
+                f"{e} is missing.  The simulation would crash on "
+                f"this input — fix it before running."
+            ),
+            "missing_field": str(e).strip("'\""),
+        }
+    except Exception as e:
+        # Any OTHER unexpected error in the warning code is a bug in
+        # warnings.py, not in the user's input.  Report it as an
+        # advisory so the user knows preflight didn't fully run, but
+        # don't hard-block — they may still want to try.
+        warnings["preflight_error"] = {
+            "severity": "warning",
+            "message": (
+                f"Input-range preflight crashed with "
+                f"{type(e).__name__}: {e}.  Simulation may still run, "
+                f"but inputs were not fully validated."
+            ),
+        }
     return warnings
 
 

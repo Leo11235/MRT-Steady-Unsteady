@@ -92,6 +92,10 @@ class AppShell(ctk.CTk):
         # cancel-button state machine
         self._cancel_state: str = "cancel"           # 'cancel' | 'confirm'
         self._cancel_reset_after_id: str | None = None
+        # halt-and-report state machine — same two-click confirm as
+        # cancel, since halting mid-run is destructive.
+        self._halt_state: str = "halt"               # 'halt' | 'confirm'
+        self._halt_reset_after_id: str | None = None
 
         # Halt & report — second loading-only button.  Same worker-kill
         # mechanism as Cancel, but instead of returning to the input
@@ -250,15 +254,18 @@ class AppShell(ctk.CTk):
                     pady=theme.PAD_S,
                     before=self.page_title,
                 )
-            # Whenever we (re-)enter the loading page, reset the state to
-            # plain 'Cancel' — no lingering 'Confirm cancel' from a past run.
+            # Whenever we (re-)enter the loading page, reset both button
+            # state machines — no lingering 'Confirm cancel' or
+            # 'Confirm halt & report' from a past run.
             self._set_cancel_state("cancel")
+            self._set_halt_state("halt")
         else:
             if self.cancel_btn.winfo_ismapped():
                 self.cancel_btn.pack_forget()
             if self.halt_report_btn.winfo_ismapped():
                 self.halt_report_btn.pack_forget()
             self._clear_cancel_timeout()
+            self._clear_halt_timeout()
 
             if want_home:
                 if not self.home_btn.winfo_ismapped():
@@ -315,11 +322,42 @@ class AppShell(ctk.CTk):
         self._pre_loading_page = None
         self.go(target)
 
+    def _set_halt_state(self, state: str) -> None:
+        """state ∈ {'halt', 'confirm'}.  Mirrors _set_cancel_state so
+        the two buttons feel the same."""
+        self._clear_halt_timeout()
+        if state == "halt":
+            self.halt_report_btn.configure(
+                text="Halt & report bug", width=180)
+        elif state == "confirm":
+            self.halt_report_btn.configure(
+                text="Confirm halt & report", width=220)
+            self._halt_reset_after_id = self.after(
+                _CONFIRM_CANCEL_TIMEOUT_MS,
+                lambda: self._set_halt_state("halt"),
+            )
+        self._halt_state = state
+
+    def _clear_halt_timeout(self) -> None:
+        if self._halt_reset_after_id is not None:
+            try:
+                self.after_cancel(self._halt_reset_after_id)
+            except Exception:
+                pass
+            self._halt_reset_after_id = None
+
     def _on_halt_report_click(self) -> None:
         """Kill the running sim and route to the bug page with the
-        loading screen's terminal capture pre-filled.  Single click
-        (no confirm) because the intent is unambiguous: the user has
-        already decided they hit a bug and want to report it."""
+        loading screen's terminal capture pre-filled.  Two-click
+        confirm (same mechanic as Cancel) — the button re-labels to
+        'Confirm halt & report' on the first click and only acts on
+        the second, auto-reverting after the shared timeout."""
+        if self._halt_state == "halt":
+            # First click — arm the confirm state and stop here.
+            self._set_halt_state("confirm")
+            return
+
+        # Second click — actually halt and route to the bug page.
         loading = self.pages.get("loading")
         terminal_text = ""
         if loading is not None:

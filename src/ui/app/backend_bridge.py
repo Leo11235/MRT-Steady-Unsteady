@@ -455,6 +455,51 @@ STEADY_KINEMATICS_REQUIRED = (
 )
 
 
+def check_alternate_fields(
+    values: dict,
+    pairs: "list[tuple[str, str, str]]",
+) -> list[str]:
+    """Check groups of 'exactly one of A or B' fields.
+
+    `pairs` is a list of `(field_a, field_b, context_label)` tuples.
+    For each pair we look up both fields in `values` and require that
+    exactly ONE is filled — neither is a missing-input error, both is
+    an ambiguity error.
+
+    "Filled" means the value is not None and not the empty string.
+    A numeric 0 counts as filled, per the product decision: an
+    accidental leftover 0 in one field should trip the both-filled
+    branch instead of silently sliding through as if the field were
+    empty (that path leads to divide-by-zero and quench aborts deep
+    in the physics).
+
+    Returns a list of human-readable error strings — empty when every
+    pair is satisfied.
+    """
+    def _filled(v) -> bool:
+        return v not in (None, "")
+
+    errors: list[str] = []
+    for a, b, label in pairs:
+        va = values.get(a)
+        vb = values.get(b)
+        a_ok = _filled(va)
+        b_ok = _filled(vb)
+        if not a_ok and not b_ok:
+            errors.append(
+                f"{label}: provide exactly one of '{a}' or '{b}' "
+                f"(both were left empty)."
+            )
+        elif a_ok and b_ok:
+            errors.append(
+                f"{label}: provide only ONE of '{a}' or '{b}', not both. "
+                f"Currently '{a}' = {va!r} and '{b}' = {vb!r}. "
+                f"Clear one of them so the solver knows which side "
+                f"is the input and which side to derive."
+            )
+    return errors
+
+
 def validate_steady_config(config: dict) -> list[str]:
     """
     Return a list of human-readable validation errors.  Empty list = valid.
@@ -497,17 +542,18 @@ def validate_steady_config(config: dict) -> list[str]:
             if ri.get(key) in (None, ""):
                 errors.append(f"missing required (kinematics): {key}")
 
-    # Hotfire needs either the initial internal fuel diameter OR the
-    # fuel mass — the solver derives the missing one.
-    # NOTE: the UI writes the DIAMETER key; the backend normalizer
-    # converts it to the radius key the physics loop expects.
-    # Use `in (None, "")` (not `or`) so a legitimate 0 doesn't trip
-    # the falsy check — matches the pattern used in the base loop.
+    # Hotfire needs EXACTLY ONE of the initial internal fuel diameter
+    # OR the fuel mass — the solver derives the missing one. Both-filled
+    # is ambiguous (which does the user actually want to override?) and
+    # neither-filled leaves the geometry underdetermined.
+    #
+    # A value of 0 counts as "filled" so an accidental leftover 0 in
+    # one field flags the both-filled case instead of silently sliding
+    # through as an empty.
     if sim_type == "hotfire":
-        if (ri.get("initial_internal_fuel_diameter") in (None, "")
-                and ri.get("fuel_mass") in (None, "")):
-            errors.append("hotfire requires one of: "
-                          "initial_internal_fuel_diameter, fuel_mass")
+        errors.extend(check_alternate_fields(ri, [
+            ("initial_internal_fuel_diameter", "fuel_mass", "hotfire"),
+        ]))
 
     # parametric study needs at least one parametric variable
     if sim_type == "parametric_study":
@@ -636,24 +682,17 @@ def validate_unsteady_config(config: dict) -> list[str]:
         if not block.get("model"):
             errors.append(f"{cv}: missing model")
 
-    # Tank: must have ONE of ullage_fraction / internal_length_m.
-    # Use `in (None, "")` (not `not X`) so a legit 0 doesn't trip the
-    # falsy check — matches the pattern used elsewhere.
-    tank = cvs.get("CV1_tank") or {}
-    if (tank.get("tank_ullage_fraction") in (None, "")
-            and tank.get("tank_internal_length_m") in (None, "")):
-        errors.append("CV1_tank: provide one of "
-                      "tank_ullage_fraction or tank_internal_length_m")
-
-    # Chamber: must have ONE of fuel_mass_kg / fuel_internal_diameter_m.
-    # NOTE: the UI writes the DIAMETER key ever since the v1.1.0 switch;
-    # checking for the old radius key here caused the alternate check
-    # to always think the diameter side was missing.
-    chamber = cvs.get("CV4_chamber") or {}
-    if (chamber.get("chamber_fuel_mass_kg") in (None, "")
-            and chamber.get("chamber_fuel_internal_diameter_m") in (None, "")):
-        errors.append("CV4_chamber: provide one of "
-                      "chamber_fuel_mass_kg or chamber_fuel_internal_diameter_m")
+    # Alternate-field pairs: each CV block must have EXACTLY ONE of the
+    # listed fields. Both-filled is ambiguous; neither-filled is
+    # underdetermined. See check_alternate_fields for the "filled"
+    # definition (0 counts as filled).
+    errors.extend(check_alternate_fields(cvs.get("CV1_tank") or {}, [
+        ("tank_internal_length_m", "tank_ullage_fraction", "CV1_tank"),
+    ]))
+    errors.extend(check_alternate_fields(cvs.get("CV4_chamber") or {}, [
+        ("chamber_fuel_mass_kg", "chamber_fuel_internal_diameter_m",
+         "CV4_chamber"),
+    ]))
 
     return errors
 

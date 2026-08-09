@@ -370,9 +370,22 @@ class LoadingScreen(ctk.CTkFrame):
             text=f"{i18n.t('loading.failed')}: {type(exc).__name__}",
             text_color=theme.ERROR,
         )
+        # For the common "missing input field" case, prepend a plain-
+        # English line before the raw traceback so the user gets an
+        # actionable hint without having to parse Python output.
+        # A bare KeyError from the physics code almost always means
+        # a required rocket_inputs field was left out.
+        friendly = ""
+        if isinstance(exc, KeyError):
+            key = str(exc).strip("'\"")
+            friendly = (
+                f"\n\n[missing required input] '{key}' was not set. "
+                f"Preflight should have caught this — please report if "
+                f"the field IS filled in on the form.\n"
+            )
         # show the traceback in the terminal too
         self._terminal.configure(state="normal")
-        self._terminal.insert("end", "\n\n" + tb)
+        self._terminal.insert("end", friendly + "\n\n" + tb)
         self._terminal.see("end")
         self._terminal.configure(state="disabled")
         self._drain_queue()

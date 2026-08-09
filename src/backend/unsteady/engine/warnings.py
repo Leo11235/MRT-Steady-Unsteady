@@ -17,19 +17,16 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
         warning_dict={}
     
     ###### fuel grain
-    def _check_fuel_inner_outer_radii(r_f, R_f):
-        return
-    
     L_f = rocket_inputs["chamber_fuel_length_m"]
     R_f = rocket_inputs["chamber_fuel_external_radius_m"]
-    m_f_tot = rocket_inputs["chamber_fuel_mass_kg"]
-    p_f = rocket_inputs["chamber_fuel_density_kgm3"]
     
     if "chamber_fuel_internal_radius_m" in rocket_inputs:
         # if the user provided fuel internal radius, check inputs
         r_f = rocket_inputs["chamber_fuel_internal_radius_m"]
     else:
         # if the user provided fuel mass instead, calculate the implied r_f, then check inputs
+        m_f_tot = rocket_inputs["chamber_fuel_mass_kg"]
+        p_f = rocket_inputs["chamber_fuel_density_kgm3"]
         try: # triggers if inputs are gemoetrically valid
             r_f = math.sqrt(R_f**2 - m_f_tot / (math.pi * p_f * L_f))
         except ValueError: # triggers if inputs are physically impossible (ie inner diameter > outer diameter)
@@ -39,22 +36,22 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
         warning_dict["init_short_fuel_grain"] = {
             "severity": "warning",
             "message": "Fuel grain length is dangerously short (< 0.2 m). 1D regression models lose accuracy at low L/D ratios.",
-            "length_m": L_f
+            "fuel_cell_length": L_f
         }
         
-    if r_f < 0.01:
+    if r_f is not None and r_f < 0.01:
         warning_dict["init_tight_fuel_port"] = {
             "severity": "warning",
-            "message": f"Initial fuel port radius is extremely tight ({r_f/100} < 1 cm). High risk of choked port flow and flame blowout.",
-            "radius_m": r_f
+            "message": f"Initial fuel port radius is extremely tight ({r_f*100} < 1 cm). High risk of choked port flow and flame blowout.",
+            "inner_radius": r_f
         }
         
-    if r_f is None or r_f > R_f:
+    if r_f is None or r_f >= R_f:
         warning_dict["init_inner_fuel_radius_exceeds_outer_fuel_radius"] = {
             "severity": "critical", 
             "message": f"Inner fuel radius ({r_f}{" m" if r_f is not None else ""}) either impossible to calculate or is larger than outer fuel radius ({R_f} m)", 
-            "inner_diameter": r_f, 
-            "outer_diameter": R_f
+            "inner_radius": r_f, 
+            "outer_radius": R_f
         }
     
     ##### tank ullage
