@@ -1,0 +1,22 @@
+UI BUG CHECKLIST
+- Run all steady & unsteady configs
+- Load baseline, click Run without changes → passes preflight, sim runs.
+- Load baseline, blank out one required field, click Run → validator popup appears with that field named.
+- Load a fail_validator_* config → error popup on Run, sim does not start.
+- Load a fail_preflight_* config → preflight modal shows, Cancel returns to form, Run-anyway proceeds to sim (which should also error cleanly).
+- Load a warn_* config → preflight modal shows warning list; Run-anyway completes.
+- Change hotfire-equivalent alternate fields (cv4 mass ↔ diameter) → run works both ways.
+- Fill both mass and diameter → new both-filled error appears.
+- Fill fuel_mass with 0 while diameter is filled → both-filled fires (0 counts as filled).
+- Toggle "Save rocket inputs by default" in Settings → next Run auto-saves without prompting.
+- Untoggle it → next Run prompts.
+- Change description in Settings tab → confirm it lands in metadata.description and appears in results browser.
+- Toggle warnings, save PDF, save PNG independently → each metadata bool round-trips.
+- Halt & Report button: first click shows "Confirm halt & report", second click within 3s halts and routes to bug page with terminal capture; second click AFTER 3s reverts to first-click state.
+- Cancel button: same two-click semantics, routes back to input page.
+- Loading bar: only appears after first terminal line, not immediately on Run.
+- Stall-detection: run fail_physics_solver_stalls → SolverStalledError surfaces as a friendly error (once you wire the friendly-error path).
+- Results browser: shows both old-layout (<name>.json) and new-layout (<name>/sim_data.json) runs interleaved.
+- Delete a new-layout run → whole directory removed.
+- Rename a new-layout run → directory renamed, PDF/PNG paths still resolve.
+- Bug report field cap: paste terminal output > 20 KB → auto-truncated with [... N earlier lines truncated ...] notice.
