@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 import json, math, numpy as np
 
-from src.backend.unsteady.analysis.unsteady_results import unsteady_results
+from src.common.plotting.unsteady_plots import unsteady_results
 
 class StateVector:
     """
@@ -310,14 +310,17 @@ class History:
         print(f"\nSimulation data exported")
         
         # save as pdf/png if requested
-        if rocket_inputs_metadata.get("save_to_pdf") and rocket_inputs_metadata.get("save_to_png"):
+        # display_graphs is always False here: this runs inside the solver (and, from the UI, off the main thread), 
+        # so opening interactive windows would block or crash
+        save_to_pdf = bool(rocket_inputs_metadata.get("save_to_pdf"))
+        save_to_png = bool(rocket_inputs_metadata.get("save_to_png"))
+        if save_to_pdf or save_to_png:
             print(f"\nCreating graphs...")
-            unsteady_results(json_filename=output_json_name, json_filepath=output_dir, display_graphs=False, save_to_pdf=True, save_to_png=True)
-        elif rocket_inputs_metadata.get("save_to_pdf"):
-            print(f"\nCreating graphs...")
-            unsteady_results(json_filename=output_json_name, json_filepath=output_dir, display_graphs=False, save_to_pdf=True, save_to_png=False)
-        elif rocket_inputs_metadata.get("save_to_png"):
-            print(f"\nCreating graphs...")
-            unsteady_results(json_filename=output_json_name, json_filepath=output_dir, display_graphs=False, save_to_pdf=False, save_to_png=True)
-        
+            unsteady_results(
+                json_filename=output_json_name,
+                json_filepath=output_dir,
+                display_graphs=False,
+                save_to_pdf=save_to_pdf,
+                save_to_png=save_to_png)
+
         return file_path

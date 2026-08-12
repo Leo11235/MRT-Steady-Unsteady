@@ -1,28 +1,48 @@
 """
-unsteady_results_2.py
-=====================
-Second-iteration post-run visualization for unsteady simulation outputs.
+Post-run visualisation for unsteady simulation output.
 
-Differences vs. unsteady_results.py:
-  - Thrust, OF, chamber temperature plots are trimmed to burn phases.
-  - 22 new plots added (tank, chamber, nozzle, combustion, atmosphere,
-    trajectory map, OF vs r_f, Isp, diagnostics, geometry sketches).
-  - Per-phase performance table tightened.
-  - Per-plot toggles via kwargs (each defaults to True).
-  - Optional save_to_pdf / save_to_png modes that write into
-    `simulation_results/unsteady/<json_basename>/`.
-  - At most `max_concurrent_figures` (default 10) windows pop up at a
-    time; the next batch shows when the user closes the previous one.
-  - Performance + inputs and event/warnings panels show first.
-  - `analyze_most_recent(n=...)` picks the latest (or n-th most recent) run.
+Consumes one `sim_data.json` (whatever `History.export()` wrote) and turns it
+into figures: on-screen windows, a multi-page PDF, a folder of PNGs, or any
+combination.  Lives in src/common/ because three different callers need it —
+the engine's export step, the desktop UI's results page, and anyone poking at a
+run from a script.
 
-Use the demo call at the bottom of this file as a template.
+THE PLOT REGISTRY
+-----------------
+Every plot is a `PlotSpec` in the PLOTS tuple below, pairing a stable name with
+a builder of the form `(sim_results) -> Figure | None`.  A builder returning
+None means "this run doesn't have the data for this plot", which is normal and
+not an error.
+
+PLOTS is the single source of truth.  The PDF writer, the PNG writer and the
+UI's graph picker all read it, so what you see in the app is what lands in the
+PDF, and adding a plot means adding one entry rather than editing three places.
+
+    plot_specs()                  every plot, in display order
+    plot_specs(group="geometry")  just one group
+    plot_groups()                 the group names, in order
+    build_figure(name, results)   build one plot by name (what the UI calls)
+
+Builders are pure: they read sim_results and return a Figure. They never write
+files, never call plt.show(), and never touch the filesystem.  All output
+behaviour is decided by unsteady_results() below.
+
+THREADING
+---------
+Anything importing this module off the main thread (the UI's worker, the test
+suite) must select a non-interactive matplotlib backend BEFORE the first import
+of pyplot:
+
+    import matplotlib; matplotlib.use("Agg")
+
+Otherwise matplotlib reaches for a GUI toolkit, which demands the main thread.
 """
 
 from __future__ import annotations
 
 import json
 import math
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 import warnings
@@ -88,173 +108,283 @@ DESCENT_PHASES = {"phase_5", "phase_6", "phase_7"}
 
 
 # =============================================================================
-# Public entry points
+# The plot registry
+# =============================================================================
+
+@dataclass(frozen=True)
+class PlotSpec:
+    """One entry in the registry.
+
+    name     Stable identifier.  Used to select a plot, and as the PNG
+             filename, so renaming one breaks saved references — don't.
+    label    Human-readable, shown in the UI's graph picker.
+    group    Which section of the picker it belongs under.
+    builder  (sim_results) -> Figure, or None when the run lacks the data.
+    """
+    name: str
+    label: str
+    group: str
+    builder: Callable[[dict], Optional["Figure"]]
+
+
+# Groups, in the order they appear on screen and in the PDF.
+GROUP_SUMMARY     = "Summary"
+GROUP_TIME_SERIES = "Time series"
+GROUP_BURN        = "Burn"
+GROUP_RELATIONS   = "Relations"
+GROUP_DIAGNOSTICS = "Diagnostics"
+GROUP_GEOMETRY    = "Geometry"
+
+
+def _plot_registry() -> tuple[PlotSpec, ...]:
+    """Built lazily at import-time bottom, once every builder is defined."""
+    return (
+        # ---- textual panels, always first ----
+        PlotSpec("performance_panel", "Performance summary", GROUP_SUMMARY,
+                 make_performance_panel),
+        PlotSpec("events_warnings_panel", "Events and warnings", GROUP_SUMMARY,
+                 make_events_warnings_panel),
+
+        # ---- headline time series ----
+        PlotSpec("thrust_vs_time", "Thrust", GROUP_TIME_SERIES,
+                 make_thrust_plot),
+        PlotSpec("injector_mass_flow_vs_time", "Injector mass flow", GROUP_TIME_SERIES,
+                 make_injector_mass_flow_plot),
+        PlotSpec("rocket_kinematics", "Rocket kinematics", GROUP_TIME_SERIES,
+                 make_kinematics_plot),
+        PlotSpec("of_ratio_vs_time", "O/F ratio", GROUP_TIME_SERIES,
+                 make_of_ratio_plot),
+        PlotSpec("chamber_temperature_vs_time", "Chamber temperature", GROUP_TIME_SERIES,
+                 make_chamber_temperature_plot),
+
+        # ---- burn-window time series ----
+        PlotSpec("tank_pressure_vs_time", "Tank pressure", GROUP_BURN,
+                 make_tank_pressure_plot),
+        PlotSpec("tank_temperature_vs_time", "Tank temperature", GROUP_BURN,
+                 make_tank_temperature_plot),
+        PlotSpec("chamber_pressure_vs_time", "Chamber pressure", GROUP_BURN,
+                 make_chamber_pressure_plot),
+        PlotSpec("oxidizer_inventory_vs_time", "Oxidizer inventory", GROUP_BURN,
+                 make_oxidizer_inventory_plot),
+        PlotSpec("fuel_grain_state_vs_time", "Fuel grain state", GROUP_BURN,
+                 make_fuel_grain_state_plot),
+        PlotSpec("injector_pressure_drop_vs_time", "Injector pressure drop", GROUP_BURN,
+                 make_injector_dp_plot),
+        PlotSpec("nozzle_exit_conditions_vs_time", "Nozzle exit conditions", GROUP_BURN,
+                 make_nozzle_exit_plot),
+        PlotSpec("nozzle_flow_regime_vs_time", "Nozzle flow regime", GROUP_BURN,
+                 make_flow_regime_plot),
+        PlotSpec("combustion_properties_vs_time", "Combustion properties", GROUP_BURN,
+                 make_combustion_properties_plot),
+        PlotSpec("ambient_atmosphere_vs_time", "Ambient atmosphere", GROUP_BURN,
+                 make_ambient_atmosphere_plot),
+        PlotSpec("isp_vs_time", "Isp", GROUP_BURN,
+                 make_isp_plot),
+        PlotSpec("rocket_total_mass_vs_time", "Rocket total mass", GROUP_BURN,
+                 make_rocket_total_mass_plot),
+
+        # ---- everything not plotted against time ----
+        PlotSpec("trajectory_map", "Trajectory map", GROUP_RELATIONS,
+                 make_trajectory_map),
+        PlotSpec("of_vs_port_radius", "O/F vs port radius", GROUP_RELATIONS,
+                 make_of_vs_radius_plot),
+        PlotSpec("thrust_vs_chamber_pressure", "Thrust vs chamber pressure", GROUP_RELATIONS,
+                 make_thrust_vs_pc_plot),
+
+        # ---- solver health ----
+        PlotSpec("solver_step_size", "Solver step size", GROUP_DIAGNOSTICS,
+                 make_solver_step_size_plot),
+        PlotSpec("nan_map", "NaN map", GROUP_DIAGNOSTICS,
+                 make_nan_map_plot),
+        PlotSpec("mass_conservation_check", "Mass conservation check", GROUP_DIAGNOSTICS,
+                 make_mass_conservation_plot),
+        PlotSpec("thrust_with_event_markers", "Thrust with event markers", GROUP_DIAGNOSTICS,
+                 make_thrust_with_events_plot),
+
+        # ---- sketches ----
+        PlotSpec("rocket_cross_section", "Rocket cross-section", GROUP_GEOMETRY,
+                 make_rocket_cross_section),
+        PlotSpec("nozzle_profile", "Nozzle profile", GROUP_GEOMETRY,
+                 make_nozzle_profile),
+    )
+
+
+def plot_specs(group: str | None = None) -> list[PlotSpec]:
+    """Every registered plot in display order, or just one group's worth."""
+    if group is None:
+        return list(PLOTS)
+    return [spec for spec in PLOTS if spec.group == group]
+
+
+def plot_groups() -> list[str]:
+    """Group names in display order, deduplicated."""
+    seen: list[str] = []
+    for spec in PLOTS:
+        if spec.group not in seen:
+            seen.append(spec.group)
+    return seen
+
+
+def plot_names() -> list[str]:
+    """Every plot name in display order."""
+    return [spec.name for spec in PLOTS]
+
+
+def build_figure(name: str, sim_results: dict) -> Optional["Figure"]:
+    """Build one plot by name.  This is the UI's entry point.
+
+    Returns None when the run has no data for that plot.  Raises KeyError for
+    a name that isn't registered, since that's a programming mistake rather
+    than a property of the run."""
+    if name not in PLOTS_BY_NAME:
+        raise KeyError(f"Unknown plot {name!r}.  Registered: {', '.join(plot_names())}")
+    return PLOTS_BY_NAME[name].builder(sim_results)
+
+
+def _selected_specs(plots: "list[str] | None",
+                    exclude: "list[str] | None") -> list[PlotSpec]:
+    """Resolve the plots/exclude arguments into an ordered list of specs.
+
+    Order always comes from the registry, never from the caller's list, so the
+    PDF page order is stable no matter how the selection was written."""
+    chosen = list(PLOTS) if plots is None else [
+        spec for spec in PLOTS if spec.name in set(plots)
+    ]
+    if plots is not None:
+        unknown = set(plots) - set(plot_names())
+        if unknown:
+            raise KeyError(f"Unknown plot name(s): {', '.join(sorted(unknown))}")
+    if exclude:
+        chosen = [spec for spec in chosen if spec.name not in set(exclude)]
+    return chosen
+
+
+# =============================================================================
+# Public entry point
 # =============================================================================
 
 def unsteady_results(
     json_filename: str | None = None,
     json_filepath: str | Path | None = None,
     *,
-    # ------------------------------------------------------------------
-    # Output behaviour
-    # ------------------------------------------------------------------
     display_graphs: bool = True,
     save_to_pdf: bool = False,
     save_to_png: bool = False,
+    plots: list[str] | None = None,
+    exclude: list[str] | None = None,
+    output_dir: str | Path | None = None,
     max_concurrent_figures: int = 10,
-    # ------------------------------------------------------------------
-    # Textual panels (always shown first when enabled)
-    # ------------------------------------------------------------------
-    performance_panel: bool = True,
-    events_warnings_panel: bool = True,
-    # ------------------------------------------------------------------
-    # Original time-series plots
-    # ------------------------------------------------------------------
-    thrust_vs_time: bool = True,
-    injector_mass_flow_vs_time: bool = True,
-    rocket_kinematics: bool = True,
-    of_ratio_vs_time: bool = True,
-    chamber_temperature_vs_time: bool = True,
-    # ------------------------------------------------------------------
-    # Burn-only time-series plots
-    # ------------------------------------------------------------------
-    tank_pressure_vs_time: bool = True,
-    tank_temperature_vs_time: bool = True,
-    chamber_pressure_vs_time: bool = True,
-    oxidizer_inventory_vs_time: bool = True,
-    fuel_grain_state_vs_time: bool = True,
-    injector_pressure_drop_vs_time: bool = True,
-    nozzle_exit_conditions_vs_time: bool = True,
-    nozzle_flow_regime_vs_time: bool = True,
-    combustion_properties_vs_time: bool = True,
-    ambient_atmosphere_vs_time: bool = True,
-    isp_vs_time: bool = True,
-    rocket_total_mass_vs_time: bool = True,
-    # ------------------------------------------------------------------
-    # Non-time-axis plots
-    # ------------------------------------------------------------------
-    trajectory_map: bool = True,
-    of_vs_port_radius: bool = True,
-    thrust_vs_chamber_pressure: bool = True,
-    # ------------------------------------------------------------------
-    # Diagnostics
-    # ------------------------------------------------------------------
-    solver_step_size: bool = True,
-    nan_map: bool = True,
-    mass_conservation_check: bool = True,
-    thrust_with_event_markers: bool = True,
-    # ------------------------------------------------------------------
-    # Geometry sketches
-    # ------------------------------------------------------------------
-    rocket_cross_section: bool = True,
-    nozzle_profile: bool = True,
 ) -> Optional[Path]:
     """
-    Master entry point. See the demo call at the bottom of this file for
-    every supported argument.
+    Render a finished unsteady run.
+
+    Parameters
+    ----------
+    json_filename
+        Name of the results JSON, normally "sim_data.json".  None means "find
+        the most recent run and use that", which is a convenience for poking at
+        results from a script; the engine and the UI always pass it explicitly.
+
+    json_filepath
+        Directory holding that file.  When the engine calls this, it passes the
+        run folder it just wrote into.  None falls back to
+        <project_root>/user_data/simulation_results/unsteady/.
+
+    display_graphs
+        Open interactive matplotlib windows.  CLI ONLY.  This blocks until the
+        user closes every window, and needs a GUI backend on the main thread,
+        so the UI and the test suite must always pass False.  With Agg selected
+        (see the threading note in the module docstring) it would do nothing
+        anyway.
+
+    save_to_pdf
+        Write every selected figure into one multi-page `graphs.pdf` at the
+        root of the output directory, one page per plot, in registry order.
+
+    save_to_png
+        Write one PNG per selected figure into a `graphs/` subfolder, named
+        `<index>_<plot name>.png` so they sort into registry order.
+
+    plots
+        Which plots to render, by name.  None means all of them.  Order is
+        taken from the registry regardless of the order given here.  An
+        unrecognised name raises KeyError rather than being ignored quietly.
+
+    exclude
+        Names to drop from whatever `plots` selected.  Handy for "everything
+        except the slow geometry sketches" without listing the other 26.
+
+    output_dir
+        Where PDF and PNGs go.  None means the run folder, derived from
+        json_filepath.  Only worth setting when you want artifacts somewhere
+        other than alongside the JSON they came from.
+
+    max_concurrent_figures
+        How many windows to open at once when display_graphs is True.  Figures
+        are built and shown in batches of this size; each batch blocks until
+        closed before the next is built.  Ignored entirely when not displaying.
 
     Returns
     -------
-    The output directory (a Path) when `save_to_pdf` or `save_to_png` were
-    enabled; otherwise None.
+    The output directory when anything was saved, otherwise None.
 
     Notes
     -----
-    `display_graphs=False` short-circuits all matplotlib display logic — useful
-    in combination with `save_to_pdf=True` or `save_to_png=True` for headless
-    batch processing.
-
-    PDF / PNG output goes into
-        <project_root>/user_data/simulation_results/unsteady/<json_basename>/
-    Any plot whose toggle is False is excluded from both the on-screen pop-ups
-    AND the PDF / PNG outputs.
+    A builder that raises is reported and skipped rather than aborting the
+    whole render, because one broken plot shouldn't cost you the other 27.  A
+    builder returning None is silent — that just means the run lacks the data.
     """
-
-    # 1. resolve and load file
+    # 1. resolve and load
     if json_filename is None:
         json_filename, json_filepath = _nth_recent_results_file(0)
     sim_results = _load_results(json_filename, json_filepath)
 
-    # 2. build the (name, flag, builder) plan in display order
-    plan: list[tuple[str, bool, Callable[[dict], Optional[Figure]]]] = [
-        # textual panels first
-        ("performance_panel",               performance_panel,                make_performance_panel),
-        ("events_warnings_panel",           events_warnings_panel,            make_events_warnings_panel),
-        # original plots
-        ("thrust_vs_time",                  thrust_vs_time,                   make_thrust_plot),
-        ("injector_mass_flow_vs_time",      injector_mass_flow_vs_time,       make_injector_mass_flow_plot),
-        ("rocket_kinematics",               rocket_kinematics,                make_kinematics_plot),
-        ("of_ratio_vs_time",                of_ratio_vs_time,                 make_of_ratio_plot),
-        ("chamber_temperature_vs_time",     chamber_temperature_vs_time,      make_chamber_temperature_plot),
-        # burn-only time series
-        ("tank_pressure_vs_time",           tank_pressure_vs_time,            make_tank_pressure_plot),
-        ("tank_temperature_vs_time",        tank_temperature_vs_time,         make_tank_temperature_plot),
-        ("chamber_pressure_vs_time",        chamber_pressure_vs_time,         make_chamber_pressure_plot),
-        ("oxidizer_inventory_vs_time",      oxidizer_inventory_vs_time,       make_oxidizer_inventory_plot),
-        ("fuel_grain_state_vs_time",        fuel_grain_state_vs_time,         make_fuel_grain_state_plot),
-        ("injector_pressure_drop_vs_time",  injector_pressure_drop_vs_time,   make_injector_dp_plot),
-        ("nozzle_exit_conditions_vs_time",  nozzle_exit_conditions_vs_time,   make_nozzle_exit_plot),
-        ("nozzle_flow_regime_vs_time",      nozzle_flow_regime_vs_time,       make_flow_regime_plot),
-        ("combustion_properties_vs_time",   combustion_properties_vs_time,    make_combustion_properties_plot),
-        ("ambient_atmosphere_vs_time",      ambient_atmosphere_vs_time,       make_ambient_atmosphere_plot),
-        ("isp_vs_time",                     isp_vs_time,                      make_isp_plot),
-        ("rocket_total_mass_vs_time",       rocket_total_mass_vs_time,        make_rocket_total_mass_plot),
-        # non-time-axis
-        ("trajectory_map",                  trajectory_map,                   make_trajectory_map),
-        ("of_vs_port_radius",               of_vs_port_radius,                make_of_vs_radius_plot),
-        ("thrust_vs_chamber_pressure",      thrust_vs_chamber_pressure,       make_thrust_vs_pc_plot),
-        # diagnostics
-        ("solver_step_size",                solver_step_size,                 make_solver_step_size_plot),
-        ("nan_map",                         nan_map,                          make_nan_map_plot),
-        ("mass_conservation_check",         mass_conservation_check,          make_mass_conservation_plot),
-        ("thrust_with_event_markers",       thrust_with_event_markers,        make_thrust_with_events_plot),
-        # geometry
-        ("rocket_cross_section",            rocket_cross_section,             make_rocket_cross_section),
-        ("nozzle_profile",                  nozzle_profile,                   make_nozzle_profile),
-    ]
+    # 2. resolve the selection
+    selected = _selected_specs(plots, exclude)
 
-    # If display_graphs is False, the per-plot toggles still apply for
-    # save_to_pdf / save_to_png — but nothing pops up on screen. If neither
-    # display nor save are enabled, do nothing.
     if not display_graphs and not (save_to_pdf or save_to_png):
-        print("display_unsteady_results: display_graphs=False and no save targets — nothing to do.")
+        print("unsteady_results: nothing to display and nothing to save — doing nothing.")
+        return None
+    if not selected:
+        print("unsteady_results: the plots/exclude arguments selected nothing.")
         return None
 
-    # 3. saving (if requested) — needs every figure up front
-    output_dir: Optional[Path] = None
+    # 3. save, which needs every figure built up front
+    out_dir: Optional[Path] = None
     if save_to_pdf or save_to_png:
-        output_dir = _per_run_output_dir(json_filename, json_filepath)
+        out_dir = (Path(output_dir) if output_dir is not None
+                   else _per_run_output_dir(json_filename, json_filepath))
+        out_dir.mkdir(parents=True, exist_ok=True)
+
         figures: list[Figure] = []
         names: list[str] = []
-        for name, flag, builder in plan:
-            if not flag:
-                continue
+        for spec in selected:
             try:
-                fig = builder(sim_results)
+                fig = spec.builder(sim_results)
             except Exception as exc:
-                print(f"  ! skipped {name}: {type(exc).__name__}: {exc}")
+                print(f"  ! skipped {spec.name}: {type(exc).__name__}: {exc}")
                 continue
             if fig is None:
-                continue
+                continue          # run has no data for this plot; not an error
             figures.append(fig)
-            names.append(name)
+            names.append(spec.name)
 
         if save_to_pdf:
-            _save_figures_to_pdf(figures, names, output_dir)
+            _save_figures_to_pdf(figures, names, out_dir)
         if save_to_png:
-            _save_figures_to_png(figures, names, output_dir)
+            _save_figures_to_png(figures, names, out_dir)
 
-        # close the built figures so the display step below starts clean and
-        # plt.show() only sees the current batch's figures.
+        # Release them before the display step, so plt.show() below only sees
+        # the batch it's about to build rather than everything saved above.
         for fig in figures:
             plt.close(fig)
         plt.close("all")
 
-    # 4. display (if requested) — build batch-by-batch
+    # 4. display
     if display_graphs:
-        _build_and_display_in_batches(plan, sim_results, max_concurrent_figures)
+        _build_and_display_in_batches(selected, sim_results, max_concurrent_figures)
 
-    return output_dir
+    return out_dir
 
 
 def analyze_most_recent(n: int = 0, **kwargs) -> Optional[Path]:
@@ -279,7 +409,7 @@ def analyze_most_recent(n: int = 0, **kwargs) -> Optional[Path]:
 
 def _load_results(json_filename: str, json_filepath=None) -> dict:
     if json_filepath is None:
-        project_root = Path(__file__).resolve().parents[4]
+        project_root = Path(__file__).resolve().parents[3]
         json_filepath = project_root / "user_data" / "simulation_results" / "unsteady"
     full_path = Path(json_filepath) / json_filename
     if not full_path.exists():
@@ -291,7 +421,7 @@ def _load_results(json_filename: str, json_filepath=None) -> dict:
 
 def _nth_recent_results_file(n: int = 0) -> tuple[str, Path]:
     """Return (filename, directory) of the n-th most recent results JSON."""
-    project_root = Path(__file__).resolve().parents[4]
+    project_root = Path(__file__).resolve().parents[3]
     results_dir = project_root / "user_data" / "simulation_results" / "unsteady"
     if not results_dir.exists():
         raise FileNotFoundError(f"Results directory not found: {results_dir}")
@@ -314,7 +444,7 @@ def _per_run_output_dir(json_filename: str, json_filepath=None) -> Path:
     if json_filepath is not None:
         out_dir = Path(json_filepath)
     else:
-        project_root = Path(__file__).resolve().parents[4]
+        project_root = Path(__file__).resolve().parents[3]
         base_results = project_root / "user_data" / "simulation_results" / "unsteady"
         out_dir = base_results / Path(json_filename).stem
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1717,43 +1847,49 @@ def make_nozzle_profile(sim_results: dict) -> Optional[Figure]:
 # Output drivers
 # =============================================================================
 
-def _build_and_display_in_batches(plan: list, sim_results: dict,
+
+
+# =============================================================================
+# Output writers
+# =============================================================================
+
+def _build_and_display_in_batches(specs: list[PlotSpec], sim_results: dict,
                                   batch_size: int) -> None:
-    """
-    Build figures one batch at a time and show that batch with plt.show().
+    """Build and show figures `batch_size` at a time.
 
     plt.show() blocks until the user closes every window in the current batch;
-    plt.close("all") then clears them before we build the next batch. This is
-    the only reliable way to cap on-screen windows, because plt.show() shows
-    every figure pyplot currently manages — there is no "show subset" API.
+    plt.close("all") then clears them before we build the next.  This is the
+    only reliable way to cap on-screen windows, because plt.show() displays
+    every figure pyplot currently manages — there is no "show a subset" API.
+
+    CLI only.  See the display_graphs note on unsteady_results().
     """
     batch_size = max(1, int(batch_size))
-    selected = [(name, builder) for (name, flag, builder) in plan if flag]
-    if not selected:
+    if not specs:
         return
 
     i = 0
     batch_num = 0
-    while i < len(selected):
+    while i < len(specs):
         batch_num += 1
-        end = min(i + batch_size, len(selected))
-        print(f"Showing batch {batch_num}: items {i + 1}–{end} of {len(selected)}…")
-        for name, builder in selected[i:end]:
+        end = min(i + batch_size, len(specs))
+        print(f"Showing batch {batch_num}: items {i + 1}-{end} of {len(specs)}...")
+        for spec in specs[i:end]:
             try:
-                fig = builder(sim_results)
+                fig = spec.builder(sim_results)
                 if fig is None:
                     continue
             except Exception as exc:
-                print(f"  ! skipped {name}: {type(exc).__name__}: {exc}")
+                print(f"  ! skipped {spec.name}: {type(exc).__name__}: {exc}")
                 continue
-        plt.show()        # blocks until user closes the batch's windows
+        plt.show()        # blocks until the user closes this batch's windows
         plt.close("all")  # clean slate for the next batch
         i = end
 
 
 def _save_figures_to_pdf(figures: list[Figure], names: list[str],
                          out_dir: Path) -> None:
-    # PDF sits at the run-dir root as `graphs.pdf`.
+    """One multi-page PDF at the run-dir root, one page per figure."""
     pdf_path = out_dir / "graphs.pdf"
     with PdfPages(pdf_path) as pdf:
         for fig in figures:
@@ -1763,13 +1899,25 @@ def _save_figures_to_pdf(figures: list[Figure], names: list[str],
 
 def _save_figures_to_png(figures: list[Figure], names: list[str],
                          out_dir: Path) -> None:
-    # PNGs go into a `graphs/` subfolder inside the run dir.
+    """One PNG per figure in a `graphs/` subfolder.
+
+    Filenames are index-prefixed so an alphabetical listing matches the
+    registry order, which is also the PDF page order."""
     png_dir = out_dir / "graphs"
     png_dir.mkdir(parents=True, exist_ok=True)
     for i, (fig, name) in enumerate(zip(figures, names), start=1):
-        png_path = png_dir / f"{i:02d}_{name}.png"
-        fig.savefig(png_path, dpi=140, bbox_inches="tight")
+        fig.savefig(png_dir / f"{i:02d}_{name}.png", dpi=140, bbox_inches="tight")
     print(f"  saved {len(figures)} PNGs to {png_dir.name}/")
+
+
+# =============================================================================
+# Registry construction
+# =============================================================================
+#
+# Built here, at the bottom, because every builder above has to exist first.
+
+PLOTS: tuple[PlotSpec, ...] = _plot_registry()
+PLOTS_BY_NAME: dict[str, PlotSpec] = {spec.name: spec for spec in PLOTS}
 
 
 # =============================================================================
@@ -1777,63 +1925,17 @@ def _save_figures_to_png(figures: list[Figure], names: list[str],
 # =============================================================================
 
 if __name__ == "__main__":
-    # ------------------------------------------------------------------
-    # FULL DEMO CALL — copy/paste and adjust as needed.
-    # All boolean toggles below show their defaults explicitly. Set any to
-    # False to skip that plot in both the on-screen pop-ups AND the
-    # PDF / PNG outputs.
-    # ------------------------------------------------------------------
+    # Render the most recent run into on-screen windows.  Every argument is
+    # documented on unsteady_results() above.
+    #
+    #   unsteady_results()                                   most recent, on screen
+    #   unsteady_results("sim_data.json", "path/to/run")     a specific run
+    #   unsteady_results(..., display_graphs=False, save_to_pdf=True)   headless
+    #   unsteady_results(..., plots=["thrust_vs_time"])      just one plot
+    #   unsteady_results(..., exclude=["rocket_cross_section"])  all but one
     unsteady_results(
-        json_filename=None,                 # None -> auto-pick most recent
-        json_filepath=None,                 # None -> default results directory
-
-        # ----- output behaviour -----
-        display_graphs=True,                # False = headless (no windows)
-        save_to_pdf=False,                  # True  = also write one multipage PDF
-        save_to_png=False,                  # True  = also write one PNG per plot
-        max_concurrent_figures=10,          # batch size for on-screen display (max. number of graphs you will see at once)
-
-        # ----- textual panels (always rendered first) -----
-        performance_panel=True,
-        events_warnings_panel=True,
-
-        # ----- original time-series plots -----
-        thrust_vs_time=True,
-        injector_mass_flow_vs_time=True,
-        rocket_kinematics=True,
-        of_ratio_vs_time=True,
-        chamber_temperature_vs_time=True,
-
-        # ----- burn-only time-series plots -----
-        tank_pressure_vs_time=True,
-        tank_temperature_vs_time=True,
-        chamber_pressure_vs_time=True,
-        oxidizer_inventory_vs_time=True,
-        fuel_grain_state_vs_time=True,
-        injector_pressure_drop_vs_time=True,
-        nozzle_exit_conditions_vs_time=True,
-        nozzle_flow_regime_vs_time=True,
-        combustion_properties_vs_time=True,
-        ambient_atmosphere_vs_time=True,
-        isp_vs_time=True,
-        rocket_total_mass_vs_time=True,     # skipped automatically if not saved
-
-        # ----- non-time-axis plots -----
-        trajectory_map=True,
-        of_vs_port_radius=True,
-        thrust_vs_chamber_pressure=True,
-
-        # ----- diagnostics -----
-        solver_step_size=True,
-        nan_map=True,
-        mass_conservation_check=True,
-        thrust_with_event_markers=True,
-
-        # ----- geometry sketches -----
-        rocket_cross_section=True,
-        nozzle_profile=True,
+        display_graphs=True,
+        save_to_pdf=False,
+        save_to_png=False,
+        max_concurrent_figures=10,
     )
-
-# Backwards-compatible alias — earlier UI versions imported this by name.
-# Keep it exported so `from ... import display_unsteady_results` keeps working.
-display_unsteady_results = unsteady_results
