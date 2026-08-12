@@ -57,13 +57,11 @@ _DEFAULT_METADATA = {
 _DEFAULT_CV_INPUTS = {
     "CV1_tank": {
         "model": "saturated_equilibrium",
-        "tank_internal_radius_m":           "",
-        "tank_internal_shell_length_m":     "",
-        "tank_internal_volume_m3":          "",
+        "tank_internal_diameter_m":         "",
         "tank_temperature_K":               "",
         "tank_oxidizer_mass_kg":            "",
-        "dip_tube_external_radius_m":       "",
-        "dip_tube_internal_radius_m":       "",
+        "dip_tube_external_diameter_m":     "",
+        "dip_tube_internal_diameter_m":     "",
         "dip_tube_length_m":                "",
         "tank_ullage_fraction":             "",
         "tank_internal_length_m":           "",
@@ -134,13 +132,11 @@ OUTPUT_UNITS = ("SI", "MRT", "IMP")
 
 _LABELS = {
     # CV1
-    "tank_internal_radius_m":           "Internal radius",
-    "tank_internal_shell_length_m":     "Internal shell length",
-    "tank_internal_volume_m3":          "Internal volume",
+    "tank_internal_diameter_m":         "Internal diameter",
     "tank_temperature_K":               "Initial temperature",
     "tank_oxidizer_mass_kg":            "Oxidizer mass",
-    "dip_tube_external_radius_m":       "Dip tube external radius",
-    "dip_tube_internal_radius_m":       "Dip tube internal radius",
+    "dip_tube_external_diameter_m":     "Dip tube external diameter",
+    "dip_tube_internal_diameter_m":     "Dip tube internal diameter",
     "dip_tube_length_m":                "Dip tube length",
     "tank_ullage_fraction":             "Ullage fraction",
     "tank_internal_length_m":           "Internal length",
@@ -191,21 +187,17 @@ _LABELS = {
 
 _HELP: dict[str, str] = {
     # CV1 — tank
-    "tank_internal_radius_m":
-        "Inner radius of the oxidizer tank shell.",
-    "tank_internal_shell_length_m":
-        "Straight-section length of the tank (not including end caps).",
-    "tank_internal_volume_m3":
-        "Total internal volume of the tank.",
+    "tank_internal_diameter_m":
+        "Inner diameter of the oxidizer tank shell.",
     "tank_temperature_K":
         "Initial N₂O bulk temperature. Room-temperature fills are usually "
         "285–300 K.",
     "tank_oxidizer_mass_kg":
         "Total oxidizer mass loaded at t=0.",
-    "dip_tube_external_radius_m":
-        "External radius of the dip tube (if used).",
-    "dip_tube_internal_radius_m":
-        "Internal (flow) radius of the dip tube.",
+    "dip_tube_external_diameter_m":
+        "External diameter of the dip tube (if used).",
+    "dip_tube_internal_diameter_m":
+        "Internal (flow) diameter of the dip tube.",
     "dip_tube_length_m":
         "Length of the dip tube from top of tank downward.",
     "tank_ullage_fraction":

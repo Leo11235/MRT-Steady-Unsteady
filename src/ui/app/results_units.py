@@ -18,7 +18,7 @@ Two lookup layers:
 
   2. UNIT_SUFFIXES — automatic parsing of unsteady-style suffixes
      (`_m`, `_kg`, `_Pa`, ...) so the map doesn't have to name every
-     tank_internal_shell_length_m style key one by one.
+     dip_tube_length_m style key one by one.
 
 Also here: unit_for_system() picks the right target unit given a system
 identifier ('SI' / 'IMP' / 'MRT') and the field context.

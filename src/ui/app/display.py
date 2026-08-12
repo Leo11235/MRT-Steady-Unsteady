@@ -296,13 +296,11 @@ FIELD_KIND: dict[str, str] = {
 
     # ====================  UNSTEADY FIELDS  ====================
     # CV1 — tank
-    "tank_internal_radius_m":               "length",
-    "tank_internal_shell_length_m":         "length",
-    "tank_internal_volume_m3":              "volume",
+    "tank_internal_diameter_m":             "length",
     "tank_temperature_K":                   "temperature",
     "tank_oxidizer_mass_kg":                "mass",
-    "dip_tube_external_radius_m":           "length",
-    "dip_tube_internal_radius_m":           "length",
+    "dip_tube_external_diameter_m":         "length",
+    "dip_tube_internal_diameter_m":         "length",
     "dip_tube_length_m":                    "length",
     "tank_internal_length_m":               "length",
     # CV2 — valve

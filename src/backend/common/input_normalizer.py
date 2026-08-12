@@ -36,6 +36,11 @@ _STEADY_MAP: dict[str, tuple[str, str]] = {
 # for the unsteady side the config is nested: rocket_inputs.CV_inputs.CV*.
 # key the outer map by CV name so the caller can pass the flat CV block directly (which is what config.py has just after parsing).
 _UNSTEADY_MAP: dict[str, dict[str, tuple[str, str]]] = {
+    "CV1_tank": {
+        "tank_internal_diameter_m": ("tank_internal_radius_m", "radius"),
+        "dip_tube_internal_diameter_m": ("dip_tube_internal_radius_m", "radius"),
+        "dip_tube_external_diameter_m": ("dip_tube_external_radius_m", "radius"),
+    },
     "CV3_injector": {
         "injector_hole_diameter_m": ("injector_hole_area_m2", "area"),
     },

@@ -1,13 +1,11 @@
 // full list of necessary items for unsteady
 // each CV can have different physical models, this lists below inform the program which inputs to expect given which model the user wants
 // arrays within the main lists (eg ["a", "b"]) indicate that only one of those inputs must be provided.
-
+// these names are what is expected by the backend, not the UI. so everything using radii and SI is normal. 
 {
   "CV1_tank": {
     "saturated_equilibrium": [
       "tank_internal_radius_m",
-      "tank_internal_shell_length_m",
-      "tank_internal_volume_m3",
       "tank_temperature_K",
       "tank_oxidizer_mass_kg",
       "dip_tube_external_radius_m",

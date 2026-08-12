@@ -528,11 +528,10 @@ _INPUT_GROUPS = [
     ]),
     ("Tank (CV1)", [
         ("tank_internal_radius_m",          "Internal radius",   "m",     4),
-        ("tank_internal_shell_length_m",    "Shell length",      "m",     3),
-        ("tank_internal_volume_m3",         "Volume",            "m³",    5),
         ("tank_temperature_K",              "Initial temp",      "K",     2),
         ("tank_oxidizer_mass_kg",           "Ox mass loaded",    "kg",    3),
         ("tank_ullage_fraction",            "Ullage fraction",   "",      3),
+        ("tank_internal_length_m",          "Internal length",   "m",     3),
         ("dip_tube_external_radius_m",      "Dip tube OD/2",     "m",     5),
         ("dip_tube_internal_radius_m",      "Dip tube ID/2",     "m",     5),
         ("dip_tube_length_m",               "Dip tube length",   "m",     3),
@@ -1540,7 +1539,19 @@ def make_rocket_cross_section(sim_results: dict) -> Optional[Figure]:
 
     # tank dimensions
     R_tank   = flat.get("tank_internal_radius_m")
-    L_tank   = flat.get("tank_internal_shell_length_m")
+    # Length: prefer the config value; fall back to reconstructing from
+    # the t=0 sim state when the ullage branch was used (no
+    # tank_internal_length_m in the config).  Ignores dip-tube-displaced
+    # volume — negligible for the visual proportions.
+    L_tank   = flat.get("tank_internal_length_m")
+    if L_tank is None and R_tank:
+        data = sim_results.get("data", {}) or {}
+        try:
+            V_l0 = data["n_l"][0] * data["v_l"][0]
+            V_v0 = data["n_v"][0] * data["v_v"][0]
+            L_tank = (V_l0 + V_v0) / (math.pi * R_tank * R_tank)
+        except (KeyError, IndexError, TypeError, ZeroDivisionError):
+            L_tank = None
     # chamber / grain dimensions
     R_grain  = flat.get("chamber_fuel_external_radius_m")
     L_grain  = flat.get("chamber_fuel_length_m")
