@@ -1,18 +1,21 @@
-/*
-An example of an unsteady config file
-Every physical input is a [value, unit] pair
-*/
-
 {
     "config": {
         "metadata": {
-            "simulation_type": "unsteady", // can be "steady", "unsteady", "steady_test", "unsteady_test"
-            "simulation_name": "", // str, optional
-            "simulation_description": "", // a brief description of the simulation, eg what is being tried for the rocket if it is a regular config or what is being tested+expected output if it is a test config
-            "expected_output": "", // test configs only; "success"/"error: errortype"/etc
+            "simulation_type": "unsteady_test", // can be "steady", "unsteady", "steady_test", "unsteady_test"
+            "simulation_name": "Graphs", // str, optional
+            "simulation_description": "Tests whether PDF/PNG graphs are working.", // a brief description of the simulation, eg what is being tried for the rocket if it is a regular config or what is being tested+expected output if it is a test config
+            "expected_output": "success", // test configs only; see EXPECTED_OUTPUTS in backend_tests_helpers.py
             "warnings": true, // true or false; whether to include warnings in the final report
             "save_to_pdf": true, // whether to save all output plots to a pdf file
-            "save_to_png": true // whether to save all output plots as a png
+            "save_to_png": true, // whether to save all output plots as a png
+            "checks": {
+                // the trailing slash on "graphs/" means the directory must exist
+                // AND be non-empty; an empty folder counts as a failure
+                "files_exist": ["sim_data.json", "graphs.pdf", "graphs/"],
+                // file existence alone would pass on a 0-byte PDF, so this also
+                // checks the files have real content in them
+                "custom_check": "check_graph_files_are_real"
+            }
         },
         "rocket_inputs": {
             "CV1_tank": {

@@ -524,53 +524,53 @@ def _draw_scorecard(ax, overall: dict, meta: dict):
 
 _INPUT_GROUPS = [
     ("Launch site", [
-        ("launch_site_altitude_asl_m", "Altitude ASL", "m", 1),
+        ("launch_site_altitude_asl", "Altitude ASL", "m", 1),
     ]),
     ("Tank (CV1)", [
-        ("tank_internal_radius_m",          "Internal radius",   "m",     4),
-        ("tank_temperature_K",              "Initial temp",      "K",     2),
-        ("tank_oxidizer_mass_kg",           "Ox mass loaded",    "kg",    3),
+        ("tank_internal_radius",          "Internal radius",   "m",     4),
+        ("tank_temperature",              "Initial temp",      "K",     2),
+        ("tank_oxidizer_mass",           "Ox mass loaded",    "kg",    3),
         ("tank_ullage_fraction",            "Ullage fraction",   "",      3),
-        ("tank_internal_length_m",          "Internal length",   "m",     3),
-        ("dip_tube_external_radius_m",      "Dip tube OD/2",     "m",     5),
-        ("dip_tube_internal_radius_m",      "Dip tube ID/2",     "m",     5),
-        ("dip_tube_length_m",               "Dip tube length",   "m",     3),
+        ("tank_internal_length",          "Internal length",   "m",     3),
+        ("dip_tube_external_radius",      "Dip tube OD/2",     "m",     5),
+        ("dip_tube_internal_radius",      "Dip tube ID/2",     "m",     5),
+        ("dip_tube_length",               "Dip tube length",   "m",     3),
     ]),
     ("Valve (CV2)", [
-        ("valve_time_constant_s",   "Time constant",  "s",   3),
-        ("sigmoid_half_time_s",     "Sigmoid t½",     "s",   3),
+        ("valve_time_constant",   "Time constant",  "s",   3),
+        ("sigmoid_half_time",     "Sigmoid t½",     "s",   3),
         ("sigmoid_steepness",       "Sigmoid k",      "",    2),
     ]),
     ("Injector (CV3)", [
         ("injector_discharge_coefficient", "Cd",            "",   3),
         ("injector_number_of_holes",       "Number holes",  "",   0),
-        ("injector_hole_area_m2",          "Hole area",     "m²", 8),
-        ("feed_pressure_loss_Pa",          "Feed Δp",       "Pa", 0),
+        ("injector_hole_area",          "Hole area",     "m²", 8),
+        ("feed_pressure_loss",          "Feed Δp",       "Pa", 0),
     ]),
     ("Chamber (CV4)", [
-        ("chamber_fuel_length_m",                    "Fuel length",        "m",      3),
-        ("chamber_fuel_density_kgm3",                "Fuel density",       "kg/m³",  1),
-        ("chamber_fuel_external_radius_m",           "Fuel OR",            "m",      4),
-        ("chamber_fuel_mass_kg",                     "Fuel mass loaded",   "kg",     3),
+        ("chamber_fuel_length",                    "Fuel length",        "m",      3),
+        ("chamber_fuel_density",                "Fuel density",       "kg/m³",  1),
+        ("chamber_fuel_external_radius",           "Fuel OR",            "m",      4),
+        ("chamber_fuel_mass",                     "Fuel mass loaded",   "kg",     3),
         ("chamber_regression_rate_scaling_constant", "Regression a",       "",       7),
         ("chamber_regression_rate_exponent",         "Regression n",       "",       3),
-        ("pre_chamber_volume_m3",                    "Pre-chamber V",      "m³",     6),
-        ("post_chamber_volume_m3",                   "Post-chamber V",     "m³",     6),
+        ("pre_chamber_volume",                    "Pre-chamber V",      "m³",     6),
+        ("post_chamber_volume",                   "Post-chamber V",     "m³",     6),
     ]),
     ("Nozzle (CV5)", [
-        ("nozzle_throat_radius_m", "Throat radius", "m", 4),
-        ("nozzle_exit_radius_m",   "Exit radius",   "m", 4),
+        ("nozzle_throat_radius", "Throat radius", "m", 4),
+        ("nozzle_exit_radius",   "Exit radius",   "m", 4),
     ]),
     ("Trajectory (CV6)", [
-        ("rocket_dry_mass_kg",                       "Dry mass",         "kg", 2),
+        ("rocket_dry_mass",                       "Dry mass",         "kg", 2),
         ("rocket_drag_coefficient",                  "Cd",               "",   3),
-        ("rocket_frontal_area_m2",                   "Frontal area",     "m²", 5),
-        ("rocket_launch_angle_deg",                  "Launch angle",     "°",  1),
+        ("rocket_frontal_area",                   "Frontal area",     "m²", 5),
+        ("rocket_launch_angle",                  "Launch angle",     "°",  1),
         ("drogue_parachute_drag_coefficient",        "Drogue Cd",        "",   2),
-        ("drogue_parachute_frontal_area_m2",         "Drogue area",      "m²", 2),
-        ("main_parachute_deployment_altitude_agl_m", "Main deploy AGL",  "m",  1),
+        ("drogue_parachute_frontal_area",         "Drogue area",      "m²", 2),
+        ("main_parachute_deployment_altitude_agl", "Main deploy AGL",  "m",  1),
         ("main_parachute_drag_coefficient",          "Main Cd",          "",   2),
-        ("main_parachute_frontal_area_m2",           "Main area",        "m²", 2),
+        ("main_parachute_frontal_area",           "Main area",        "m²", 2),
     ]),
 ]
 
@@ -803,7 +803,7 @@ def make_injector_mass_flow_plot(sim_results: dict) -> Figure:
         flat = _flatten_inputs(sim_results.get("static", {}).get("rocket_inputs", {}))
         n_v0 = _arr(data, "n_v")[0] if len(_arr(data, "n_v")) else 0.0
         n_l0 = _arr(data, "n_l")[0] if len(_arr(data, "n_l")) else 0.0
-        ox_mass0 = flat.get("tank_oxidizer_mass_kg", 0.0)
+        ox_mass0 = flat.get("tank_oxidizer_mass", 0.0)
         n_ox0 = n_v0 + n_l0
         W_o = ox_mass0 / n_ox0 if n_ox0 > 0 else 0.044013
         raw = n_dot * W_o
@@ -838,7 +838,7 @@ def make_injector_mass_flow_plot(sim_results: dict) -> Figure:
 def make_kinematics_plot(sim_results: dict) -> Figure:
     data = sim_results.get("data", {})
     flat = _flatten_inputs(sim_results.get("static", {}).get("rocket_inputs", {}))
-    launch_alt = flat.get("launch_site_altitude_asl_m", 0.0)
+    launch_alt = flat.get("launch_site_altitude_asl", 0.0)
 
     t  = _arr(data, "time")
     sy = _arr(data, "sy_R")
@@ -971,7 +971,7 @@ def make_oxidizer_inventory_plot(sim_results: dict) -> Optional[Figure]:
         return None
     flat = _flatten_inputs(sim_results.get("static", {}).get("rocket_inputs", {}))
     n_v_full = _arr(data, "n_v"); n_l_full = _arr(data, "n_l")
-    ox_mass0 = flat.get("tank_oxidizer_mass_kg", 0.0)
+    ox_mass0 = flat.get("tank_oxidizer_mass", 0.0)
     n_ox0 = float(n_v_full[0] + n_l_full[0])
     W_o = ox_mass0 / n_ox0 if n_ox0 > 0 else 0.044013
 
@@ -1000,9 +1000,9 @@ def make_fuel_grain_state_plot(sim_results: dict) -> Optional[Figure]:
     if "r_f" not in data:
         return None
     flat = _flatten_inputs(sim_results.get("static", {}).get("rocket_inputs", {}))
-    R_f   = flat.get("chamber_fuel_external_radius_m", 0.0)
-    rho_f = flat.get("chamber_fuel_density_kgm3", 900.0)
-    L_f   = flat.get("chamber_fuel_length_m", 0.0)
+    R_f   = flat.get("chamber_fuel_external_radius", 0.0)
+    rho_f = flat.get("chamber_fuel_density", 900.0)
+    L_f   = flat.get("chamber_fuel_length", 0.0)
 
     t_full = _arr(data, "time")
     r_full = _arr(data, "r_f")
@@ -1271,7 +1271,7 @@ def make_trajectory_map(sim_results: dict) -> Figure:
     """Altitude AGL vs downrange (sy_R vs sx_R), colored by phase."""
     data = sim_results.get("data", {})
     flat = _flatten_inputs(sim_results.get("static", {}).get("rocket_inputs", {}))
-    launch_alt = flat.get("launch_site_altitude_asl_m", 0.0)
+    launch_alt = flat.get("launch_site_altitude_asl", 0.0)
     sx = _arr(data, "sx_R"); sy = _arr(data, "sy_R"); phases = _phase_arr(data)
     agl = sy - launch_alt
 
@@ -1449,10 +1449,10 @@ def make_mass_conservation_plot(sim_results: dict) -> Optional[Figure]:
         return None
     t_full = _arr(data, "time"); phases_full = _phase_arr(data)
     n_v = _arr(data, "n_v"); n_l = _arr(data, "n_l"); r_f = _arr(data, "r_f")
-    ox_mass_initial = flat.get("tank_oxidizer_mass_kg", 0.0)
-    R_f = flat.get("chamber_fuel_external_radius_m", 0.0)
-    rho_f = flat.get("chamber_fuel_density_kgm3", 900.0)
-    L_f = flat.get("chamber_fuel_length_m", 0.0)
+    ox_mass_initial = flat.get("tank_oxidizer_mass", 0.0)
+    R_f = flat.get("chamber_fuel_external_radius", 0.0)
+    rho_f = flat.get("chamber_fuel_density", 900.0)
+    L_f = flat.get("chamber_fuel_length", 0.0)
     n_ox0 = float(n_v[0] + n_l[0])
     W_o = ox_mass_initial / n_ox0 if n_ox0 > 0 else 0.044013
 
@@ -1538,12 +1538,12 @@ def make_rocket_cross_section(sim_results: dict) -> Optional[Figure]:
     flat = _flatten_inputs(sim_results.get("static", {}).get("rocket_inputs", {}))
 
     # tank dimensions
-    R_tank   = flat.get("tank_internal_radius_m")
+    R_tank   = flat.get("tank_internal_radius")
     # Length: prefer the config value; fall back to reconstructing from
     # the t=0 sim state when the ullage branch was used (no
     # tank_internal_length_m in the config).  Ignores dip-tube-displaced
     # volume — negligible for the visual proportions.
-    L_tank   = flat.get("tank_internal_length_m")
+    L_tank   = flat.get("tank_internal_length")
     if L_tank is None and R_tank:
         data = sim_results.get("data", {}) or {}
         try:
@@ -1553,20 +1553,20 @@ def make_rocket_cross_section(sim_results: dict) -> Optional[Figure]:
         except (KeyError, IndexError, TypeError, ZeroDivisionError):
             L_tank = None
     # chamber / grain dimensions
-    R_grain  = flat.get("chamber_fuel_external_radius_m")
-    L_grain  = flat.get("chamber_fuel_length_m")
-    V_pre    = flat.get("pre_chamber_volume_m3", 0.0)
-    V_post   = flat.get("post_chamber_volume_m3", 0.0)
+    R_grain  = flat.get("chamber_fuel_external_radius")
+    L_grain  = flat.get("chamber_fuel_length")
+    V_pre    = flat.get("pre_chamber_volume", 0.0)
+    V_post   = flat.get("post_chamber_volume", 0.0)
     # initial port radius (best estimate)
     if "data" in sim_results and "r_f" in sim_results["data"]:
         r0 = float(_arr(sim_results["data"], "r_f")[0])
     else:
         r0 = 0.0
     # nozzle
-    R_throat = flat.get("nozzle_throat_radius_m")
-    R_exit   = flat.get("nozzle_exit_radius_m")
+    R_throat = flat.get("nozzle_throat_radius")
+    R_exit   = flat.get("nozzle_exit_radius")
     # external rocket OR (from frontal area)
-    A_ref = flat.get("rocket_frontal_area_m2")
+    A_ref = flat.get("rocket_frontal_area")
     R_ext = math.sqrt(A_ref / math.pi) if A_ref else None
 
     if R_tank is None or L_tank is None or R_grain is None or L_grain is None:
@@ -1667,8 +1667,8 @@ def make_rocket_cross_section(sim_results: dict) -> Optional[Figure]:
 
 def make_nozzle_profile(sim_results: dict) -> Optional[Figure]:
     flat = _flatten_inputs(sim_results.get("static", {}).get("rocket_inputs", {}))
-    R_throat = flat.get("nozzle_throat_radius_m")
-    R_exit   = flat.get("nozzle_exit_radius_m")
+    R_throat = flat.get("nozzle_throat_radius")
+    R_exit   = flat.get("nozzle_exit_radius")
     if R_throat is None or R_exit is None:
         return None
     eps = (R_exit / R_throat) ** 2

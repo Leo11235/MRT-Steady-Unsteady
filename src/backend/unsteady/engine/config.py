@@ -4,8 +4,7 @@ Parses .jsonc inputs, merges them with default settings, and validates them
 
 import json5, os
 from pathlib import Path
-
-from src.backend.common.input_normalizer import normalize_unsteady_inputs
+from src.common.variable_conversions import to_SI
 
 # load .jsonc inputs file
 # takes a filepath str, returns a dict
@@ -16,8 +15,8 @@ def _load_jsonc(filepath: str) -> dict:
     with open(filepath, 'r', encoding='utf-8') as f:
         return json5.load(f)
 
-# Load simulation settings
-# Overrides default simulation settings with any user-provided settings
+# load simulation settings
+# overrides default simulation settings with any user-provided settings
 def _merge_settings(default_settings: dict, user_settings: dict) -> dict:
     merged = default_settings.copy()
     
@@ -58,16 +57,16 @@ def _validate_and_unpack_CVs(user_rocket_inputs: dict, schema: dict):
                 # handle 'one or the other' inputs
                 found = False
                 for sub_key in item:
-                    if sub_key in cv_user_data:
+                    if _is_filled(cv_user_data.get(sub_key)):
                         unpacked_args[sub_key] = cv_user_data[sub_key]
                         found = True
                         break # stop looking early if we find a valid option
                 
                 if not found:
-                    raise KeyError(f"Missing input for {cv_name} ({selected_model} model). You must provide AT LEAST ONE of the following: {item}")
+                    raise KeyError(f"Missing input for {cv_name} ({selected_model} model). Exactly one of these must have a value: {item}")
             else:
                 # handle standard single required keys
-                if item not in cv_user_data:
+                if not _is_filled(cv_user_data.get(item)):
                     raise KeyError(f"Missing required input '{item}' for {cv_name} ({selected_model} model).")
                 unpacked_args[item] = cv_user_data[item]
             
@@ -78,6 +77,13 @@ def _validate_and_unpack_CVs(user_rocket_inputs: dict, schema: dict):
         
     return validated_cv_args
 
+# true if a config entry actually carries a value
+def _is_filled(value) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, (list, tuple)):
+        return len(value) > 0 and value[0] is not None and value[0] != ""
+    return value != ""
 
 def load_unsteady_config(user_inputs_filepath: str | Path, 
                          defaults_filepath: str | Path = Path(__file__).parents[4] / "src" / "backend" / "unsteady" / "static_data" / "default_simulation_settings.jsonc", 
@@ -93,35 +99,35 @@ def load_unsteady_config(user_inputs_filepath: str | Path,
     user_config = _load_jsonc(user_inputs_filepath)
     defaults_config = _load_jsonc(defaults_filepath)
     schema = _load_jsonc(schema_filepath)
+
+    # the defaults file wraps everything in a top-level "simulation_settings"
+    # key; unwrap it so callers can read phase_max_times / solver directly
+    defaults = defaults_config.get("simulation_settings", defaults_config)
     
     # merge default & user input simulation settings
     # user inputs override default settings
     overrides = user_config.get("simulation_settings_override", {})
     if overrides:
-        final_settings = _merge_settings(defaults_config, overrides)
+        final_settings = _merge_settings(defaults, overrides)
     else:
-        final_settings = defaults_config
+        final_settings = defaults
         
     # get rocket inputs
-    rocket_inputs = user_config.get("rocket_inputs", {})
-    if not rocket_inputs:
-        raise KeyError("Missing 'rocket_inputs' block in user JSON.")
+    config = user_config.get("config", {})
+    if not config:
+        raise KeyError("Missing 'config' block in user JSON.")
     
     # get metadata
-    metadata = rocket_inputs.get("metadata", {})
+    metadata = config.get("metadata", {})
     if not metadata:
         raise KeyError("Missing rocket inputs metadata")
     
     # get control volume inputs
-    CV_inputs = rocket_inputs.get("CV_inputs", {})
+    CV_inputs = config.get("rocket_inputs", {})
     if not CV_inputs:
         raise KeyError("Missing rocket inputs 'CV_inputs'")
 
-    # convert UI-side diameter keys into radius/area keys the physics loop expects
-    # runs before the schema validator so the validator sees the physics keys it's checking for
-    normalize_unsteady_inputs(CV_inputs)
-
-    # unpack & validate CVs
+    # unpack & validate CVs; ensure all required inputs are present
     validated_cvs = _validate_and_unpack_CVs(CV_inputs, schema)
     
     # define rocket_inputs dictionary
@@ -131,16 +137,31 @@ def load_unsteady_config(user_inputs_filepath: str | Path,
     # get CV model names & put into CV_models
     for cv_name, cv_data in validated_cvs.items():
         cv_models[cv_name] = cv_data["model_name"]
-        
         # dump CV args into rocket_inputs as well
         for param_key, param_value in cv_data["kwargs"].items():
             rocket_inputs[param_key] = param_value
-    
-    rocket_inputs["CV_models"] = cv_models
-    
+
+    # clean and standardize rocket inputs
+    rocket_inputs_cleaned = {}
+    for key, val in rocket_inputs.items():
+        # convert to SI
+        newval = to_SI(val[0], val[1])
+        # convert diameters to radii
+        if "diameter" in key:
+            p1, p2 = key.split("diameter")
+            newkey = f"{p1}radius{p2}"
+            newval = newval/2
+        else:
+            newkey = key
+        # add newkey, newval to dict
+        rocket_inputs_cleaned[newkey] = newval
+
+    # add list of currently used CV models to rocket_inputs_cleaned
+    rocket_inputs_cleaned["CV_models"] = cv_models
+
     return {
         "simulation_settings": final_settings,
-        "rocket_inputs": rocket_inputs,
+        "rocket_inputs": rocket_inputs_cleaned,
         "metadata": metadata
     }
 

@@ -1,18 +1,23 @@
-/*
-An example of an unsteady config file
-Every physical input is a [value, unit] pair
-*/
-
 {
     "config": {
         "metadata": {
-            "simulation_type": "unsteady", // can be "steady", "unsteady", "steady_test", "unsteady_test"
-            "simulation_name": "", // str, optional
-            "simulation_description": "", // a brief description of the simulation, eg what is being tried for the rocket if it is a regular config or what is being tested+expected output if it is a test config
-            "expected_output": "", // test configs only; "success"/"error: errortype"/etc
-            "warnings": true, // true or false; whether to include warnings in the final report
-            "save_to_pdf": true, // whether to save all output plots to a pdf file
-            "save_to_png": true // whether to save all output plots as a png
+            "simulation_type": "unsteady_test", // can be "steady", "unsteady", "steady_test", "unsteady_test"
+            "simulation_name": "No warnings", // str, optional
+            "simulation_description": "Tests whether warnings=false metadata option really works.", // a brief description of the simulation, eg what is being tried for the rocket if it is a regular config or what is being tested+expected output if it is a test config
+            "expected_output": "success", // test configs only; see EXPECTED_OUTPUTS in backend_tests_helpers.py
+            "warnings": false, // true or false; whether to include warnings in the final report
+            "save_to_pdf": false, // whether to save all output plots to a pdf file
+            "save_to_png": false, // whether to save all output plots as a png
+            "checks": {
+                "files_exist": ["sim_data.json"],
+                // the actual assertion: warnings=false above must collapse the
+                // whole warnings block to the string "disabled"
+                "warnings_equal": "disabled",
+                // and turning warnings off must not change the physics
+                "value_between": {
+                    "performance.overall.apogee_m_agl": [3000, 12000]
+                }
+            }
         },
         "rocket_inputs": {
             "CV1_tank": {

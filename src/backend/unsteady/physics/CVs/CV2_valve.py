@@ -15,10 +15,10 @@ def valve_linear_ramp(t: float, state_vector: dict, rocket_inputs: dict, live: d
     Assumptions:
         - valve is fully closed at t_phase = 0
         - valve opens linearly with time
-        - valve is fully open once t_phase >= valve_time_constant_s
-        - if valve_time_constant_s <= 0, the valve is treated as instantly fully open. 
+        - valve is fully open once t_phase >= valve_time_constant
+        - if valve_time_constant <= 0, the valve is treated as instantly fully open. 
     """
-    valve_time_constant_s = rocket_inputs["valve_time_constant_s"]
+    valve_time_constant_s = rocket_inputs["valve_time_constant"]
     t_phase = t
 
     # special case: instantaneous opening
@@ -38,11 +38,11 @@ def valve_sigmoid_ramp(t: float, state_vector: dict, rocket_inputs: dict, live: 
     Sigmoid valve opening model
     Assumptions:
         - valve opening follows a logistic / sigmoid curve
-        - valve_open_fraction = 0.5 when t_phase = sigmoid_half_time_s
+        - valve_open_fraction = 0.5 when t_phase = sigmoid_half_time
         - larger sigmoid_steepness makes the opening transition sharper
         - smaller sigmoid_steepness makes the opening transition more gradual
     """
-    sigmoid_half_time_s = rocket_inputs["sigmoid_half_time_s"]
+    sigmoid_half_time_s = rocket_inputs["sigmoid_half_time"]
     sigmoid_steepness = rocket_inputs["sigmoid_steepness"]
     t_phase = t
 

@@ -155,16 +155,16 @@ def _rhs_engine_shutdown_base(t: float, y: list, rocket_inputs: dict, cv_funcs: 
     T_feed = 290.0 if state_vector["n_v"] <= 0.0 else state_vector["T_T"]
     
     # 3. Dynamic Residence Time (Tau) Calculation
-    if "nozzle_throat_radius_m" in rocket_inputs:
-        r_t = rocket_inputs["nozzle_throat_radius_m"]
+    if "nozzle_throat_radius" in rocket_inputs:
+        r_t = rocket_inputs["nozzle_throat_radius"]
     else:
-        r_t = rocket_inputs.get("nozzle_throat_diameter_m", 0.05) / 2.0
+        r_t = rocket_inputs.get("nozzle_throat_diameter", 0.05) / 2.0
         
     A_t = math.pi * (r_t**2)
     R_spec = constants.get("universal_gas_constant", 8.31446) / W_c
     Gamma = math.sqrt(gamma * (2.0 / (gamma + 1))**((gamma + 1) / (gamma - 1)))
     
-    V_C = math.pi * (state_vector["r_f"]**2) * rocket_inputs["chamber_fuel_length_m"]
+    V_C = math.pi * (state_vector["r_f"]**2) * rocket_inputs["chamber_fuel_length"]
     T_C_safe = max(T_C_burnout, 1.0)
     
     tau = max(V_C / (A_t * Gamma * math.sqrt(R_spec * T_C_safe)), 0.001)

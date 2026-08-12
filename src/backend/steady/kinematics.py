@@ -1,5 +1,5 @@
 from src.backend.steady.prop_calculations import calculate_air_density, calculate_gravity
-from math import pi, cos, radians
+from math import pi, cos
 
 def simulate_rocket_ascent(rocket_inputs, rocket_parameters, simulation_settings, constants_dict):
     # setup variables
@@ -9,7 +9,7 @@ def simulate_rocket_ascent(rocket_inputs, rocket_parameters, simulation_settings
     m_0 = rocket_parameters["wet_mass"]
     h_0 = rocket_inputs["launch_site_altitude"]
     
-    launch_angle_rad = radians(rocket_inputs["launch_angle"])
+    launch_angle_rad = rocket_inputs["launch_angle"]
     vertical_thrust = rocket_parameters["thrust"] * cos(launch_angle_rad)
     
     # drag constant

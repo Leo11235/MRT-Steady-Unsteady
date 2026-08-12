@@ -5,21 +5,21 @@
 {
   "CV1_tank": {
     "saturated_equilibrium": [
-      "tank_internal_radius_m",
-      "tank_temperature_K",
-      "tank_oxidizer_mass_kg",
-      "dip_tube_external_radius_m",
-      "dip_tube_internal_radius_m",
-      "dip_tube_length_m",
-      ["tank_ullage_fraction", "tank_internal_length_m"]
+      "tank_internal_diameter",
+      "tank_temperature",
+      "tank_oxidizer_mass",
+      "dip_tube_external_diameter",
+      "dip_tube_internal_diameter",
+      "dip_tube_length",
+      ["tank_ullage_fraction", "tank_internal_length"]
     ]
   },
   "CV2_valve": {
     "linear": [
-      "valve_time_constant_s"
+      "valve_time_constant"
     ],
     "sigmoid": [
-      "sigmoid_half_time_s",
+      "sigmoid_half_time",
       "sigmoid_steepness"
     ],
     "instant": []
@@ -28,47 +28,49 @@
     "SPI": [
       "injector_discharge_coefficient",
       "injector_number_of_holes",
-      "injector_hole_area_m2",
-      "feed_pressure_loss_Pa"
+      "injector_hole_diameter",
+      "feed_pressure_loss"
     ],
     "NHNE": [
       "injector_discharge_coefficient",
       "injector_number_of_holes",
-      "injector_hole_area_m2",
-      "feed_pressure_loss_Pa",
+      "injector_hole_diameter",
+      "feed_pressure_loss",
       "two_phase_multiplier"
     ]
   },
   "CV4_chamber": {
     "0D_quasi_steady": [
-      "chamber_fuel_length_m",
-      "chamber_fuel_density_kgm3",
-      "chamber_fuel_external_radius_m",
+      "chamber_fuel_length",
+      "chamber_fuel_density",
+      "chamber_fuel_external_diameter",
       "chamber_regression_rate_scaling_constant",
       "chamber_regression_rate_exponent",
-      "pre_chamber_volume_m3",
-      "post_chamber_volume_m3",
-      ["chamber_fuel_mass_kg", "chamber_fuel_internal_radius_m"]
+      "pre_chamber_diameter",
+      "pre_chamber_length",
+      "post_chamber_diameter",
+      "post_chamber_length",
+      ["chamber_fuel_mass", "chamber_fuel_internal_diameter"]
     ]
   },
   "CV5_nozzle": {
     "1D_frozen": [
-      "nozzle_throat_radius_m",
-      "nozzle_exit_radius_m"
+      "nozzle_throat_diameter",
+      "nozzle_exit_diameter"
     ]
   },
   "CV6_trajectory": {
     "2dof": [
-      "rocket_dry_mass_kg",
+      "rocket_dry_mass",
       "rocket_drag_coefficient",
-      "rocket_frontal_area_m2",
-      "rocket_launch_angle_deg",
+      "rocket_outer_diameter",
+      "rocket_launch_angle",
       "drogue_parachute_drag_coefficient",
-      "drogue_parachute_frontal_area_m2",
-      "main_parachute_deployment_altitude_agl_m",
+      "drogue_parachute_diameter",
+      "main_parachute_deployment_altitude_agl",
       "main_parachute_drag_coefficient",
-      "main_parachute_frontal_area_m2",
-      "launch_site_altitude_asl_m"
+      "main_parachute_diameter",
+      "launch_site_altitude_asl"
     ]
   }
 }

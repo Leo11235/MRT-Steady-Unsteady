@@ -1,18 +1,14 @@
 """
-transitions.py
-Contains all event triggers and their corresponding transition handlers for 
-the unsteady simulation, organized by phase. Priority inverted for safety.
+Contains all event triggers and their corresponding transition handlers for the unsteady simulation, organized by phase
 """
 
 from src.backend.unsteady.engine.objects import StateVector
 from src.backend.unsteady.physics.N2O_properties.N2O_properties import get_N2O_property
 from src.backend.unsteady.physics.atmosphere.atmosphere import get_atmosphere_properties
 
-# ==============================================================================
 # HELPER FUNCTIONS
-# ==============================================================================
 def _get_n_l_thresh(rocket_inputs, constants):
-    m_ox_0 = rocket_inputs.get("tank_oxidizer_mass_kg", 0.0)
+    m_ox_0 = rocket_inputs.get("tank_oxidizer_mass", 0.0)
     W_o = constants.get("nitrous_oxide_molar_mass", 0.044013)
     n_l0 = m_ox_0 / W_o
     return rocket_inputs.get("n_l_thresh_mol", 0.005 * n_l0)
@@ -21,7 +17,7 @@ def _get_eps_n_ox(rocket_inputs):
     return rocket_inputs.get("epsilons", {}).get("n_ox_mol", 1e-8)
 
 def _capture_burnout_metadata(current_time, live):
-    """Utility to freeze the thermodynamics at the moment of engine burnout/abort."""
+    """Utility to freeze the thermodynamics at the moment of engine burnout/abort"""
     return {
         "t_burnout": current_time,
         "T_c_burnout": live.get("T_c", 3000.0),
@@ -31,7 +27,7 @@ def _capture_burnout_metadata(current_time, live):
 
 def event_apogee_abort(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
     state = StateVector.unpack(y)
-    launch_asl = rocket_inputs.get("launch_site_altitude_asl_m", 0.0)
+    launch_asl = rocket_inputs.get("launch_site_altitude_asl", 0.0)
     
     # apogee can only happen if the rocket has taken off
     if state["sy_R"] < launch_asl + 1.0:
@@ -54,11 +50,11 @@ def transition_liquid_quench_abort(state, rocket_inputs, current_time, live):
 
 def event_fuel_burnout_during_ignition(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
     state = StateVector.unpack(y)
-    return rocket_inputs["chamber_fuel_external_radius_m"] - state["r_f"]
+    return rocket_inputs["chamber_fuel_external_radius"] - state["r_f"]
 event_fuel_burnout_during_ignition.terminal = True
 event_fuel_burnout_during_ignition.direction = -1
 def transition_fuel_burnout_during_ignition(state, rocket_inputs, current_time, live):
-    state["r_f"] = rocket_inputs["chamber_fuel_external_radius_m"]
+    state["r_f"] = rocket_inputs["chamber_fuel_external_radius"]
     state["T_C"] = live.get("T_c", 3000.0)
     return state, "terminal_002_liquid_quench", _capture_burnout_metadata(current_time, live)
 
@@ -90,11 +86,11 @@ def transition_ignition_pressure_reached(state, rocket_inputs, current_time, liv
 
 def event_fuel_burnout_during_liquid_blowdown(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
     state = StateVector.unpack(y)
-    return rocket_inputs["chamber_fuel_external_radius_m"] - state["r_f"]
+    return rocket_inputs["chamber_fuel_external_radius"] - state["r_f"]
 event_fuel_burnout_during_liquid_blowdown.terminal = True
 event_fuel_burnout_during_liquid_blowdown.direction = -1
 def transition_fuel_burnout_during_liquid_blowdown(state, rocket_inputs, current_time, live):
-    state["r_f"] = rocket_inputs["chamber_fuel_external_radius_m"]
+    state["r_f"] = rocket_inputs["chamber_fuel_external_radius"]
     return state, "terminal_002_liquid_quench", {}
 
 def event_oxidizer_depleted_during_liquid_blowdown(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
@@ -125,11 +121,11 @@ def transition_liquid_depleted(state, rocket_inputs, current_time, live):
 
 def event_fuel_burnout_during_gaseous_blowdown(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
     state = StateVector.unpack(y)
-    return rocket_inputs["chamber_fuel_external_radius_m"] - state["r_f"]
+    return rocket_inputs["chamber_fuel_external_radius"] - state["r_f"]
 event_fuel_burnout_during_gaseous_blowdown.terminal = True
 event_fuel_burnout_during_gaseous_blowdown.direction = -1
 def transition_fuel_burnout_during_gaseous_blowdown(state, rocket_inputs, current_time, live):
-    state["r_f"] = rocket_inputs["chamber_fuel_external_radius_m"]
+    state["r_f"] = rocket_inputs["chamber_fuel_external_radius"]
     state["T_C"] = live.get("T_c", 3000.0)
     return state, "phase_4a", _capture_burnout_metadata(current_time, live)
 
@@ -178,16 +174,16 @@ def transition_chamber_near_ambient_after_burnout(state, rocket_inputs, current_
 
 def event_landing_before_apogee(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
     state = StateVector.unpack(y)
-    return state["sy_R"] - rocket_inputs["launch_site_altitude_asl_m"]
+    return state["sy_R"] - rocket_inputs["launch_site_altitude_asl"]
 event_landing_before_apogee.terminal = True
 event_landing_before_apogee.direction = -1
 def transition_landing_before_apogee(state, rocket_inputs, current_time, live):
-    state["sy_R"] = rocket_inputs["launch_site_altitude_asl_m"]
+    state["sy_R"] = rocket_inputs["launch_site_altitude_asl"]
     return state, "terminal_success_landed", {}
 
 def event_apogee_reached(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
     state = StateVector.unpack(y)
-    launch_asl = rocket_inputs.get("launch_site_altitude_asl_m", 0.0)
+    launch_asl = rocket_inputs.get("launch_site_altitude_asl", 0.0)
     # apogee can only happen if the rocket has taken off
     if state["sy_R"] < launch_asl + 1.0:
         return 1.0 # dummy; ensures the event is ignored if on the pad
@@ -204,17 +200,17 @@ def transition_apogee_reached(state, rocket_inputs, current_time, live):
 
 def event_landing_before_main_deploy(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
     state = StateVector.unpack(y)
-    return state["sy_R"] - rocket_inputs["launch_site_altitude_asl_m"]
+    return state["sy_R"] - rocket_inputs["launch_site_altitude_asl"]
 event_landing_before_main_deploy.terminal = True
 event_landing_before_main_deploy.direction = -1
 def transition_landing_before_main_deploy(state, rocket_inputs, current_time, live):
-    state["sy_R"] = rocket_inputs["launch_site_altitude_asl_m"]
+    state["sy_R"] = rocket_inputs["launch_site_altitude_asl"]
     return state, "terminal_success_landed", {}
 
 def event_main_deployment_altitude_reached_descending(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
     state = StateVector.unpack(y)
-    launch_asl = rocket_inputs.get("launch_site_altitude_asl_m", 0.0)
-    deploy_agl = rocket_inputs.get("main_parachute_deployment_altitude_agl_m", 450.0)
+    launch_asl = rocket_inputs.get("launch_site_altitude_asl", 0.0)
+    deploy_agl = rocket_inputs.get("main_parachute_deployment_altitude_agl", 450.0)
     target_deploy_asl = launch_asl + deploy_agl
     return state["sy_R"] - target_deploy_asl
 event_main_deployment_altitude_reached_descending.terminal = True
@@ -229,11 +225,11 @@ def transition_main_deployment_altitude_reached_descending(state, rocket_inputs,
 
 def event_landing_reached(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
     state = StateVector.unpack(y)
-    return state["sy_R"] - rocket_inputs["launch_site_altitude_asl_m"]
+    return state["sy_R"] - rocket_inputs["launch_site_altitude_asl"]
 event_landing_reached.terminal = True
 event_landing_reached.direction = -1
 def transition_landing_reached(state, rocket_inputs, current_time, live):
-    state["sy_R"] = rocket_inputs["launch_site_altitude_asl_m"]
+    state["sy_R"] = rocket_inputs["launch_site_altitude_asl"]
     return state, "terminal_success_landed", {}
 
 

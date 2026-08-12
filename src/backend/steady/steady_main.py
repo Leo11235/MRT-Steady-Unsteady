@@ -25,7 +25,7 @@ from src.backend.steady.variable_initialization import initialize_natural_consta
 from src.backend.steady.simulation_engine import simulate_hotfire, simulate_fuel_mass_convergence
 from src.backend.steady.parametric_study import simulate_parametric_study
 
-import src.backend.variable_conversions as convert
+import src.common.variable_conversions as convert
 
 
 def run_steady(rocket_inputs_filename: str, 
@@ -40,7 +40,7 @@ def run_steady(rocket_inputs_filename: str,
     # load rocket inputs and simulation settings
     rocket_inputs_full_filepath = Path(f"{rocket_inputs_filepath}") / f"{rocket_inputs_filename}"
     #print(f"Loading rocket inputs from {rocket_inputs_full_filepath}\n")
-    rocket_inputs, simulation_settings = load_steady_config(rocket_inputs_full_filepath)
+    rocket_inputs, simulation_settings, metadata = load_steady_config(rocket_inputs_full_filepath)
         
     # initialize constants dict
     constants_dict = initialize_natural_constants_dict()
@@ -82,7 +82,8 @@ def run_steady(rocket_inputs_filename: str,
     # assemble JSON export data
     export_data = {
         "rocket_inputs": rocket_inputs,
-        "simulation_settings": simulation_settings
+        "simulation_settings": simulation_settings, 
+        "metadata": metadata
     }
     if sim_type == "hotfire":
         export_data["rocket_parameters"] = rocket_parameters
@@ -93,14 +94,21 @@ def run_steady(rocket_inputs_filename: str,
         export_data["parametric_results"] = param_results_dict
     
     # setup output directory
+    output_dir_filepath = Path(output_dir_filepath)
     output_dir_filepath.mkdir(parents=True, exist_ok=True)
-    sim_filepath = output_dir_filepath / f"{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.json"
+
+    # <simulation_name>.json if the user gave one, else a timestamp
+    run_name = str(metadata.get("simulation_name") or "").strip()
+    if not run_name:
+        run_name = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    sim_filepath = output_dir_filepath / f"{run_name}.json"
     
     # write to JSON
     with open(sim_filepath, "w", encoding="utf-8") as f:
         json.dump(export_data, f, indent=4)
         
     print(f"\nSimulation data exported.")
+    return sim_filepath
 
 # HELPERS
 # prints all items of a dictionary in a nice way

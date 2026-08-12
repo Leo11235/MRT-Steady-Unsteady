@@ -13,22 +13,16 @@ def nozzle_joel_unsteady(t: float, state_vector: dict, rocket_inputs: dict, live
     # unpack values
     p_C = state_vector["p_C"]
     p_amb = live["p_amb"]
-    r_t = rocket_inputs["nozzle_throat_radius_m"]
-    r_e = rocket_inputs["nozzle_exit_radius_m"]
+    r_t = rocket_inputs["nozzle_throat_radius"]
+    r_e = rocket_inputs["nozzle_exit_radius"]
     R_u = constants["universal_gas_constant"]
     
     A_t = np.pi * r_t**2
     A_e = np.pi * r_e**2
     A_ratio = A_e / A_t
     
-    # if chamber pressure drops below ambient, no thrust or mass flow can be generated
-    # we add a 100 Pa buffer to prevent solver chatter right at the boundary
+    # if chamber pressure drops below ambient, no thrust or mass flow can be generated we add a 100 Pa buffer to prevent solver chatter right at the boundary
     if p_C <= p_amb + 100.0:
-        # IMPORTANT: still dump cold-chamber thermodynamics onto the live
-        # blackboard so CV4 doesn't KeyError when the solver probes a
-        # sub-ambient state during ignition transients (linear valve case).
-        # These are the same fallback values used in the "cold chamber"
-        # branch below.
         return {
             "m_dot_n": 0.0,
             "F_thrust": 0.0,
@@ -37,12 +31,9 @@ def nozzle_joel_unsteady(t: float, state_vector: dict, rocket_inputs: dict, live
             "M_e": 0.0,
             "flow_regime": "sub_ambient_cutoff",
             "OF": 7.0,
-            "T_c": rocket_inputs["tank_temperature_K"],
-            "W_c": 0.029,
-            "gamma": 1.4,
-            "cstar": 1000.0,
-            "dT_dOF": 0.0, "dW_dOF": 0.0,
-            "dT_dp": 0.0,  "dW_dp": 0.0,
+            "T_c": rocket_inputs["tank_temperature"],
+            "W_c": 0.029, "gamma": 1.4, "cstar": 1000.0,
+            "dT_dOF": 0.0, "dW_dOF": 0.0, "dT_dp": 0.0, "dW_dp": 0.0,
         }
 
     m_o = state_vector["m_o"]
@@ -51,7 +42,7 @@ def nozzle_joel_unsteady(t: float, state_vector: dict, rocket_inputs: dict, live
     # if the chamber has no gas yet, use realistic fallback parameters 
     if m_f < 1e-4 or m_o < 1e-4:
         OF = 7.0 
-        T_c = rocket_inputs["tank_temperature_K"] 
+        T_c = rocket_inputs["tank_temperature"] 
         W_c = 0.029 
         gamma = 1.4 
         cstar = 1000.0
@@ -60,13 +51,11 @@ def nozzle_joel_unsteady(t: float, state_vector: dict, rocket_inputs: dict, live
         OF = m_o / m_f
         T_c, W_c, gamma, cstar, dT_dOF, dT_dp, dW_dOF, dW_dp = CEA_interpolation_lookup(OF, p_C)
 
-    # If the chamber pressure hasn't significantly exceeded ambient, 
-    # there is no meaningful flow or expansion yet.
+    # if the chamber pressure hasn't significantly exceeded ambient, there is no meaningful flow or expansion yet.
     if p_C <= p_amb + 1000.0:
         return {
             "m_dot_n": 0.0, "F_thrust": 0.0, "p_e": p_amb,
             "M_e": 0.0, "v_e": 0.0, "flow_regime": "unstarted",
-            # Dump the thermodynamics onto the live blackboard for CV4 to use!
             "OF": OF, "T_c": T_c, "W_c": W_c, "gamma": gamma, "cstar": cstar,
             "dT_dOF": dT_dOF, "dW_dOF": dW_dOF, "dT_dp": dT_dp, "dW_dp": dW_dp
         }
@@ -81,7 +70,7 @@ def nozzle_joel_unsteady(t: float, state_vector: dict, rocket_inputs: dict, live
         F = (1.0 / M_1) * term_inner**G
         f = F - A_ratio
         dF_dM = -(1.0 / M_1**2) * term_inner**G + (1.0 / M_1) * G * term_inner**(G-1.0) * (2.0 / (gamma + 1.0)) * (gamma - 1.0) * M_1
-        # Clip to prevent the solver from wandering into negative or supersonic territory
+        # clip to prevent the solver from wandering into negative or supersonic territory
         M_1 = np.clip(M_1 - f / dF_dM, 0.0001, 0.9999)
 
     # supersonic M2x (Newton-Raphson)
@@ -91,7 +80,7 @@ def nozzle_joel_unsteady(t: float, state_vector: dict, rocket_inputs: dict, live
         F = (1.0 / M_2x) * term_inner**G
         f = F - A_ratio
         dF_dM = -(1.0 / M_2x**2) * term_inner**G + (1.0 / M_2x) * G * term_inner**(G-1.0) * (2.0 / (gamma + 1.0)) * (gamma - 1.0) * M_2x
-        # Clip to prevent the solver from wandering into subsonic territory
+        # clip to prevent the solver from wandering into subsonic territory
         M_2x = np.clip(M_2x - f / dF_dM, 1.0001, 15.0)
 
     # calculate critical pressures
@@ -133,7 +122,7 @@ def nozzle_joel_unsteady(t: float, state_vector: dict, rocket_inputs: dict, live
         p_e, M_e = p_amb, 0.0
         flow_regime = "logic_error"
 
-    # mass Flow and Thrust Calculation
+    # mass flow and thrust
     if M_t > 0.0:
         T_e = T_c / (1.0 + ((gamma - 1.0) / 2.0) * M_e**2)
         v_e = M_e * np.sqrt((gamma * R_u * T_e) / W_c)
@@ -171,7 +160,7 @@ def nozzle_residual_blowdown(t: float, state_vector: dict, rocket_inputs: dict, 
             "flow_regime": "sub_ambient_cutoff"
         }
         
-    # unpack Frozen Thermodynamics passed from RHS
+    # unpack frozen thermodynamics passed from RHS
     gamma = live.get("gamma", 1.15)
     W_c = live.get("W_c", 0.025)
     T_C = live.get("T_c", 3000.0)
@@ -179,7 +168,7 @@ def nozzle_residual_blowdown(t: float, state_vector: dict, rocket_inputs: dict, 
     R_spec = R_u / W_c
     
     # geometry
-    r_t = rocket_inputs["nozzle_throat_radius_m"]
+    r_t = rocket_inputs["nozzle_throat_radius"]
     A_t = math.pi * (r_t**2)
     
     # choking threshold

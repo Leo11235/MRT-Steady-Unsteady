@@ -1,0 +1,55 @@
+{
+    "metadata": {
+        "simulation_type": "steady_test", // can be "steady", "unsteady", "steady_test", "unsteady_test"
+        "simulation_name": "Fuel mass convergence baseline", // str, optional; blank falls back to a timestamp
+        "simulation_description": "Baseline fuel mass convergence run. Should converge on a fuel mass that puts the rocket within tolerance of the 13716 m target apogee.", // a brief description of the simulation, eg what is being tried for the rocket if it is a regular config or what is being tested+expected output if it is a test config
+        "expected_output": "success", // test configs only; see EXPECTED_OUTPUTS in backend_tests_helpers.py
+        "checks": { // all values SI, since output_units is SI
+            "files_exist": ["Fuel mass convergence baseline.json"],
+            "json_path_exists": ["rocket_parameters", "flight_dict"],
+            // the whole point of convergence: land near the target apogee
+            "value_within": {
+                "rocket_parameters.reached_apogee": [13716, 100]
+            },
+            // wide sanity bands, meant to catch nonsense rather than drift
+            "value_between": {
+                "rocket_parameters.fuel_mass": [1, 10],
+                "rocket_parameters.burntime": [2, 60],
+                "rocket_parameters.thrust": [1000, 20000],
+                "rocket_parameters.Isp": [100, 350]
+            }
+        }
+    },
+
+    "simulation_settings": {
+        "simulation_type": "fuel_mass_convergence", // 'hotfire', 'fuel_mass_convergence', or 'parametric_study'
+        "output_units": "SI", // SI, IMP, or MRT (rocket team's own mishmash of SI and IMP)
+        "save_output_data": true
+    },
+
+    "rocket_inputs": {
+        // base requirements: needed for every simulation type
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+
+        // kinematics requirements: needed for fuel_mass_convergence and parametric_study
+        "target_apogee": [13716, "m"],
+        "launch_site_altitude": [364, "m"],
+        "dry_mass": [88.89, "kg"],
+        "rocket_external_diameter": [0.20574, "m"],
+        "drag_coefficient": [0.641606, "."],
+        "launch_angle": [6, "deg"],
+
+        // hotfire requirements: one of the following
+        "fuel_mass": [null, "kg"],
+            // or:
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

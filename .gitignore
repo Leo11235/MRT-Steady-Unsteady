@@ -1,14 +1,21 @@
 *.pyc
 __pycache__/
+.venv/
+
 user_data/ui_settings.json
 user_data/simulation_configs
 user_data/simulation_results
-build/
-dist/
+
+# everything the build produces lives in build_tools/
+build_tools/build/
+build_tools/dist/
+build_tools/output/
+build_tools/build.bat
+build_tools/installer.iss
 *.spec.bak
-Output/
-.venv/
+
+# scratch output from the backend test suite
+tests/test_outputs/
+
 to do.txt
-build.bat
-installer.iss
 main.py

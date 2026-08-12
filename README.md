@@ -166,13 +166,15 @@ python -m src.ui.main
 
 ### Building the installer
 
-Bump `VERSION` in `src/ui/app/version.py` and `AppVersion` in `installer.iss` to the new release number. Then from the project root:
+Bump the top-level `VERSION` file to the new release number. Both the app and the installer read it, so that's the only place it lives. Then:
 
 ```powershell
-.\build.bat
+.\build_tools\build.bat
 ```
 
-`build.bat` runs PyInstaller (using `src/ui/build.spec`) to produce `dist/MRT-Steady-Unsteady/`, then hands off to Inno Setup to package the folder into `Output/MRT-Steady-Unsteady-Setup.exe`. That final `.exe` is what you attach to a GitHub release.
+The script relocates itself to the project root, so it works from any directory. It runs PyInstaller (using `src/ui/build.spec`) to produce `build_tools/dist/MRT-Steady-Unsteady/`, then hands off to Inno Setup to package the folder into `build_tools/output/MRT-Steady-Unsteady-Setup.exe`. That final `.exe` is what you attach to a GitHub release.
+
+Everything the build touches stays inside `build_tools/`, so the project root holds only source.
 
 ---
 
@@ -181,23 +183,34 @@ Bump `VERSION` in `src/ui/app/version.py` and `AppVersion` in `installer.iss` to
 ```
 MRT-Steady-Unsteady/
 ├── src/
+│   ├── common/
+│   │   └── variable_conversions.py # Unit tables + SI conversion (backend + UI)
 │   ├── backend/
-│   │   ├── common/                # Shared helpers (input normalizer, etc.)
 │   │   ├── steady/                # Steady-state simulator
 │   │   └── unsteady/              # Transient simulator + control-volume models
 │   └── ui/
 │       ├── app/                   # Pages, widgets, shell
 │       ├── assets/                # Icons, logo
 │       └── main.py                # `python -m src.ui.main` entry point
+├── tests/
+│   ├── backend_tests.py           # `run_backend_tests()` — the suite entry point
+│   ├── backend_tests_helpers.py   # Checks registry, timeout, reporting
+│   ├── steady_configs/            # One .jsonc per steady test
+│   ├── unsteady_configs/          # One .jsonc per unsteady test
+│   └── test_outputs/              # Scratch results, cleared between runs
 ├── user_data/
 │   ├── simulation_configs/        # Input presets (.jsonc)
 │   ├── simulation_results/        # Run outputs (.json)
 │   └── ui_settings.json           # Per-machine preferences
+├── build_tools/
+│   ├── build.bat                  # PyInstaller + Inno Setup one-shot build
+│   ├── installer.iss              # Inno Setup script
+│   ├── dist/                      # PyInstaller output (exe + DLLs)
+│   ├── build/                     # PyInstaller scratch
+│   └── output/                    # The distributable installer .exe
 ├── docs/                          # Screenshots and any extra docs
-├── installer.iss                  # Inno Setup script
-├── build.bat                      # PyInstaller + Inno Setup one-shot build
-├── requirements.txt               # Backend dependencies
-└── src/ui/requirements-ui.txt     # GUI dependencies
+├── VERSION                        # Single source of truth for the version number
+└── requirements.txt               # All dependencies
 ```
 
 ---

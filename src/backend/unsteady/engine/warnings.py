@@ -17,16 +17,16 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
         warning_dict={}
     
     ###### fuel grain
-    L_f = rocket_inputs["chamber_fuel_length_m"]
-    R_f = rocket_inputs["chamber_fuel_external_radius_m"]
+    L_f = rocket_inputs["chamber_fuel_length"]
+    R_f = rocket_inputs["chamber_fuel_external_radius"]
     
-    if "chamber_fuel_internal_radius_m" in rocket_inputs:
+    if "chamber_fuel_internal_radius" in rocket_inputs:
         # if the user provided fuel internal radius, check inputs
-        r_f = rocket_inputs["chamber_fuel_internal_radius_m"]
+        r_f = rocket_inputs["chamber_fuel_internal_radius"]
     else:
         # if the user provided fuel mass instead, calculate the implied r_f, then check inputs
-        m_f_tot = rocket_inputs["chamber_fuel_mass_kg"]
-        p_f = rocket_inputs["chamber_fuel_density_kgm3"]
+        m_f_tot = rocket_inputs["chamber_fuel_mass"]
+        p_f = rocket_inputs["chamber_fuel_density"]
         try: # triggers if inputs are gemoetrically valid
             r_f = math.sqrt(R_f**2 - m_f_tot / (math.pi * p_f * L_f))
         except ValueError: # triggers if inputs are physically impossible (ie inner diameter > outer diameter)

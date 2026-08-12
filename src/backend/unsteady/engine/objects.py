@@ -145,17 +145,17 @@ class History:
 
         #### extract initial constants
         ri = self.static_data
-        launch_alt = ri.get("launch_site_altitude_asl_m", 0.0)
-        ox_mass_initial = ri.get("tank_oxidizer_mass_kg", 0.0)
+        launch_alt = ri.get("launch_site_altitude_asl", 0.0)
+        ox_mass_initial = ri.get("tank_oxidizer_mass", 0.0)
         n_ox_0 = float(n_v[0] + n_l[0]) if len(n_v) > 0 else 0.0
         W_o = ox_mass_initial / n_ox_0 if n_ox_0 > 0 else 0.044013
 
-        R_f = ri.get("chamber_fuel_external_radius_m", 0.0)
-        rho_f = ri.get("chamber_fuel_density_kgm3", 900.0)
-        L_f = ri.get("chamber_fuel_length_m", 0.0)
+        R_f = ri.get("chamber_fuel_external_radius", 0.0)
+        rho_f = ri.get("chamber_fuel_density", 900.0)
+        L_f = ri.get("chamber_fuel_length", 0.0)
         
         if len(r_f) > 0:
-            fuel_mass_initial = ri.get("chamber_fuel_mass_kg", math.pi * rho_f * L_f * (R_f**2 - float(r_f[0])**2))
+            fuel_mass_initial = ri.get("chamber_fuel_mass", math.pi * rho_f * L_f * (R_f**2 - float(r_f[0])**2))
         else:
             fuel_mass_initial = 0.0
 
@@ -173,7 +173,7 @@ class History:
         total_impulse = self._integrate_time_series(t, F_thrust, burn_mask)
         peak_thrust = self._safe_max(F_thrust, burn_mask) or 0.0
         
-        initial_rocket_mass = ri.get("rocket_dry_mass_kg", 0.0) + ox_mass_initial + fuel_mass_initial
+        initial_rocket_mass = ri.get("rocket_dry_mass", 0.0) + ox_mass_initial + fuel_mass_initial
         pad_T_W = (peak_thrust / (initial_rocket_mass * 9.80665)) if initial_rocket_mass > 0 else None
 
         n_ox_burnout = float(n_v[burnout_idx] + n_l[burnout_idx]) if burnout_idx >= 0 else n_ox_0
@@ -261,20 +261,22 @@ class History:
             "total_simulation_time": total_simulation_time, 
         }
 
-    def export(self, rocket_inputs: dict, finalized_warnings: dict, rocket_inputs_metadata: dict) -> dict:
+    def export(self, rocket_inputs: dict, 
+               finalized_warnings: dict, 
+               rocket_inputs_metadata: dict, 
+               output_dir_filepath: Path
+               ) -> dict:
         """
         Sends results to JSON storage
         """
         
-        # timestamp name signature: YYYY_MM_DD_HH_MM_SS folder houses output data
-        if rocket_inputs.get("metadata", {}).get("simulation_name") != ("" or None):
-            foldername = rocket_inputs["metadata"]["simulation_name"]
-        else:
-            foldername = f"{datetime.now().strftime("%Y_%m_%d_%H_%M_%S")}"
+        # YYYY_MM_DD_HH_MM_SS folder houses output data or <simulation_name> if the user gave one
+        foldername = str(rocket_inputs_metadata.get("simulation_name") or "").strip()
+        if not foldername:
+            foldername = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
         
         # project anchor & target directory pathing
-        project_root = Path(__file__).resolve().parents[4] 
-        output_dir = project_root / "user_data" / "simulation_results" / "unsteady" / foldername
+        output_dir = Path(output_dir_filepath) / foldername
         output_dir.mkdir(parents=True, exist_ok=True)
         output_json_name = "sim_data.json"
         file_path = output_dir / output_json_name

@@ -1,0 +1,49 @@
+{
+    "metadata": {
+        "simulation_type": "steady_test", // can be "steady", "unsteady", "steady_test", "unsteady_test"
+        "simulation_name": "Hotfire baseline", // str, optional; blank falls back to a timestamp
+        "simulation_description": "Baseline hotfire. No trajectory, so there should be no flight_dict. 9 kg of fuel in a 0.1524 m x 0.6096 m grain implies a ~48 mm initial port.", // a brief description of the simulation, eg what is being tried for the rocket if it is a regular config or what is being tested+expected output if it is a test config
+        "expected_output": "success", // test configs only; see EXPECTED_OUTPUTS in backend_tests_helpers.py
+        "checks": { // all values SI, since output_units is SI
+            "files_exist": ["Hotfire baseline.json"],
+            "json_path_exists": ["rocket_parameters.thrust", "rocket_parameters.Isp"],
+            // the port radius the loader derives from 9 kg of fuel; tight, because
+            // it is pure geometry and any drift means the derivation broke
+            "value_within": {
+                "rocket_parameters.initial_internal_fuel_radius": [0.02418, 0.0005]
+            },
+            // wide sanity bands, meant to catch nonsense rather than drift
+            "value_between": {
+                "rocket_parameters.fuel_mass": [8.9, 9.1],
+                "rocket_parameters.thrust": [1000, 20000],
+                "rocket_parameters.Isp": [100, 350],
+                "rocket_parameters.chamber_temperature": [2000, 4000],
+                "rocket_parameters.average_oxidizer_to_fuel_ratio": [1, 15]
+            }
+        }
+    },
+
+    "simulation_settings": {
+        "simulation_type": "hotfire", // 'hotfire', 'fuel_mass_convergence', or 'parametric_study'
+        "output_units": "SI", // SI, IMP, or MRT (rocket team's own mishmash of SI and IMP)
+        "save_output_data": true
+    },
+
+    "rocket_inputs": {
+        // base requirements: needed for every simulation type
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+
+        // hotfire requirements: one of the following
+        "fuel_mass": [9, "kg"],
+            // or:
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

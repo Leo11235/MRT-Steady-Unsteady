@@ -1,12 +1,21 @@
 {
     "metadata": {
-        "simulation_type": "steady", // can be "steady", "unsteady", "steady_test", "unsteady_test"
-        "simulation_name": "", // str, optional; blank falls back to a timestamp
-        "simulation_description": "", // a brief description of the simulation, eg what is being tried for the rocket if it is a regular config or what is being tested+expected output if it is a test config
-        "expected_output": "", // test configs only; "success"/"error: errortype"/etc
-        "warnings": true, // true or false; whether to include warnings in the final report
-        "save_to_pdf": true, // whether to save all output plots to a pdf file
-        "save_to_png": false // whether to save all output plots as a png
+        "simulation_type": "steady_test", // can be "steady", "unsteady", "steady_test", "unsteady_test"
+        "simulation_name": "Parametric baseline", // str, optional; blank falls back to a timestamp
+        "simulation_description": "Baseline parametric study, sweeping ox flow rate (5 points) against chamber pressure (3 points). Should produce 15 converged combinations.", // a brief description of the simulation, eg what is being tried for the rocket if it is a regular config or what is being tested+expected output if it is a test config
+        "expected_output": "success", // test configs only; see EXPECTED_OUTPUTS in backend_tests_helpers.py
+        "checks": { // all values SI, since output_units is SI
+            "files_exist": ["Parametric baseline.json"],
+            "json_path_exists": ["parametric_results.combinations", "parametric_results.variable_ranges"],
+            // 5 ox flow rates x 3 chamber pressures, and one result set per point
+            "list_length": {
+                "parametric_results.combinations": 15,
+                "parametric_results.rocket_parameters": 15,
+                "parametric_results.flight_data": 15,
+                "parametric_results.variable_ranges.oxidizer_mass_flow_rate": 5,
+                "parametric_results.variable_ranges.chamber_pressure": 3
+            }
+        }
     },
 
     "simulation_settings": {

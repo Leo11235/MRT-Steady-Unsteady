@@ -14,7 +14,7 @@ if str(project_root) not in sys.path:
 from src.backend.unsteady.engine.objects import StateVector, History
 from src.backend.unsteady.engine.config import load_unsteady_config
 from src.backend.unsteady.engine.registry import get_active_functions
-from src.backend.unsteady.engine.variable_initialization import initialize_state_vector, initialize_natural_constants_dict
+from src.backend.unsteady.engine.variable_initialization import initialize_state_vector, initialize_natural_constants_dict, compute_rocket_variables
 from src.backend.unsteady.engine.transitions import TRANSITION_REGISTRY
 
 from src.backend.unsteady.physics.N2O_properties.N2O_properties import get_N2O_property
@@ -26,30 +26,30 @@ import src.backend.unsteady.engine.rhs as rhs
 
 
 class SolverStalledError(RuntimeError):
-    """Raised by _StallDetector when solve_ivp advances less than
-    `min_dt_s` of sim time across `check_every` consecutive RHS
-    evaluations.  Typically means the operating point is physically
-    unstable (near-zero injector Δp, chuffing regime) and LSODA has
-    shrunk its step below any meaningful size."""
-
+    """
+    Raised by _StallDetector when solve_ivp advances less than `min_dt_s` of sim time across `check_every` consecutive RHS evaluations.  
+    Typically means the operating point is physically unstable (near-zero injector Δp, chuffing regime) and LSODA has shrunk its step below any meaningful size.
+    """
 
 class _StallDetector:
-    """Wraps a scipy RHS callable, counts evaluations, and raises
+    """
+    Wraps a scipy RHS callable, counts evaluations, and raises
     SolverStalledError when sim time isn't advancing.
 
     Checks every `check_every` evals whether `t` moved forward by at
     least `min_dt_s` since the previous check.  If not: bail.
 
     Overhead is trivial — just an int increment on every eval plus a
-    subtraction once every `check_every`."""
+    subtraction once every `check_every`.
+    """
 
     def __init__(self, wrapped, check_every: int = 1000,
                  min_dt_s: float = 1e-3) -> None:
-        self._wrapped     = wrapped
+        self._wrapped = wrapped
         self._check_every = check_every
-        self._min_dt_s    = min_dt_s
-        self._eval_count      = 0
-        self._t_last_check    = None      # sim time seen at last checkpoint
+        self._min_dt_s = min_dt_s
+        self._eval_count = 0
+        self._t_last_check = None # sim time seen at last checkpoint
         self._eval_last_check = 0
 
     def __call__(self, t, y, *args, **kwargs):
@@ -72,7 +72,9 @@ class _StallDetector:
         return self._wrapped(t, y, *args, **kwargs)
 
 
-def run_unsteady(rocket_inputs_filename: str, rocket_inputs_filepath: str | Path = Path(f"{project_root}") / "user_data" / "simulation_configs" / "unsteady"):
+def run_unsteady(rocket_inputs_filename: str, # should end in .jsonc
+                 rocket_inputs_filepath: str | Path = Path(f"{project_root}") / "user_data" / "simulation_configs" / "unsteady", # where to find json inputs
+                 output_dir_filepath: str | Path = Path(f"{project_root}") / "user_data" / "simulation_results" / "unsteady"): # creates a folder in this dir, leaves all outputs in that folder
     """
     The main function for running the unsteady simulation.
     Takes a JSON file of rocket inputs, outputs another JSON with simulation performance
@@ -94,6 +96,8 @@ def run_unsteady(rocket_inputs_filename: str, rocket_inputs_filepath: str | Path
     
     # calculate initial state at t=0
     print("Calculating t=0 physical states\n")
+        # compute rocket constants based on rocket inputs (parachute area, injector hole area, etc)
+    compute_rocket_variables(rocket_inputs)
         # compute initial state vector
     initial_state_dict = initialize_state_vector(rocket_inputs, constants_dict, get_N2O_property)
         # convert initial state dict to flat array to be used by solve_ivp
@@ -257,4 +261,4 @@ def run_unsteady(rocket_inputs_filename: str, rocket_inputs_filepath: str | Path
     print("\nSimulation complete. Exporting...")
     finalized_warnings = finalize_warnings(warnings_dict) if rocket_inputs_metadata.get("warnings", True) else None # keep warnings by default if not specified
     
-    return history.export(rocket_inputs, finalized_warnings, rocket_inputs_metadata)
+    return history.export(rocket_inputs, finalized_warnings, rocket_inputs_metadata, output_dir_filepath)

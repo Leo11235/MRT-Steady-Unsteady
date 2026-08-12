@@ -29,8 +29,8 @@ def injector_joel_liquid_blowdown(t: float, state_vector: dict, rocket_inputs: d
     valve_open_fraction = live["valve_open_fraction"]
     injector_discharge_coefficient = rocket_inputs["injector_discharge_coefficient"]
     injector_number_of_holes = rocket_inputs["injector_number_of_holes"]
-    injector_hole_area_m2 = rocket_inputs["injector_hole_area_m2"]
-    feed_pressure_loss = rocket_inputs["feed_pressure_loss_Pa"]
+    injector_hole_area_m2 = rocket_inputs["injector_hole_area"]
+    feed_pressure_loss = rocket_inputs["feed_pressure_loss"]
     W_o = constants["nitrous_oxide_molar_mass"]
 
     # effective pressure drop across the injector/feed system
@@ -92,8 +92,8 @@ def injector_joel_gaseous_blowdown(t: float, state_vector: dict, rocket_inputs: 
     valve_open_fraction = live["valve_open_fraction"]
     injector_discharge_coefficient = rocket_inputs["injector_discharge_coefficient"]
     injector_number_of_holes = rocket_inputs["injector_number_of_holes"]
-    injector_hole_area_m2 = rocket_inputs["injector_hole_area_m2"]
-    feed_pressure_loss = rocket_inputs["feed_pressure_loss_Pa"]
+    injector_hole_area_m2 = rocket_inputs["injector_hole_area"]
+    feed_pressure_loss = rocket_inputs["feed_pressure_loss"]
     W_o = constants["nitrous_oxide_molar_mass"]
 
     # effective pressure drop across the injector/feed system
