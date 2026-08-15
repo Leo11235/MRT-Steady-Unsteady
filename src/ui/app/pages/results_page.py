@@ -73,7 +73,10 @@ class ResultsPage(ctk.CTkFrame):
         # kept because destroying the widget alone leaves pyplot holding the
         # figure, and a few dozen of those exhausts memory quickly.
 
-        self.system = user_settings.get("default_output_units", "SI")
+        self.system = user_settings.get("default_program_units", "SI")
+        # What the preference said last time we looked, so on_show can tell a
+        # settings change apart from the user's own toolbar click.
+        self._settings_system = self.system
         self._system_var = ctk.StringVar(value=self.system)
         self._filter_var = ctk.StringVar()
 
@@ -397,6 +400,14 @@ class ResultsPage(ctk.CTkFrame):
             text=text, text_color=theme.ERROR if error else theme.TEXT_MUTED)
 
     def on_show(self) -> None:
+        # The preference may have changed since this page was built, and pages
+        # are cached rather than rebuilt. Only move if it actually changed, so
+        # a system picked with the toolbar buttons survives navigating away.
+        wanted = user_settings.get("default_program_units", "SI")
+        if wanted != self._settings_system:
+            self._settings_system = wanted
+            self._on_system_changed(wanted)
+
         # A run may have finished since this page was last visible.
         if not self.results:
             self._set_status("No run open — pick one from Browse saved results")

@@ -14,6 +14,7 @@ from src.ui.app.services.bug_report_client import (
     cap_field,
     collect_environment,
     friendly_network_error_hint,
+    save_local_copy,
     submit_bug_report,
 )
 
@@ -90,6 +91,8 @@ class BugReportPage(ctk.CTkFrame):
         # (title, diagnostics, config_json) queued for the next on_show.
         self._pending_prefill: tuple[str, str, str] | None = None
         self._desc_has_placeholder = True
+        # Where the last report was written, shown on the success screen.
+        self._saved_path = None
         self._build()
 
     # ---------------------------------------------------------------------
@@ -136,9 +139,9 @@ class BugReportPage(ctk.CTkFrame):
 
         ctk.CTkLabel(
             wrap,
-            text="Reports go straight to the MRT Steady-Unsteady bug "
-                 "tracker. You don't have to do anything after clicking "
-                 "Send.",
+            text="Reports go to the MRT Steady-Unsteady maintainer. A copy is "
+                 "also written to user_data/bug_reports/ on this machine, so "
+                 "nothing is lost if the mail doesn't get through.",
             text_color=theme.TEXT_MUTED,
             font=ctk.CTkFont(size=theme.SIZE_SMALL),
             anchor="w", justify="left", wraplength=740,
@@ -252,6 +255,10 @@ class BugReportPage(ctk.CTkFrame):
             self._extra_row, text="Copy report to clipboard", width=200,
             command=self._on_copy_to_clipboard,
         )
+        self._folder_btn = ctk.CTkButton(
+            self._extra_row, text="Open saved reports", width=200,
+            command=self._on_open_reports_folder,
+        )
         self._home_btn = ctk.CTkButton(
             self._extra_row, text="Return to home", width=200,
             command=lambda: self.on_navigate("main"),
@@ -362,7 +369,7 @@ class BugReportPage(ctk.CTkFrame):
     def _set_state(self, state: str, message: str = "") -> None:
         """state in {'idle', 'sending', 'error_empty', 'error_send',
         'error_email', 'success'}."""
-        for w in (self._copy_btn, self._home_btn):
+        for w in (self._copy_btn, self._folder_btn, self._home_btn):
             if w.winfo_ismapped():
                 w.pack_forget()
 
@@ -400,6 +407,7 @@ class BugReportPage(ctk.CTkFrame):
             )
             self._send_btn.configure(state="normal", text="Try again")
             self._copy_btn.pack(side="left", padx=(0, theme.PAD_S))
+            self._folder_btn.pack(side="left", padx=(0, theme.PAD_S))
 
         elif state == "success":
             self._status_label.configure(
@@ -407,6 +415,7 @@ class BugReportPage(ctk.CTkFrame):
                 text_color=theme.SUCCESS,
             )
             self._send_btn.configure(state="disabled", text="Sent")
+            self._folder_btn.pack(side="left", padx=(0, theme.PAD_S))
             self._home_btn.pack(side="left", padx=(0, theme.PAD_S))
 
     # ---------------------------------------------------------------------
@@ -449,12 +458,20 @@ class BugReportPage(ctk.CTkFrame):
         diag = cap_field(diag)
         cfg = cap_field(cfg)
 
+        # Save a local copy BEFORE sending. Web3Forms answering "success" is
+        # not proof the mail arrived — their spam filter sits between the
+        # accept and the inbox — so this is what stops a report from
+        # evaporating when delivery quietly fails.
+        from src.ui.app import backend_bridge
+        self._saved_path = save_local_copy(backend_bridge.project_root(),
+                                           self._report_text())
+
         self._set_state("sending")
         # Force UI to repaint before the blocking HTTP call.
         self.update_idletasks()
 
         try:
-            submit_bug_report(
+            server_message = submit_bug_report(
                 title=title,
                 description=desc,
                 name=name,
@@ -463,7 +480,12 @@ class BugReportPage(ctk.CTkFrame):
                 config_json=cfg,
                 env=self._env,
             )
-            self._set_state("success")
+            saved = (f"  A copy is saved at {self._saved_path}."
+                     if self._saved_path else "")
+            self._set_state(
+                "success",
+                f"Server accepted the report ({server_message}). If nothing "
+                f"reaches the inbox, it was filtered on their end.{saved}")
         except urllib.error.HTTPError as exc:
             self._set_state(
                 "error_send",
@@ -484,13 +506,15 @@ class BugReportPage(ctk.CTkFrame):
                 f"Couldn't send the report. {type(exc).__name__}: {exc}",
             )
 
-    def _on_copy_to_clipboard(self) -> None:
+    def _report_text(self) -> str:
+        """The whole report as plain text. Used for the clipboard AND for the
+        local copy, so what gets saved is exactly what gets pasted."""
         title = self._title_var.get().strip() or "(no title)"
         desc  = self._description_actual() or "(no description)"
         diag  = self._diagnostics_text()   or "(no diagnostics)"
         cfg   = self._config_json          or "(no config)"
         env   = self._env
-        text = (
+        return (
             f"Title: {title}\n\n"
             f"Reporter: {self._name_var.get().strip() or '(anonymous)'}\n"
             f"Email:    {self._email_var.get().strip() or '(none)'}\n\n"
@@ -503,9 +527,18 @@ class BugReportPage(ctk.CTkFrame):
             f"Diagnostics:\n{diag}\n\n"
             f"Config:\n{cfg}\n"
         )
+
+    def _on_copy_to_clipboard(self) -> None:
         self.clipboard_clear()
-        self.clipboard_append(text)
+        self.clipboard_append(self._report_text())
         self._status_label.configure(
             text="Copied. Paste into an email, chat, or GitHub issue.",
             text_color=theme.SUCCESS,
         )
+
+    def _on_open_reports_folder(self) -> None:
+        from src.ui.app import backend_bridge
+        from src.ui.app.services import os_utils
+        folder = backend_bridge.project_root() / "user_data" / "bug_reports"
+        folder.mkdir(parents=True, exist_ok=True)
+        os_utils.reveal_in_file_explorer(folder)

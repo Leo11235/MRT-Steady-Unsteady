@@ -437,6 +437,12 @@ The only module allowed to import from `src/backend/`. 493 lines.
 - **Roots:** `project_root()` (writable), `bundled_root()` (read-only),
   and the per-kind `*_presets_dir()` / `*_results_dir()` helpers.
 - **Files:** `load_jsonc`, `save_jsonc`, `list_presets`.
+- **Seeding:** `_seed_writable_root`, gated on `SEED_STAMP`. The shipped
+  examples are templates, not user documents; seeding them only when absent
+  meant an upgraded install kept examples from whatever version first ran, and
+  a config written against an old schema outlived the build that understood
+  it. Bump `SEED_STAMP` whenever the example configs change shape. Anything
+  overwritten is kept as `.jsonc.bak`.
 - **Validation:** `validate_steady_config`, `validate_unsteady_config`,
   `check_alternate_fields`, `_is_filled`.
 - **Preflight:** `preflight_steady`, `preflight_unsteady`, `worst_severity`.
@@ -496,9 +502,18 @@ grows trailing commas.
 
 `settings.py` reads `user_data/ui_settings.json`, falling back to
 `default_ui_settings.json`. Keys starting with `_` are comments and are
-stripped on load, which is how the defaults file documents itself. Four
-settings: `default_output_units`, `default_auto_save_inputs`,
-`theme_appearance`, `shortcuts`.
+stripped on load, which is how the defaults file documents itself. Three
+settings: `default_program_units`, `default_auto_save_inputs`, `shortcuts`.
+
+`_RENAMED` handles keys that changed name between versions — the user's value
+is migrated before the defaults are merged in, otherwise the renamed value
+would lose to the default rather than replacing it.
+
+**Pages are built once and cached, so a preference change has to be pulled in
+on `on_show`.** `input_page._sync_from_settings()` resets auto-save every time
+and moves the units only when the preference actually changed, so a preset's
+own units survive ordinary navigation. `results_page` does the same against
+its toolbar buttons.
 
 `theme.py` is the whole visual vocabulary: `PAD_XS` through `PAD_XL`,
 `SIZE_SMALL` through `SIZE_HERO`, the MRT reds, the slate accent, the
@@ -635,7 +650,14 @@ read-only diagnostics box that only appears when there's something in it.
 `prefill(title, diagnostics, config_json)` is what the shell's Halt & report
 and the error popup call. On send, diagnostics and config are capped by
 `cap_field` (last 1000 lines / 20 KB, trimmed from the front — the tail of a
-log is where the failure is). If sending fails there's a clipboard fallback.
+log is where the failure is).
+
+**Every report is written to `user_data/bug_reports/` before it's sent.**
+Web3Forms answering `success` means it accepted the submission, not that mail
+reached the inbox; their spam filtering sits in between, and a desktop app
+posting with no Origin header is exactly what that filter is built to catch.
+The page shows the server's own message verbatim rather than claiming
+delivery, and offers the reports folder alongside the clipboard fallback.
 
 ### 9.12 `patchnotes.py`
 
@@ -853,6 +875,13 @@ reports a syntax error in `warnings.py`, check the tool's Python version before
 believing it.
 
 **`theme.py` for every colour and gap.** No literals in pages.
+
+**Pages are cached, so anything read from settings at build time goes stale.**
+Read it in `on_show` instead.
+
+**A bug that only appears in the exe is usually about bundled files or
+`%APPDATA%` seeding.** Source mode reads the checkout directly, so it can't
+reproduce a stale seeded copy.
 
 ---
 

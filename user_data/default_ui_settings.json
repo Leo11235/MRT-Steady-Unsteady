@@ -1,8 +1,8 @@
 {
     "_comment_": "Baseline UI settings, committed to the repo. Reset-to-defaults copies this file over user_data/ui_settings.json. Add new keys here whenever you add a setting, and give it a widget on the settings page. Keys starting with an underscore are treated as comments and stripped on load.",
 
-    "_comment_output_units": "Unit system the results pages display in: SI, MRT or IMP. Inputs carry their own units per field, so this only affects output.",
-    "default_output_units": "SI",
+    "_comment_program_units": "Unit system the whole program presents in: SI, MRT or IMP. Input forms open in it and results pages start on it. A loaded preset still overrides it per field, since a preset carries its own units. Renamed from default_output_units in 1.5.",
+    "default_program_units": "SI",
 
     "_comment_auto_save": "When true, Run saves the inputs automatically instead of prompting for a preset name.",
     "default_auto_save_inputs": true,

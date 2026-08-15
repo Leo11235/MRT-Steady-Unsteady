@@ -84,8 +84,22 @@ def _source_layout_root() -> Path:
 _seeded = False
 
 
+# Bumped whenever the shipped example configs change shape. A writable root
+# seeded under an older stamp gets its examples refreshed on next launch.
+#
+# This exists because the examples are TEMPLATES, not user documents. Seeding
+# them only when absent meant an upgraded install kept the examples from
+# whatever version first ran, so a config written against the old schema
+# survived into a build that no longer understood it — which surfaced as
+# "not an unsteady config, no rocket inputs block found" and
+# "ValueError: Unknown unit: 'n'" in the exe, and never in source mode, where
+# the checkout's own files are read directly.
+SEED_STAMP = "1.5"
+_STAMP_FILE = "user_data/.seeded"
+
+
 def _seed_writable_root(root: Path) -> None:
-    """On first frozen launch, populate the writable root from the bundle.
+    """Populate the writable root from the bundle, refreshing stale examples.
 
     Idempotent, and never fatal: a failure here costs the user their example
     presets, not the ability to run the app.
@@ -107,6 +121,12 @@ def _seed_writable_root(root: Path) -> None:
     ):
         (root / sub).mkdir(parents=True, exist_ok=True)
 
+    stamp_path = root / _STAMP_FILE
+    try:
+        stale = stamp_path.read_text(encoding="utf-8").strip() != SEED_STAMP
+    except OSError:
+        stale = True                            # never seeded, or unreadable
+
     seeds = [
         "user_data/default_ui_settings.json",
         "user_data/simulation_configs/steady/steady_example.jsonc",
@@ -115,12 +135,25 @@ def _seed_writable_root(root: Path) -> None:
     ]
     for rel in seeds:
         src, dst = src_root / rel, root / rel
-        if src.exists() and not dst.exists():
-            try:
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(src, dst)
-            except OSError:
-                pass
+        if not src.exists():
+            continue
+        if dst.exists() and not stale:
+            continue
+        try:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if dst.exists():
+                # Someone may have edited an example in place. Keep a copy
+                # rather than silently discarding their work.
+                shutil.copyfile(dst, dst.with_suffix(dst.suffix + ".bak"))
+            shutil.copyfile(src, dst)
+        except OSError:
+            pass
+
+    if stale:
+        try:
+            stamp_path.write_text(SEED_STAMP, encoding="utf-8")
+        except OSError:
+            pass
 
 
 def project_root() -> Path:

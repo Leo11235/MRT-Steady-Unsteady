@@ -97,9 +97,12 @@ class InputPage(ctk.CTkFrame):
         self.auto_save_var = ctk.BooleanVar(
             value=bool(user_settings.get("default_auto_save_inputs", True)))
 
-        # Which units a blank form starts in. Read once at build time; a loaded
-        # preset overrides it per field, since a preset carries its own units.
-        self.system = user_settings.get("default_output_units", "SI")
+        # Which units the form presents in. Re-read on every show, because the
+        # page is built once and cached: without that, changing the preference
+        # in Settings would never reach a page you'd already opened. A loaded
+        # preset still overrides it per field, since a preset carries its own
+        # units.
+        self.system = user_settings.get("default_program_units", "SI")
 
         self._build_frame()
         self._build_tabs()
@@ -576,7 +579,44 @@ class InputPage(ctk.CTkFrame):
         self._loaded_path = None
         self._advanced_locked.set(True)
         self._apply_advanced_lock()
+        self._sync_from_settings(force_units=True)
         self._set_status("")
+
+    # ==================================================================
+    # Settings
+    # ==================================================================
+
+    def _sync_from_settings(self, *, force_units: bool = False) -> None:
+        """Pull the program-wide preferences into this form.
+
+        Auto-save resets every time: it's a per-run choice with a configured
+        default, not something the form should remember.
+
+        Units only move when the preference has actually changed since we last
+        looked (or when forced by a reset). Re-applying unconditionally would
+        undo the units a preset brought with it every time you navigated back
+        to the page.
+        """
+        settings = user_settings.load_settings()
+
+        self.auto_save_var.set(bool(settings.get("default_auto_save_inputs", True)))
+
+        wanted = settings.get("default_program_units", "SI")
+        if force_units or wanted != self.system:
+            self.set_system(wanted)
+
+    def set_system(self, system: str) -> None:
+        """Re-present every field in `system`. Values are converted, not reset."""
+        self.system = system
+        for field in self.fields.values():
+            try:
+                field.set_system(system)
+            except Exception:                   # noqa: BLE001
+                pass                            # one odd field shouldn't stop the rest
+        self._on_system_changed(system)
+
+    def _on_system_changed(self, system: str) -> None:
+        """Hook for subclasses with their own unit-aware widgets."""
 
     def handle_shortcut(self, action: str) -> None:
         if action == "run":
@@ -587,4 +627,5 @@ class InputPage(ctk.CTkFrame):
             self._on_load_preset()
 
     def on_show(self) -> None:
+        self._sync_from_settings()
         self._clear_field_errors()

@@ -110,12 +110,12 @@ class SettingsPage(ctk.CTkFrame):
 
     def _build_units(self, parent) -> None:
         section = self._section(parent, "Unit system")
-        row = self._row(section, "Default output units")
+        row = self._row(section, "Default program units")
         ctk.CTkOptionMenu(row, variable=self.units_var, values=list(UNIT_SYSTEMS),
                           width=_CONTROL_W).pack(side="left")
         ctk.CTkLabel(
             row,
-            text="what a blank input form and the results pages start in",
+            text="input forms open in it, results pages start on it",
             text_color=theme.TEXT_FAINT,
             font=ctk.CTkFont(size=theme.SIZE_SMALL, slant="italic")).pack(
             side="left", padx=(theme.PAD_M, 0))
@@ -174,7 +174,7 @@ class SettingsPage(ctk.CTkFrame):
     def _load(self) -> None:
         """Populate from the saved settings. Called on build and on every show."""
         current = user_settings.load_settings()
-        units = current.get("default_output_units", "SI")
+        units = current.get("default_program_units", "SI")
         self.units_var.set(units if units in UNIT_SYSTEMS else "SI")
         self.autosave_var.set(bool(current.get("default_auto_save_inputs", True)))
 
@@ -216,7 +216,7 @@ class SettingsPage(ctk.CTkFrame):
 
     def _on_save(self) -> None:
         current = user_settings.load_settings()
-        current["default_output_units"] = self.units_var.get()
+        current["default_program_units"] = self.units_var.get()
         current["default_auto_save_inputs"] = bool(self.autosave_var.get())
         current["shortcuts"] = dict(self._bindings)
         user_settings.save_settings(current)

@@ -51,9 +51,10 @@ def default_settings_path() -> Path:
 # opens rather than crashing on startup.
 
 _HARDCODED_DEFAULTS: dict = {
-    # Which unit system the results pages display in: "SI", "MRT" or "IMP".
-    # Inputs carry a unit per field, so this only affects output.
-    "default_output_units": "SI",
+    # The unit system the whole program presents in: "SI", "MRT" or "IMP".
+    # Input forms open in it and results pages start on it. A loaded preset
+    # still overrides it per field, because a preset carries its own units.
+    "default_program_units": "SI",
     # Run without prompting for a preset name, auto-saving instead.
     "default_auto_save_inputs": True,
     # Keyboard bindings, in Tk event syntax.
@@ -96,9 +97,29 @@ def load_settings() -> dict:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception:                           # noqa: BLE001
         data = {}
+    # Migrate the USER's dict before merging. Doing it after would be too
+    # late: the defaults already carry the new key, so the renamed value would
+    # lose to the default rather than replacing it.
+    user = _migrate({k: v for k, v in data.items() if not k.startswith("_")})
     merged = load_defaults()
-    merged.update({k: v for k, v in data.items() if not k.startswith("_")})
+    merged.update(user)
     return merged
+
+
+# Old key -> new key, for settings files written by an earlier version. The old
+# value wins only if the new key isn't already set, and the old key is dropped
+# either way so it doesn't linger and confuse the next person reading the file.
+_RENAMED = {
+    "default_output_units": "default_program_units",   # 1.5
+}
+
+
+def _migrate(settings: dict) -> dict:
+    for old, new in _RENAMED.items():
+        if old in settings:
+            value = settings.pop(old)
+            settings.setdefault(new, value)
+    return settings
 
 
 def save_settings(settings: dict) -> None:

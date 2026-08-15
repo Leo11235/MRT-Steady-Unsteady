@@ -129,6 +129,17 @@ class _Row(ctk.CTkFrame):
     def unit(self) -> str:
         return self._unit_var.get()
 
+    def set_system(self, system: str) -> None:
+        """Switch this card's unit to the one `system` uses for its category,
+        converting the low/high/step values rather than clearing them."""
+        target = self.spec.unit_for(system)
+        if not target or target == self._unit_var.get():
+            return
+        old = self._unit_var.get()
+        self._unit_var.set(target)
+        self._previous_unit = old
+        self._on_unit_changed(target)
+
     def _on_unit_changed(self, new_unit: str) -> None:
         """Convert all three bounds into the new unit at once."""
         old_unit = self._previous_unit
@@ -240,6 +251,15 @@ class ParametricList(ctk.CTkFrame):
             self._on_change()
 
     # ------------------------------------------------------------------
+
+    def set_system(self, system: str) -> None:
+        """Re-present every card in `system`. New cards inherit it too."""
+        self._system = system
+        for row in self._rows:
+            try:
+                row.set_system(system)
+            except Exception:                   # noqa: BLE001
+                pass
 
     def add_row(self, key: str, spec: Optional[dict] = None) -> Optional[_Row]:
         """Add a swept variable. Ignores keys already present or unknown."""

@@ -61,7 +61,7 @@ class SteadyPage(InputPage):
         self.sim_type_var = ctk.StringVar(value=SIM_TYPES["fuel_mass_convergence"])
         self.save_data_var = ctk.BooleanVar(value=True)
         self.output_units_var = ctk.StringVar(
-            value=user_settings.get("default_output_units", "SI"))
+            value=user_settings.get("default_program_units", "SI"))
 
         self._build_sim_tab(self.add_tab("Sim Settings"))
         self._build_oxfuel_tab(self.add_tab("Oxidizer & Fuel"))
@@ -69,6 +69,13 @@ class SteadyPage(InputPage):
 
     def _after_build(self) -> None:
         self._refresh_visibility()
+
+    def _on_system_changed(self, system: str) -> None:
+        """The base class re-presents the plain fields; these two widgets carry
+        units of their own and have to be told separately."""
+        self.output_units_var.set(system)
+        if getattr(self, "parametric_list", None) is not None:
+            self.parametric_list.set_system(system)
 
     # ---- tab 1 --------------------------------------------------------
 

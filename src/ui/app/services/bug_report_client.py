@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 
 WEB3FORMS_ACCESS_KEY = "455cf761-6cfd-40a1-8efd-225140582053"
@@ -43,7 +44,7 @@ def submit_bug_report(
     config_json: str = "",
     env: dict | None = None,
     timeout_s: float = 15.0,
-) -> None:
+) -> str:
     """POST the report to Web3Forms.
 
     Extra kwargs let the UI supply the split-out fields collected on the
@@ -51,6 +52,9 @@ def submit_bug_report(
     environment metadata dict).  Everything is optional so this stays
     callable with the old two-arg signature if anything else in the
     codebase still uses it.
+
+    Returns the server's own message, so the UI can show what actually came
+    back rather than asserting success on the user's behalf.
 
     Raises RuntimeError on any non-success response; raises the
     underlying urllib exception on network failures.
@@ -110,6 +114,11 @@ def submit_bug_report(
         if response.status != 200 or not body.get("success"):
             msg = body.get("message") or f"HTTP {response.status}"
             raise RuntimeError(f"Web3Forms rejected the report: {msg}")
+        # Accepted. Note that Web3Forms accepting a submission is NOT proof of
+        # delivery: it forwards to the address behind the access key, and its
+        # own spam filtering sits between the two. Hand the message back so the
+        # UI can show it verbatim instead of claiming more than we know.
+        return str(body.get("message") or "accepted")
 
 
 def friendly_network_error_hint(reason_text: str) -> str:
@@ -162,6 +171,26 @@ def cap_field(text: str, *, max_lines: int = MAX_FIELD_LINES,
     if dropped:
         capped = f"[... {dropped} earlier lines truncated ...]\n{capped}"
     return capped
+
+
+def save_local_copy(root: Path, text: str) -> Path | None:
+    """Write a report to user_data/bug_reports/ and return the path.
+
+    Every report gets saved before it's sent. Web3Forms returning success is
+    not proof of delivery — its spam filter sits between the accept and the
+    inbox — so a local copy is the difference between "we'll never know what
+    that bug was" and "attach this file to an email".
+    """
+    from datetime import datetime
+
+    try:
+        folder = root / "user_data" / "bug_reports"
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / f"{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.txt"
+        path.write_text(text, encoding="utf-8")
+        return path
+    except OSError:
+        return None
 
 
 def collect_environment() -> dict:

@@ -263,6 +263,28 @@ class LabeledField(ctk.CTkFrame):
         self._previous_unit = unit
         self._refresh_si_cache()
 
+    def set_system(self, system: str) -> None:
+        """Switch this field to the given unit system's unit for its category.
+
+        Converts whatever is typed, so the physical quantity is preserved and
+        only its presentation changes. A no-op if the field is dimensionless,
+        is a text field, or is already showing the right unit.
+
+        Called when the program-wide unit preference changes. Without this, a
+        page built before the change keeps whatever units it was born with,
+        because pages are cached and never rebuilt.
+        """
+        self.system = system
+        if self.spec.value_type == "text":
+            return
+        target = self.spec.unit_for(system)
+        if not target or target == self.unit:
+            return
+        # Route through the dropdown so the conversion path is the same one a
+        # manual change takes, cached SI value and all.
+        self._unit_var.set(target)
+        self._on_unit_changed(target)
+
     def _on_unit_changed(self, new_unit: str) -> None:
         """Convert what's typed into the newly selected unit.
 
