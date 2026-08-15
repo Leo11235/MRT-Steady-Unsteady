@@ -580,8 +580,14 @@ def rad_to_deg(value): return convert(value, "rad", "deg")
 # category a system doesn't name falls back to SI.
 
 UNIT_SYSTEMS: dict[str, dict[str, str]] = {
-    "SI": {},   # empty == use SI_UNITS for everything
+    "SI": {
+        # Radians are the SI unit and what the physics uses, but nobody types a
+        # launch angle in radians. This is a display choice only; SI_UNITS still
+        # says "rad" and every conversion still goes through it.
+        "angle": "deg",
+    },
     "MRT": {
+        "angle":        "deg",
         "length":       "ft",   # altitudes; hardware dimensions are overridden per-field
         "area":         "in2",
         "pressure":     "psi",
@@ -589,6 +595,7 @@ UNIT_SYSTEMS: dict[str, dict[str, str]] = {
         "acceleration": "ft/s2",
     },
     "IMP": {
+        "angle":        "deg",
         "length":       "ft",
         "area":         "in2",
         "volume":       "ft3",

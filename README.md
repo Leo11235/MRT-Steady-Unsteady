@@ -72,6 +72,15 @@ To run from source or contribute code, see [Development setup](#development-setu
 
 From the home screen, click **Browse saved results...** and pick a `.json` result file. The results page opens with that run's data, useful for comparing runs or resharing outputs.
 
+### Running the backend tests
+
+With the venv activated, from the project root:
+
+```python
+from tests.backend_tests import run_backend_tests
+run_backend_tests(all_steady_tests=True, all_unsteady_tests=True)
+```
+
 ### Editing configurations directly
 
 Every simulation configuration is stored as a `.jsonc` file under `user_data/simulation_configs/`. Copy any of `steady_example.jsonc`, `steady_parametric_example.jsonc`, or `unsteady_example.jsonc`, edit in your favourite editor, then load via the GUI.
@@ -117,7 +126,6 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 .venv\Scripts\activate
 python -m pip install -U pip setuptools wheel
 python -m pip install -r requirements.txt
-python -m pip install -r src\ui\requirements-ui.txt
 ```
 
 </details>
@@ -130,12 +138,11 @@ python3.13 -m venv .venv
 source .venv/bin/activate
 python -m pip install -U pip setuptools wheel
 python -m pip install -r requirements.txt
-python -m pip install -r src/ui/requirements-ui.txt
 ```
 
 </details>
 
-> **Two requirements files?** `requirements.txt` covers the backend (NumPy, SciPy, matplotlib, CoolProp, and friends). `src/ui/requirements-ui.txt` adds the GUI-only dependencies (CustomTkinter, Pillow). Both are pinned for reproducibility.
+> `requirements.txt` covers everything: the backend (NumPy, SciPy, matplotlib, rocketcea, pypropep), the GUI (CustomTkinter, Pillow), the test suite (rich), and PyInstaller for building. All pinned for reproducibility.
 
 ### Running from source
 
@@ -172,7 +179,9 @@ Bump the top-level `VERSION` file to the new release number. Both the app and th
 .\build_tools\build.bat
 ```
 
-The script relocates itself to the project root, so it works from any directory. It runs PyInstaller (using `src/ui/build.spec`) to produce `build_tools/dist/MRT-Steady-Unsteady/`, then hands off to Inno Setup to package the folder into `build_tools/output/MRT-Steady-Unsteady-Setup.exe`. That final `.exe` is what you attach to a GitHub release.
+The script relocates itself to the project root, so it works from any directory. It runs PyInstaller (using `build_tools/build.spec`) to produce `build_tools/dist/MRT-Steady-Unsteady/`, then hands off to Inno Setup to package the folder into `build_tools/output/MRT-Steady-Unsteady-Setup.exe`. That final `.exe` is what you attach to a GitHub release.
+
+Before building, add an entry to `PATCHNOTES` in `src/ui/app/pages/patchnotes.py` matching the new version, and walk `tests/UI bug checklist.txt`.
 
 Everything the build touches stays inside `build_tools/`, so the project root holds only source.
 
@@ -183,8 +192,11 @@ Everything the build touches stays inside `build_tools/`, so the project root ho
 ```
 MRT-Steady-Unsteady/
 ├── src/
-│   ├── common/
-│   │   └── variable_conversions.py # Unit tables + SI conversion (backend + UI)
+│   ├── common/                    # Shared by backend and UI
+│   │   ├── variable_conversions.py # Unit tables + SI conversion
+│   │   ├── default_inputs.py       # Physical defaults (density, a, n, ...)
+│   │   ├── plotting/               # Plot registries: steady, unsteady, parametric
+│   │   └── static_data/
 │   ├── backend/
 │   │   ├── steady/                # Steady-state simulator
 │   │   └── unsteady/              # Transient simulator + control-volume models
@@ -197,6 +209,8 @@ MRT-Steady-Unsteady/
 │   ├── backend_tests_helpers.py   # Checks registry, timeout, reporting
 │   ├── steady_configs/            # One .jsonc per steady test
 │   ├── unsteady_configs/          # One .jsonc per unsteady test
+│   ├── ui_configs/                # Configs that drive UI failure paths, by hand
+│   ├── UI bug checklist.txt       # Manual pre-release walkthrough
 │   └── test_outputs/              # Scratch results, cleared between runs
 ├── user_data/
 │   ├── simulation_configs/        # Input presets (.jsonc)
@@ -204,11 +218,13 @@ MRT-Steady-Unsteady/
 │   └── ui_settings.json           # Per-machine preferences
 ├── build_tools/
 │   ├── build.bat                  # PyInstaller + Inno Setup one-shot build
+│   ├── build.spec                 # PyInstaller spec
 │   ├── installer.iss              # Inno Setup script
 │   ├── dist/                      # PyInstaller output (exe + DLLs)
 │   ├── build/                     # PyInstaller scratch
 │   └── output/                    # The distributable installer .exe
 ├── docs/                          # Screenshots and any extra docs
+├── program_reference.md           # Full technical reference — read this first
 ├── VERSION                        # Single source of truth for the version number
 └── requirements.txt               # All dependencies
 ```

@@ -59,6 +59,7 @@ class LabeledField(ctk.CTkFrame):
         master,
         spec: FieldSpec,
         *,
+        system: str = "SI",
         label_width: int = _LABEL_WIDTH,
         on_change: Optional[Callable[[str], None]] = None,
         show_help: bool = True,
@@ -67,6 +68,9 @@ class LabeledField(ctk.CTkFrame):
 
         self.spec = spec
         self.key = spec.key
+        # The user's unit system, from settings. Decides what unit a blank
+        # field starts in; a loaded preset overrides it per field.
+        self.system = system
         self._locked = False
         self._on_change = on_change
 
@@ -76,7 +80,7 @@ class LabeledField(ctk.CTkFrame):
         self._label.pack(side="left", padx=(0, theme.PAD_S))
 
         # ---- value ---------------------------------------------------
-        self.var = ctk.StringVar(value="" if spec.default is None else str(spec.default))
+        self.var = ctk.StringVar()
 
         # The exact SI value behind whatever is displayed, kept so that
         # switching units repeatedly doesn't accumulate rounding — see
@@ -99,7 +103,7 @@ class LabeledField(ctk.CTkFrame):
         # ---- unit ----------------------------------------------------
         # Dimensionless and text fields get nothing here; single-option
         # categories get a static label, since a one-item dropdown is a lie.
-        self._unit_var = ctk.StringVar(value=spec.unit)
+        self._unit_var = ctk.StringVar(value=spec.unit_for(system))
         self._unit_menu: ctk.CTkOptionMenu | None = None
         options = spec.unit_options
 
@@ -123,6 +127,11 @@ class LabeledField(ctk.CTkFrame):
         # What the dropdown was before the last change, so we know what to
         # convert FROM.
         self._previous_unit = self._unit_var.get()
+
+        # Pre-fill from the registry default, which arrives as a [value, unit]
+        # pair and therefore brings its own unit with it.
+        if spec.default is not None:
+            self.from_pair(spec.default)
 
         # ---- help ----------------------------------------------------
         # Attached to both halves, so hovering anywhere on the row works.
@@ -212,15 +221,15 @@ class LabeledField(ctk.CTkFrame):
             return None
 
     def clear(self) -> None:
-        """Blank the value and go back to the registry's starting unit."""
+        """Blank the value and go back to the unit system's starting unit."""
         self.var.set("")
-        self._set_unit_silently(self.spec.unit)
+        self._set_unit_silently(self.spec.unit_for(self.system))
 
     def reset_to_default(self) -> None:
         """Back to the registry default, or blank if there isn't one."""
         self.clear()
         if self.spec.default is not None:
-            self.var.set(str(self.spec.default))
+            self.from_pair(self.spec.default)
 
     # ==================================================================
     # Unit changes

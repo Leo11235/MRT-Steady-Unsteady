@@ -1,0 +1,92 @@
+/*
+   EXPECT: Run raises the 'one or the other, not both' error for the CV1
+   tank pair.
+
+   Then clear one and Run: it should proceed. Repeat with the other cleared.
+   Do the same exercise on the CV4 pair (chamber_fuel_mass vs
+   chamber_fuel_internal_diameter), which lives in this same config.
+*/
+
+/*
+An example of an unsteady config file
+Every physical input is a [value, unit] pair
+*/
+
+{
+    "config": {
+        "metadata": {
+            "simulation_type": "unsteady", // can be "steady", "unsteady", "steady_test", "unsteady_test"
+            "simulation_name": "UI 06 both tank alternates filled", // str, optional
+            "simulation_description": "tank_ullage_fraction and tank_internal_length are both filled.", // a brief description of the simulation, eg what is being tried for the rocket if it is a regular config or what is being tested+expected output if it is a test config
+            "expected_output": "", // test configs only; "success"/"error: errortype"/etc
+            "warnings": true, // true or false; whether to include warnings in the final report
+            "save_to_pdf": true, // whether to save all output plots to a pdf file
+            "save_to_png": true // whether to save all output plots as a png
+        },
+        "rocket_inputs": {
+            "CV1_tank": {
+                "model": "saturated_equilibrium",
+                "tank_internal_diameter": [0.2, "m"],
+                "tank_temperature": [298.15, "K"],
+                "tank_oxidizer_mass": [15.5, "kg"],
+                "dip_tube_external_diameter": [0.012, "m"], 
+                "dip_tube_internal_diameter": [0.008, "m"],
+                "dip_tube_length": [0.45, "m"],
+                    // tank: one of the following:
+                "tank_ullage_fraction": [0.1, "."],
+                    // or:
+                "tank_internal_length": [1.2, "m"]
+            },
+            "CV2_valve": {
+                "model": "sigmoid",
+                "valve_time_constant": [0.1, "s"], // how quickly the valve opens; only used for "linear" model
+                "sigmoid_half_time": [0.05, "s"], // time at which the valve is 50% open
+                "sigmoid_steepness": [10.0, "."] // how steep the opening curve is around the 50% open mark
+            },
+            "CV3_injector": {
+                "model": "SPI",
+                "injector_discharge_coefficient": [0.8, "."],
+                "injector_number_of_holes": [36, "."],
+                "injector_hole_diameter": [0.001514, "m"],
+                "feed_pressure_loss": [300000.0, "Pa"]
+            },
+            "CV4_chamber": {
+                "model": "0D_quasi_steady",
+                "chamber_fuel_length": [0.45, "m"],
+                "chamber_fuel_density": [900.0, "kg/m3"],
+                "chamber_fuel_external_diameter": [0.2, "m"],
+                "chamber_regression_rate_scaling_constant": [0.000132, "."],
+                "chamber_regression_rate_exponent": [0.555, "."],
+                "pre_chamber_diameter": [0.2, "m"],
+                "pre_chamber_length": [0.0318310, "m"],
+                "post_chamber_diameter": [0.2, "m"],
+                "post_chamber_length": [0.0477465, "m"], 
+                    // chamber: one of the following:
+                "chamber_fuel_mass": [6.0, "kg"],
+                    // or:
+                "chamber_fuel_internal_diameter": [null, "m"]
+            },
+            "CV5_nozzle": {
+                "model": "1D_frozen",
+                "nozzle_throat_diameter": [0.032, "m"],
+                "nozzle_exit_diameter": [0.09, "m"]
+            },
+            "CV6_trajectory": {
+                "model": "2dof",
+                "rocket_dry_mass": [45.0, "kg"],
+                "rocket_drag_coefficient": [0.64, "."],
+                "rocket_outer_diameter": [0.20186, "m"],
+                "rocket_launch_angle": [6.0, "deg"],
+                "drogue_parachute_drag_coefficient": [1.2, "."],
+                "drogue_parachute_diameter": [0.59711, "m"],
+                "main_parachute_deployment_altitude_agl": [450.0, "m"],
+                "main_parachute_drag_coefficient": [1.5, "."],
+                "main_parachute_diameter": [3.4999, "m"], 
+                "launch_site_altitude_asl": [300.0, "m"]
+            }
+        }
+    },
+    "simulation_settings_override": { // optional, any inputs here will override default inputs
+
+    }
+}

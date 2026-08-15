@@ -7,9 +7,6 @@
     "_comment_auto_save": "When true, Run saves the inputs automatically instead of prompting for a preset name.",
     "default_auto_save_inputs": true,
 
-    "_comment_appearance": "customtkinter appearance mode: light, dark or system.",
-    "theme_appearance": "system",
-
     "_comment_shortcuts": "Keyboard bindings, in Tk event syntax.",
     "shortcuts": {
         "run": "<Control-r>",

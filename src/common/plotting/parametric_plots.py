@@ -6,9 +6,10 @@ Two plot builders, both consuming the `parametric_results` block that
     plot_parametric_2d(param_results, x_var, y_var, ...)
     plot_parametric_3d(param_results, x_var, y_var, z_var, ...)
 
-Both open a matplotlib figure with plt.show(block=False) and return the
-Figure object.  Callers should use ui.app.services.mpl_bringup.lift_all_figures()
-after invoking these so the windows come to the foreground on Windows.
+Both build and return a Figure. They do NOT display it: the caller owns
+display, because matplotlib is pinned to Agg (see this package's __init__)
+so figures can be built off the main thread. The UI opens them in its own
+windows via widgets/figure_window.py.
 """
 
 from __future__ import annotations
@@ -224,7 +225,6 @@ def plot_parametric_2d(
     if other_vars and grouped:
         ax.legend(fontsize="small", framealpha=0.85, loc="best")
     fig.tight_layout()
-    plt.show(block=False)
     return fig
 
 
@@ -329,5 +329,4 @@ def plot_parametric_3d(
     fig.canvas.mpl_connect("motion_notify_event", _lock_roll)
 
     fig.tight_layout()
-    plt.show(block=False)
     return fig

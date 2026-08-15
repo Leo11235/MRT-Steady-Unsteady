@@ -1,0 +1,52 @@
+/*
+   EXPECT: loading this preset fails cleanly, or Run fails cleanly, with a
+   message naming the unit. 'pascals' is not an alias in
+   src/common/variable_conversions.py ('Pa' is).
+
+   The point is that a bad unit gives a readable error rather than a
+   KeyError traceback in the terminal.
+*/
+
+{
+    "metadata": {
+        "simulation_type": "steady", // can be "steady", "unsteady", "steady_test", "unsteady_test"
+        "simulation_name": "UI 04 unknown unit", // str, optional; blank falls back to a timestamp
+        "simulation_description": "chamber_pressure carries a unit string the registry doesn't know.", // a brief description of the simulation, eg what is being tried for the rocket if it is a regular config or what is being tested+expected output if it is a test config
+        "expected_output": "", // test configs only; "success"/"error: errortype"/etc
+        "warnings": true, // true or false; whether to include warnings in the final report
+        "save_to_pdf": true, // whether to save all output plots to a pdf file
+        "save_to_png": false // whether to save all output plots as a png
+    },
+
+    "simulation_settings": {
+        "simulation_type": "fuel_mass_convergence", // 'hotfire', 'fuel_mass_convergence', or 'parametric_study'
+        "output_units": "MRT", // SI, IMP, or MRT (rocket team's own mishmash of SI and IMP)
+        "save_output_data": true
+    },
+
+    "rocket_inputs": {
+        // base requirements: needed for every simulation type
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "pascals"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+
+        // kinematics requirements: needed for fuel_mass_convergence and parametric_study
+        "target_apogee": [13716, "m"],
+        "launch_site_altitude": [364, "m"],
+        "dry_mass": [88.89, "kg"],
+        "rocket_external_diameter": [0.20574, "m"],
+        "drag_coefficient": [0.641606, "."],
+        "launch_angle": [6, "deg"],
+
+        // hotfire requirements: one of the following
+        "fuel_mass": [null, "kg"],
+            // or:
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

@@ -30,13 +30,6 @@
       "injector_number_of_holes",
       "injector_hole_diameter",
       "feed_pressure_loss"
-    ],
-    "NHNE": [
-      "injector_discharge_coefficient",
-      "injector_number_of_holes",
-      "injector_hole_diameter",
-      "feed_pressure_loss",
-      "two_phase_multiplier"
     ]
   },
   "CV4_chamber": {

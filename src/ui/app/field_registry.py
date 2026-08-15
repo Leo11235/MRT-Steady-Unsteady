@@ -32,19 +32,30 @@ UNITS
 -----
 `category` names a category in src/common/variable_conversions.py, which is
 where the unit dropdown's options come from.  Fields whose category is
-"dimensionless" get no dropdown.  `default_unit` is what a blank form starts
-with, and it does NOT have to be the SI unit — injector holes are more legible
-in millimetres than in metres, and nobody types a launch angle in radians.
+"dimensionless" get no dropdown.
+
+A blank form starts every field in the user's chosen unit system, from the
+"Default output units" setting: SI, MRT or IMP.  Nothing is hardcoded per
+field, so switching that setting moves the whole form together rather than
+leaving a scattering of exceptions behind.
+
+DEFAULT VALUES
+--------------
+Pre-filled values live in src/common/static_data/default_inputs.jsonc, not
+here.  They're physical properties and empirical constants, so they belong
+beside the unit tables where the backend can read them too, and where they can
+be documented with their sources.
 """
 
 from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field as _dc_field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
+from src.common import default_inputs
 from src.common import variable_conversions as vc
 
 
@@ -56,35 +67,43 @@ from src.common import variable_conversions as vc
 class FieldSpec:
     """How one config key is presented to the user.
 
-    key           The name used in the config file and by the backend.
-    label         What the form and results pages call it.
-    category      A category from variable_conversions ("length", "pressure",
-                  "dimensionless", ...).  Drives the unit dropdown.
-    help          Tooltip text.  Say what it means and give a typical value;
-                  this is the only in-app documentation these inputs get.
-    default_unit  What a blank form starts in.  Defaults to the category's SI
-                  unit when omitted, but override it wherever SI reads badly.
-    value_type    "float", "int" or "text".  Controls coercion and validation.
-    choices       For "text" fields with a fixed set of valid answers; renders
-                  as a dropdown instead of a free-text entry.
-    default       Pre-filled value for a blank form, in default_unit.  None
-                  leaves the field empty.
+    key         The name used in the config file and by the backend.
+    label       What the form and results pages call it.
+    category    A category from variable_conversions ("length", "pressure",
+                "dimensionless", ...).  Drives the unit dropdown.
+    help        Tooltip text.  Say what it means and give a typical value;
+                this is the only in-app documentation these inputs get.
+    value_type  "float", "int" or "text".  Controls coercion and validation.
+    choices     For "text" fields with a fixed set of valid answers; renders
+                as a dropdown instead of a free-text entry.
     """
     key: str
     label: str
     category: str
     help: str
-    default_unit: Optional[str] = None
     value_type: str = "float"
     choices: tuple[str, ...] = ()
-    default: Any = None
+
+    def unit_for(self, system: str = "SI") -> str:
+        """The unit a blank form shows, in the user's chosen unit system."""
+        try:
+            return vc.unit_for_system(self.category, system)
+        except (ValueError, KeyError):
+            return vc.SI_UNITS[self.category]
 
     @property
     def unit(self) -> str:
-        """The unit a blank form shows for this field."""
-        if self.default_unit is not None:
-            return self.default_unit
+        """SI unit for this field.  Prefer unit_for() where the system matters."""
         return vc.SI_UNITS[self.category]
+
+    @property
+    def default(self) -> Any:
+        """Pre-filled value as a [value, unit] pair, or None for a blank field.
+
+        Read from default_inputs.jsonc rather than stored here, so the values
+        stay data and can carry their own documentation.
+        """
+        return default_inputs.default_for(self.key)
 
     @property
     def unit_options(self) -> list[str]:
@@ -111,14 +130,11 @@ _STEADY: tuple[FieldSpec, ...] = (
               "Steady-state N2O mass flow rate through the injector."),
     FieldSpec("chamber_pressure", "Chamber pressure", "pressure",
               "Combustion-chamber stagnation pressure. MRT motors run around "
-              "3.4 MPa (500 psi).",
-              default_unit="MPa"),
+              "3.4 MPa (500 psi)."),
     FieldSpec("fuel_external_diameter", "Fuel external diameter", "length",
-              "Outer diameter of the fuel grain, bounded by the case.",
-              default_unit="mm"),
+              "Outer diameter of the fuel grain, bounded by the case."),
     FieldSpec("fuel_length", "Fuel length", "length",
-              "Length of the fuel grain.",
-              default_unit="mm"),
+              "Length of the fuel grain."),
     FieldSpec("fuel_grain_density", "Fuel grain density", "density",
               "Bulk density of the solid fuel. Paraffin is about 900 kg/m3."),
     FieldSpec("regression_rate_scaling_coefficient", "Regression coefficient (a)", DIMENSIONLESS,
@@ -128,32 +144,26 @@ _STEADY: tuple[FieldSpec, ...] = (
               "The 'n' in r_dot = a*G^n. Paraffin with N2O is around 0.555."),
     FieldSpec("liquid_oxidizer_type", "Liquid oxidizer", DIMENSIONLESS,
               "Oxidizer species, looked up in the PROPEP tables.",
-              value_type="text", choices=("NITROUS OXIDE",),
-              default="NITROUS OXIDE"),
+              value_type="text", choices=("NITROUS OXIDE",)),
     FieldSpec("solid_fuel_type", "Solid fuel", DIMENSIONLESS,
               "Fuel species, looked up in the PROPEP tables.",
-              value_type="text", choices=("EICOSANE (PARAFFIN)",),
-              default="EICOSANE (PARAFFIN)"),
+              value_type="text", choices=("EICOSANE (PARAFFIN)",)),
 
     # kinematics
     FieldSpec("target_apogee", "Target apogee", "length",
               "Design apogee. The convergence solver iterates fuel mass until "
-              "the trajectory reaches this.",
-              default_unit="m"),
+              "the trajectory reaches this."),
     FieldSpec("launch_site_altitude", "Launch site altitude", "length",
-              "Launch-site elevation above sea level.",
-              default_unit="m"),
+              "Launch-site elevation above sea level."),
     FieldSpec("dry_mass", "Dry mass", "mass",
               "Rocket dry mass: structure, electronics and empty tanks."),
     FieldSpec("rocket_external_diameter", "Rocket external diameter", "length",
               "Airframe outer diameter. Combines with the drag coefficient to "
-              "set aerodynamic drag.",
-              default_unit="mm"),
+              "set aerodynamic drag."),
     FieldSpec("drag_coefficient", "Drag coefficient", DIMENSIONLESS,
               "Rocket drag coefficient. Slender rockets sit around 0.5 to 0.7."),
     FieldSpec("launch_angle", "Launch angle", "angle",
-              "Launch rail angle from vertical. 0 degrees is straight up.",
-              default_unit="deg"),
+              "Launch rail angle from vertical. 0 degrees is straight up."),
 
     # hotfire alternates: fill exactly one
     FieldSpec("fuel_mass", "Fuel mass", "mass",
@@ -161,8 +171,7 @@ _STEADY: tuple[FieldSpec, ...] = (
               "diameter, not both."),
     FieldSpec("initial_internal_fuel_diameter", "Initial port diameter", "length",
               "Initial fuel port diameter. Fill this OR the fuel mass, not "
-              "both. The other simulation types solve for it.",
-              default_unit="mm"),
+              "both. The other simulation types solve for it."),
 )
 
 
@@ -173,30 +182,24 @@ _STEADY: tuple[FieldSpec, ...] = (
 _UNSTEADY: tuple[FieldSpec, ...] = (
     # ---- CV1 tank ----
     FieldSpec("tank_internal_diameter", "Internal diameter", "length",
-              "Inner diameter of the oxidizer tank shell.",
-              default_unit="mm"),
+              "Inner diameter of the oxidizer tank shell."),
     FieldSpec("tank_temperature", "Initial temperature", "temperature",
               "Initial N2O bulk temperature. Room-temperature fills land "
-              "between 285 and 300 K.",
-              default_unit="K"),
+              "between 285 and 300 K."),
     FieldSpec("tank_oxidizer_mass", "Oxidizer mass", "mass",
               "Total oxidizer mass loaded at t=0."),
     FieldSpec("dip_tube_external_diameter", "Dip tube external diameter", "length",
-              "External diameter of the dip tube.",
-              default_unit="mm"),
+              "External diameter of the dip tube."),
     FieldSpec("dip_tube_internal_diameter", "Dip tube internal diameter", "length",
-              "Internal flow diameter of the dip tube.",
-              default_unit="mm"),
+              "Internal flow diameter of the dip tube."),
     FieldSpec("dip_tube_length", "Dip tube length", "length",
-              "Length of the dip tube, measured down from the top of the tank.",
-              default_unit="mm"),
+              "Length of the dip tube, measured down from the top of the tank."),
     FieldSpec("tank_ullage_fraction", "Ullage fraction", DIMENSIONLESS,
               "Fraction of tank volume that is gas at t=0, from 0 to 1. Fill "
               "this OR the internal length, not both."),
     FieldSpec("tank_internal_length", "Internal length", "length",
               "Full internal length including end caps. Fill this OR the "
-              "ullage fraction, not both.",
-              default_unit="mm"),
+              "ullage fraction, not both."),
 
     # ---- CV2 valve ----
     FieldSpec("valve_time_constant", "Time constant", "time",
@@ -216,59 +219,45 @@ _UNSTEADY: tuple[FieldSpec, ...] = (
               "Total number of orifices in the injector plate.",
               value_type="int"),
     FieldSpec("injector_hole_diameter", "Hole diameter", "length",
-              "Diameter of one injector hole.",
-              default_unit="mm"),
+              "Diameter of one injector hole."),
     FieldSpec("feed_pressure_loss", "Feed pressure loss", "pressure",
               "Static pressure lost upstream of the injector, across the feed "
-              "lines and valve.",
-              default_unit="bar"),
-    FieldSpec("two_phase_multiplier", "Two-phase multiplier", DIMENSIONLESS,
-              "NHNE weighting between the incompressible and homogeneous-"
-              "equilibrium flow limits."),
+              "lines and valve."),
 
     # ---- CV4 chamber ----
     FieldSpec("chamber_fuel_length", "Fuel length", "length",
-              "Length of the fuel grain.",
-              default_unit="mm"),
+              "Length of the fuel grain."),
     FieldSpec("chamber_fuel_density", "Fuel density", "density",
               "Bulk density of the solid fuel. Paraffin is about 900 kg/m3."),
     FieldSpec("chamber_fuel_external_diameter", "Fuel external diameter", "length",
-              "Outer diameter of the fuel grain, bounded by the case.",
-              default_unit="mm"),
+              "Outer diameter of the fuel grain, bounded by the case."),
     FieldSpec("chamber_regression_rate_scaling_constant", "Regression coefficient (a)", DIMENSIONLESS,
               "The 'a' in r_dot = a*G^n. Paraffin with N2O is around 1.3e-4."),
     FieldSpec("chamber_regression_rate_exponent", "Regression exponent (n)", DIMENSIONLESS,
               "The 'n' in r_dot = a*G^n. Paraffin with N2O is around 0.555."),
     FieldSpec("pre_chamber_diameter", "Pre-chamber diameter", "length",
-              "Diameter of the empty volume upstream of the fuel grain.",
-              default_unit="mm"),
+              "Diameter of the empty volume upstream of the fuel grain."),
     FieldSpec("pre_chamber_length", "Pre-chamber length", "length",
               "Length of the empty volume upstream of the fuel grain. With the "
-              "diameter this sets the pre-chamber volume.",
-              default_unit="mm"),
+              "diameter this sets the pre-chamber volume."),
     FieldSpec("post_chamber_diameter", "Post-chamber diameter", "length",
-              "Diameter of the empty volume between the grain and the throat.",
-              default_unit="mm"),
+              "Diameter of the empty volume between the grain and the throat."),
     FieldSpec("post_chamber_length", "Post-chamber length", "length",
-              "Length of the empty volume between the grain and the throat.",
-              default_unit="mm"),
+              "Length of the empty volume between the grain and the throat."),
     FieldSpec("chamber_fuel_mass", "Fuel mass", "mass",
               "Total solid fuel loaded. Fill this OR the internal diameter, "
               "not both."),
     FieldSpec("chamber_fuel_internal_diameter", "Fuel internal diameter", "length",
               "Initial fuel port diameter. Fill this OR the fuel mass, not "
-              "both.",
-              default_unit="mm"),
+              "both."),
 
     # ---- CV5 nozzle ----
     FieldSpec("nozzle_throat_diameter", "Throat diameter", "length",
               "Nozzle throat diameter. Sets the chamber pressure for a given "
-              "mass flow, so it is the single most sensitive nozzle input.",
-              default_unit="mm"),
+              "mass flow, so it is the single most sensitive nozzle input."),
     FieldSpec("nozzle_exit_diameter", "Exit diameter", "length",
               "Nozzle exit-plane diameter. Together with the throat this sets "
-              "the expansion ratio, and so the altitude the nozzle suits.",
-              default_unit="mm"),
+              "the expansion ratio, and so the altitude the nozzle suits."),
 
     # ---- CV6 trajectory ----
     FieldSpec("rocket_dry_mass", "Dry mass", "mass",
@@ -277,27 +266,21 @@ _UNSTEADY: tuple[FieldSpec, ...] = (
               "Rocket drag coefficient. Slender rockets sit around 0.5 to 0.7."),
     FieldSpec("rocket_outer_diameter", "Outer diameter", "length",
               "Rocket maximum outer diameter, used with the drag coefficient "
-              "to set frontal area.",
-              default_unit="mm"),
+              "to set frontal area."),
     FieldSpec("rocket_launch_angle", "Launch angle", "angle",
-              "Launch rail angle from vertical. 0 degrees is straight up.",
-              default_unit="deg"),
+              "Launch rail angle from vertical. 0 degrees is straight up."),
     FieldSpec("drogue_parachute_drag_coefficient", "Drogue drag coefficient", DIMENSIONLESS,
               "Drogue parachute drag coefficient."),
     FieldSpec("drogue_parachute_diameter", "Drogue diameter", "length",
-              "Drogue parachute canopy diameter.",
-              default_unit="mm"),
+              "Drogue parachute canopy diameter."),
     FieldSpec("main_parachute_deployment_altitude_agl", "Main deploy altitude AGL", "length",
-              "Altitude above ground at which the main parachute deploys.",
-              default_unit="m"),
+              "Altitude above ground at which the main parachute deploys."),
     FieldSpec("main_parachute_drag_coefficient", "Main drag coefficient", DIMENSIONLESS,
               "Main parachute drag coefficient."),
     FieldSpec("main_parachute_diameter", "Main diameter", "length",
-              "Main parachute canopy diameter.",
-              default_unit="m"),
+              "Main parachute canopy diameter."),
     FieldSpec("launch_site_altitude_asl", "Launch site altitude ASL", "length",
-              "Launch-site elevation above sea level.",
-              default_unit="m"),
+              "Launch-site elevation above sea level."),
 )
 
 
@@ -314,7 +297,6 @@ MODEL_LABELS: dict[str, str] = {
     "sigmoid":               "Sigmoid",
     "instant":               "Instant",
     "SPI":                   "SPI",
-    "NHNE":                  "NHNE",
     "0D_quasi_steady":       "0D quasi-steady",
     "1D_frozen":             "1D frozen",
     "2dof":                  "2-DOF",
@@ -328,7 +310,7 @@ MODEL_DESCRIPTIONS: dict[str, str] = {
         "regimes are handled automatically as the tank empties.",
     "linear":
         "The valve opens linearly from closed to fully open over the time "
-        "constant. Set the time constant to 0 for instantaneous opening.",
+        "constant.",
     "sigmoid":
         "The valve opens along a logistic curve centred on the half-time. "
         "Steepness controls how sharp the transition is, with high values "
@@ -340,10 +322,6 @@ MODEL_DESCRIPTIONS: dict[str, str] = {
         "Single-phase incompressible. Treats the upstream N2O as pure liquid "
         "across the injector, which holds while the tank still has liquid. "
         "Vapour-phase flow falls back to a choked-flow relation.",
-    "NHNE":
-        "Non-homogeneous non-equilibrium. Blends the incompressible and "
-        "homogeneous-equilibrium limits, which models flashing flow near the "
-        "saturation point better than SPI does.",
     "0D_quasi_steady":
         "Treats the chamber as one well-mixed control volume at instantaneous "
         "chemical equilibrium. Combustion properties come from CEA at the "
@@ -436,6 +414,9 @@ def _read_jsonc(path: Path) -> dict:
     text = path.read_text(encoding="utf-8")
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
     text = re.sub(r"//.*?$", "", text, flags=re.MULTILINE)
+    # Trailing commas are legal in .jsonc and turn up whenever someone comments
+    # out the last entry in a block. Strip them rather than failing to parse.
+    text = re.sub(r",(\s*[}\]])", r"\1", text)
     return json.loads(text)
 
 
@@ -499,17 +480,36 @@ def check_registry_covers_schema() -> list[str]:
             if key not in FIELDS:
                 problems.append(f"steady {group}: {key!r} has no registry entry")
 
-    # Every category named must actually exist in variable_conversions,
-    # otherwise the unit dropdown would blow up at render time.
+    # Every category must exist in variable_conversions, and must resolve to a
+    # real unit in all three systems, otherwise the dropdown blows up at render
+    # time in whichever system the user happens to have selected.
     for spec in FIELDS.values():
         if spec.category not in vc.CATEGORIES:
             problems.append(f"{spec.key!r}: unknown unit category {spec.category!r}")
-        elif spec.default_unit is not None:
-            if not vc.is_known_unit(spec.default_unit):
-                problems.append(f"{spec.key!r}: unknown default unit {spec.default_unit!r}")
-            elif vc.category_of(spec.default_unit) != spec.category:
+            continue
+        for system in vc.UNIT_SYSTEMS:
+            unit = spec.unit_for(system)
+            if unit not in vc.units_in_category(spec.category):
                 problems.append(
-                    f"{spec.key!r}: default unit {spec.default_unit!r} is "
-                    f"{vc.category_of(spec.default_unit)}, not {spec.category}")
+                    f"{spec.key!r}: {system} resolves to {unit!r}, which isn't "
+                    f"a {spec.category} unit")
+
+    # A default must be a pair whose unit matches the field's category, or a
+    # string for a text field. A mismatch would load a wrong number silently.
+    for spec in FIELDS.values():
+        default = spec.default
+        if default is None:
+            continue
+        if spec.value_type == "text":
+            if not isinstance(default, str):
+                problems.append(f"{spec.key!r}: text field has a non-string default")
+        elif not (isinstance(default, (list, tuple)) and len(default) == 2):
+            problems.append(f"{spec.key!r}: default should be a [value, unit] pair")
+        elif not vc.is_known_unit(default[1]):
+            problems.append(f"{spec.key!r}: default unit {default[1]!r} is unknown")
+        elif vc.category_of(default[1]) != spec.category:
+            problems.append(
+                f"{spec.key!r}: default unit {default[1]!r} is "
+                f"{vc.category_of(default[1])}, not {spec.category}")
 
     return problems

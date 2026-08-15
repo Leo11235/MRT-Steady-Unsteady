@@ -17,7 +17,7 @@ MIN_WINDOW  = (820, 580)
 # -----------------------------------------------------------------------------
 # CustomTkinter global appearance
 # -----------------------------------------------------------------------------
-APPEARANCE   = "system"   # "light", "dark", or "system"
+APPEARANCE   = "dark"     # dark only; see shell.refresh_appearance
 COLOR_THEME  = "blue"     # built-in CTk themes: "blue", "dark-blue", "green"
 
 # -----------------------------------------------------------------------------

@@ -1,19 +1,24 @@
 """
 Unsteady input form.
 
-Six collapsible control-volume sections, each with a physics-model dropdown
-that decides which fields below it apply. Picking a different valve model swaps
-the valve's inputs; picking a different injector model adds or removes the
-two-phase multiplier.
+Seven tabs: simulation settings, then one per control volume.
 
-The whole form is generated from the backend schema. Every CV, every model and
-every field comes from input_schema.jsonc, with the field registry supplying
-labels, units and help text. Adding a model to the schema makes it appear in
-the dropdown with its own fields, and nothing here needs editing.
+    Sim settings   name, description, warnings and graph output
+    Tank           CV1      Injector   CV3      Nozzle       CV5
+    Valve          CV2      Chamber    CV4      Rocket body  CV6
 
-The old version of this page carried a hand-maintained `_MODEL_FIELDS` map that
-had to be kept in step with the schema by hand, and a `_DEFAULT_CV_INPUTS` dict
-listing every field again.
+Each control-volume tab opens with its physics-model dropdown and a paragraph
+explaining what that model assumes, then the inputs that model needs. Changing
+the model swaps the fields underneath without discarding what's typed in the
+ones it hides.
+
+The whole form is generated from the backend schema: every CV, every model and
+every field. The field registry supplies labels, units and help text. Adding a
+model to the schema makes it appear here with its own fields, and nothing in
+this file changes.
+
+The old version kept a hand-maintained `_MODEL_FIELDS` map and a
+`_DEFAULT_CV_INPUTS` dict that both had to track the schema by hand.
 """
 
 from __future__ import annotations
@@ -22,21 +27,27 @@ import customtkinter as ctk
 
 from src.ui.app import backend_bridge, theme
 from src.ui.app import field_registry as registry
-from src.ui.app.pages.input_page import InputPage
-from src.ui.app.widgets.section import CollapsibleSection, note, section_title
+from src.ui.app.pages.input_page import InputPage, VALUE_INDENT
+from src.ui.app.widgets.tooltip import Tooltip
 
 
-CV_TITLES: dict[str, str] = {
-    "CV1_tank":       "CV1 — Oxidizer tank",
-    "CV2_valve":      "CV2 — Main valve",
-    "CV3_injector":   "CV3 — Injector",
-    "CV4_chamber":    "CV4 — Combustion chamber",
-    "CV5_nozzle":     "CV5 — Nozzle",
-    "CV6_trajectory": "CV6 — Trajectory",
+# Tab label per control volume, in tab order.
+CV_TABS: dict[str, str] = {
+    "CV1_tank":       "Tank",
+    "CV2_valve":      "Valve",
+    "CV3_injector":   "Injector",
+    "CV4_chamber":    "Chamber",
+    "CV5_nozzle":     "Nozzle",
+    "CV6_trajectory": "Rocket body",
 }
 
-# Which fields are 'fill exactly one of'. Mirrors the nested lists in the
-# schema, which the bridge also reads for validation.
+# Chamber inputs with defensible defaults, locked behind the padlock.
+_CHAMBER_ADVANCED = (
+    "chamber_fuel_density",
+    "chamber_regression_rate_scaling_constant",
+    "chamber_regression_rate_exponent",
+)
+
 ALTERNATES = backend_bridge.UNSTEADY_ALTERNATES
 
 
@@ -45,113 +56,153 @@ class UnsteadyPage(InputPage):
     KIND = "unsteady"
 
     # ==================================================================
-    # Layout
+    # Tabs
     # ==================================================================
 
-    def _build_form(self, parent) -> None:
+    def _build_tabs(self) -> None:
         self._schema = registry.unsteady_schema_keys()
-        # {cv: [model names]}, in schema order
         self._models: dict[str, list[str]] = {}
         for cv, model in self._schema:
             self._models.setdefault(cv, []).append(model)
 
-        self.model_vars: dict[str, ctk.StringVar] = {}
-        self._sections: dict[str, CollapsibleSection] = {}
-        # (cv, field key) -> the widget, so visibility can be toggled per model
-        self._field_rows: dict[tuple[str, str], object] = {}
-
-        self._build_metadata(parent)
-        for cv in CV_TITLES:
-            if cv in self._models:
-                self._build_cv(parent, cv)
-
-    def _build_metadata(self, parent) -> None:
-        section_title(parent, "Simulation")
-
-        self.name_var = ctk.StringVar()
-        row = ctk.CTkFrame(parent, fg_color="transparent")
-        row.pack(fill="x", pady=theme.PAD_XS)
-        ctk.CTkLabel(row, text="Run name", width=220, anchor="w").pack(
-            side="left", padx=(0, theme.PAD_S))
-        ctk.CTkEntry(row, textvariable=self.name_var,
-                     placeholder_text="optional; blank uses a timestamp").pack(
-            side="left", fill="x", expand=True)
-
-        toggles = ctk.CTkFrame(parent, fg_color="transparent")
-        toggles.pack(fill="x", pady=theme.PAD_S)
-
+        self.sim_name_var = ctk.StringVar()
         self.warnings_var = ctk.BooleanVar(value=True)
         self.save_pdf_var = ctk.BooleanVar(value=True)
         self.save_png_var = ctk.BooleanVar(value=False)
-        for text, var in (("Collect warnings", self.warnings_var),
-                          ("Save graphs to PDF", self.save_pdf_var),
-                          ("Save graphs as PNGs", self.save_png_var)):
-            ctk.CTkCheckBox(toggles, text=text, variable=var).pack(
-                side="left", padx=(0, theme.PAD_L))
 
-        ctk.CTkLabel(parent, text="Description", anchor="w").pack(
+        self.model_vars: dict[str, ctk.StringVar] = {}
+        self._model_desc: dict[str, ctk.CTkLabel] = {}
+
+        self._build_sim_tab(self.add_tab("Sim settings"))
+        for cv, tab_name in CV_TABS.items():
+            if cv in self._models:
+                self._build_cv_tab(self.add_tab(tab_name), cv)
+
+    def _after_build(self) -> None:
+        # Hide the fields the default model doesn't use. Has to wait until the
+        # build order is recorded, or a field hidden now could never be
+        # restored to its right place.
+        self._refresh_all_models()
+
+    # ---- tab 1 --------------------------------------------------------
+
+    def _build_sim_tab(self, wrap) -> None:
+        self.add_section_title(wrap, "Simulation")
+
+        # Tooltip on both halves of the row, so hovering anywhere works and
+        # no separate help icon is needed.
+        help_text = ("Optional label for this run. Used for the output folder "
+                     "name and stored in the results file's metadata.")
+        row = ctk.CTkFrame(wrap, fg_color="transparent")
+        row.pack(fill="x", pady=theme.PAD_XS)
+        label = ctk.CTkLabel(row, text="Simulation name", width=220, anchor="w")
+        label.pack(side="left", padx=(0, theme.PAD_S))
+        entry = ctk.CTkEntry(row, textvariable=self.sim_name_var,
+                             placeholder_text="optional; blank uses a timestamp")
+        entry.pack(side="left", fill="x", expand=True)
+        Tooltip(label, help_text)
+        Tooltip(entry, help_text)
+
+        ctk.CTkLabel(wrap, text="Description", anchor="w").pack(
             fill="x", pady=(theme.PAD_S, theme.PAD_XS))
-        self.description = ctk.CTkTextbox(parent, height=60, wrap="word")
+        self.description = ctk.CTkTextbox(wrap, height=60, wrap="word")
         self.description.pack(fill="x")
 
-    def _build_cv(self, parent, cv: str) -> None:
+        self.add_divider(wrap)
+        self.add_section_title(wrap, "Output")
+        self._checkbox(wrap, self.warnings_var, "Collect warnings",
+                       "Runs range checks during the simulation and flags "
+                       "results that look physically suspicious: tank "
+                       "temperature near critical, O/F outside the trusted CEA "
+                       "range, Mach outside the drag model's range.")
+        self._checkbox(wrap, self.save_pdf_var, "Save graphs to PDF",
+                       "Write every output plot into one multi-page PDF beside "
+                       "the results JSON.")
+        self._checkbox(wrap, self.save_png_var, "Save graphs as PNGs",
+                       "Write each output plot as its own PNG in a graphs/ "
+                       "folder beside the results JSON.")
+
+    def _checkbox(self, parent, variable, text: str, help_text: str) -> None:
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", pady=theme.PAD_XS)
+        box = ctk.CTkCheckBox(row, text=text, variable=variable)
+        box.pack(side="left")
+        Tooltip(box, help_text)
+
+    # ---- CV tabs -------------------------------------------------------
+
+    def _build_cv_tab(self, wrap, cv: str) -> None:
         models = self._models[cv]
-        section = CollapsibleSection(
-            parent, CV_TITLES.get(cv, cv),
-            subtitle=registry.model_label(models[0]),
-            start_open=(cv == "CV1_tank"),      # one open is enough of a hint
-        )
-        section.pack(fill="x", pady=(theme.PAD_M, 0))
-        self._sections[cv] = section
+        default_model = models[0]
 
         # ---- model picker ---------------------------------------------
-        var = ctk.StringVar(value=registry.model_label(models[0]))
-        self.model_vars[cv] = var
-
-        row = ctk.CTkFrame(section.body, fg_color="transparent")
-        row.pack(fill="x", pady=(0, theme.PAD_XS))
-        ctk.CTkLabel(row, text="Physics model", width=220, anchor="w").pack(
+        self.add_section_title(wrap, "Physics model")
+        row = ctk.CTkFrame(wrap, fg_color="transparent")
+        row.pack(fill="x", pady=theme.PAD_XS)
+        ctk.CTkLabel(row, text="Model", width=220, anchor="w").pack(
             side="left", padx=(0, theme.PAD_S))
+
+        # The var holds the pretty label; model_wire() converts on the way out.
+        var = ctk.StringVar(value=registry.model_label(default_model))
+        self.model_vars[cv] = var
         picker = ctk.CTkOptionMenu(
-            row, values=[registry.model_label(m) for m in models],
-            variable=var, width=240,
+            row, variable=var,
+            values=[registry.model_label(m) for m in models],
             command=lambda _v, c=cv: self._on_model_changed(c),
+            dynamic_resizing=False, width=260,
         )
         picker.pack(side="left")
-        # A single-model CV has nothing to choose, so say so rather than
-        # offering a dropdown that does nothing.
         if len(models) == 1:
+            # Nothing to choose. Leave it visible so the model is documented,
+            # but don't pretend it's a decision.
             picker.configure(state="disabled")
 
-        self._model_blurbs = getattr(self, "_model_blurbs", {})
-        blurb = ctk.CTkLabel(
-            section.body, text="", anchor="w", justify="left",
-            text_color=theme.TEXT_MUTED, wraplength=760,
-            font=ctk.CTkFont(size=theme.SIZE_SMALL, slant="italic"),
+        desc = ctk.CTkLabel(
+            wrap, text=registry.model_description(default_model),
+            anchor="w", justify="left", wraplength=560,
+            text_color=theme.TEXT_MUTED,
+            font=ctk.CTkFont(size=theme.SIZE_SMALL),
         )
-        blurb.pack(fill="x", pady=(0, theme.PAD_S))
-        self._model_blurbs[cv] = blurb
+        desc.pack(fill="x", padx=(VALUE_INDENT, 0),
+                  pady=(theme.PAD_XS, theme.PAD_S), anchor="w")
+        self._model_desc[cv] = desc
+
+        self.add_divider(wrap)
+        self.add_section_title(wrap, "Inputs")
 
         # ---- fields ----------------------------------------------------
-        # Every field any of this CV's models can use, built once. Switching
-        # models hides and shows them rather than rebuilding, so a value typed
-        # under one model survives a look at another.
-        alternates = ALTERNATES.get(cv, [])
-        if alternates:
-            pairs = ", ".join(f"{registry.label(a)} or {registry.label(b)}"
-                              for a, b in alternates)
-            note(section.body, f"Fill exactly one of: {pairs}.", left_pad=0)
+        # Build the union of every model's fields once. Switching models hides
+        # and shows them, so a value typed under one model survives a look at
+        # another.
+        is_chamber = cv == "CV4_chamber"
+        advanced = set(_CHAMBER_ADVANCED) if is_chamber else set()
 
-        seen: list[str] = []
+        ordered: list[str] = []
         for model in models:
             for key in self._schema[(cv, model)]:
-                if key not in seen:
-                    seen.append(key)
-        for key in seen:
-            field = self.add_field(section.body, f"{cv}.{key}")
-            self._field_rows[(cv, key)] = field
+                if key not in ordered:
+                    ordered.append(key)
 
-        self._on_model_changed(cv)
+        # The note for an alternate pair goes immediately above the first of
+        # the two, so the rule is read before the fields it governs.
+        alternate_first = {pair[0]: pair for pair in ALTERNATES.get(cv, [])}
+
+        for key in ordered:
+            if key in advanced:
+                continue
+            if key in alternate_first:
+                a, b = alternate_first[key]
+                self.add_note(
+                    wrap, f"Fill in EITHER '{registry.label(a)}' OR "
+                          f"'{registry.label(b)}'.")
+            self.add_field(wrap, f"{cv}.{key}")
+
+        if is_chamber:
+            self.add_divider(wrap)
+            self.add_advanced_header(
+                wrap, "Advanced (propellant chemistry & regression law)")
+            for key in _CHAMBER_ADVANCED:
+                self.add_advanced_field(wrap, f"{cv}.{key}")
 
     # ==================================================================
     # Model selection
@@ -165,17 +216,16 @@ class UnsteadyPage(InputPage):
         model = self._model_of(cv)
         wanted = set(self._schema.get((cv, model), []))
 
-        for (row_cv, key), field in self._field_rows.items():
-            if row_cv != cv:
+        for path, field in self.fields.items():
+            if not path.startswith(f"{cv}."):
                 continue
-            visible = key in wanted
-            if visible and not field.winfo_ismapped():
-                field.pack(fill="x", pady=theme.PAD_XS)
-            elif not visible and field.winfo_ismapped():
-                field.pack_forget()
+            self.set_packed(field, path.split(".", 1)[1] in wanted)
 
-        self._sections[cv].set_subtitle(registry.model_label(model))
-        self._model_blurbs[cv].configure(text=registry.model_description(model))
+        self._model_desc[cv].configure(text=registry.model_description(model))
+
+    def _refresh_all_models(self) -> None:
+        for cv in self._models:
+            self._on_model_changed(cv)
 
     # ==================================================================
     # Serialisation
@@ -198,7 +248,7 @@ class UnsteadyPage(InputPage):
             "config": {
                 "metadata": {
                     "simulation_type": "unsteady",
-                    "simulation_name": self.name_var.get().strip(),
+                    "simulation_name": self.sim_name_var.get().strip(),
                     "simulation_description": self.description.get("0.0", "end").strip(),
                     "expected_output": "",
                     "warnings": bool(self.warnings_var.get()),
@@ -217,7 +267,7 @@ class UnsteadyPage(InputPage):
         if not cv_inputs:
             raise ValueError("no rocket_inputs block")
 
-        self.name_var.set(str(metadata.get("simulation_name", "") or ""))
+        self.sim_name_var.set(str(metadata.get("simulation_name", "") or ""))
         self.description.delete("0.0", "end")
         self.description.insert("0.0", str(metadata.get("simulation_description", "") or ""))
         self.warnings_var.set(bool(metadata.get("warnings", True)))
@@ -240,8 +290,7 @@ class UnsteadyPage(InputPage):
             else:
                 field.reset_to_default()
 
-        for cv in self._models:
-            self._on_model_changed(cv)
+        self._refresh_all_models()
 
     # ==================================================================
     # Backend
@@ -255,16 +304,16 @@ class UnsteadyPage(InputPage):
         return backend_bridge.preflight_unsteady(rocket_inputs)
 
     def _default_run_name(self) -> str:
-        return self.name_var.get().strip() or "unsteady_run"
+        return self.sim_name_var.get().strip() or "unsteady_run"
 
     def reset_to_defaults(self) -> None:
         super().reset_to_defaults()
-        self.name_var.set("")
+        self.sim_name_var.set("")
         self.description.delete("0.0", "end")
         self.warnings_var.set(True)
         self.save_pdf_var.set(True)
         self.save_png_var.set(False)
         for cv, models in self._models.items():
             self.model_vars[cv].set(registry.model_label(models[0]))
-            self._on_model_changed(cv)
+        self._refresh_all_models()
         self._clean_snapshot = self.to_config()

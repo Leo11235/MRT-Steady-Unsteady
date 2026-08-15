@@ -1,0 +1,40 @@
+/*
+Default values for inputs that have a defensible standard answer.
+
+These are physical properties and empirical constants, not UI preferences, so
+they live in src/common/ beside the unit tables rather than being hardcoded in
+a form. The same file backs both the steady and unsteady forms, which is why
+the paraffin regression law appears once here instead of twice in two pages.
+
+Every entry is a [value, unit] pair, the same shape config files use, so a
+default can be handed straight to a form field or written into a config
+without conversion.
+
+These are the values behind the padlocked "Advanced" sections. They're
+deliberately awkward to change by accident: they set the physics, and a stray
+keystroke in one of them would quietly alter every result.
+
+SOURCES
+  fuel density            Paraffin wax, bulk, as cast. ~900 kg/m3.
+  regression law          r_dot = a * G^n for paraffin with N2O.
+                          a ~ 1.32e-4, n ~ 0.555 from the literature MRT works
+                          from. Both are geometry- and scale-sensitive; treat
+                          them as a starting point, not a constant of nature.
+  propellant species      What the PROPEP and CEA lookup tables are built for.
+*/
+
+{
+    "steady": {
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)"
+    },
+
+    "unsteady": {
+        "chamber_fuel_density": [900, "kg/m3"],
+        "chamber_regression_rate_scaling_constant": [0.000132, "."],
+        "chamber_regression_rate_exponent": [0.555, "."]
+    }
+}

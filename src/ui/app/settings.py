@@ -56,8 +56,6 @@ _HARDCODED_DEFAULTS: dict = {
     "default_output_units": "SI",
     # Run without prompting for a preset name, auto-saving instead.
     "default_auto_save_inputs": True,
-    # customtkinter appearance: "light", "dark" or "system".
-    "theme_appearance": "system",
     # Keyboard bindings, in Tk event syntax.
     "shortcuts": {
         "run": "<Control-r>",

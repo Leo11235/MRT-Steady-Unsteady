@@ -1,22 +1,91 @@
 UI BUG CHECKLIST
-- Run all steady & unsteady configs
-- Load baseline, click Run without changes → passes preflight, sim runs.
-- Load baseline, blank out one required field, click Run → validator popup appears with that field named.
-- Load a fail_validator_* config → error popup on Run, sim does not start.
-- Load a fail_preflight_* config → preflight modal shows, Cancel returns to form, Run-anyway proceeds to sim (which should also error cleanly).
-- Load a warn_* config → preflight modal shows warning list; Run-anyway completes.
-- Change hotfire-equivalent alternate fields (cv4 mass ↔ diameter) → run works both ways.
-- Fill both mass and diameter → new both-filled error appears.
-- Fill fuel_mass with 0 while diameter is filled → both-filled fires (0 counts as filled).
-- Toggle "Save rocket inputs by default" in Settings → next Run auto-saves without prompting.
-- Untoggle it → next Run prompts.
-- Change description in Settings tab → confirm it lands in metadata.description and appears in results browser.
-- Toggle warnings, save PDF, save PNG independently → each metadata bool round-trips.
-- Halt & Report button: first click shows "Confirm halt & report", second click within 3s halts and routes to bug page with terminal capture; second click AFTER 3s reverts to first-click state.
-- Cancel button: same two-click semantics, routes back to input page.
-- Loading bar: only appears after first terminal line, not immediately on Run.
-- Stall-detection: run fail_physics_solver_stalls → SolverStalledError surfaces as a friendly error (once you wire the friendly-error path).
-- Results browser: shows both old-layout (<name>.json) and new-layout (<name>/sim_data.json) runs interleaved.
-- Delete a new-layout run → whole directory removed.
-- Rename a new-layout run → directory renamed, PDF/PNG paths still resolve.
-- Bug report field cap: paste terminal output > 20 KB → auto-truncated with [... N earlier lines truncated ...] notice.
+================
+
+Things the automated backend tests can't cover. Work through this before
+cutting a release. The configs in tests/ui_configs/ exist to drive the
+failure paths; each one says at the top what it should do.
+
+Launch:  python -m src.ui.main       (from the project root)
+Build:   build_tools\build.bat
+
+
+GENERAL
+- Work through this checklist before cutting a release to cover scenarios automated backend tests cannot cover.
+- The configs in tests/ui_configs/ exist to drive failure paths; each specifies what it should do at the top.
+- Launch command: 
+    .venv\Scripts\activate
+    python -m src.ui.main
+- Build command: 
+    build_tools\build.bat
+
+UNITS
+- Enter 32 in a length field set to mm, switch to in, switch back to mm. It reads 32, not 31.9999. Switch a dozen more times; still 32.
+- Every field's unit dropdown opens on the SI unit by default (or whatever Settings -> Default output units is set to), not on a random one.
+- Angle fields default to deg, never rad, in all three unit systems.
+- Load ui_04_steady_unknown_unit.jsonc -> readable error naming the unit, not a KeyError traceback.
+- Set launch angle to 6 deg, run unsteady, check the trajectory. A near-vertical flight means the deg->rad conversion is being applied twice.
+
+INPUT FORM
+- Open a fresh Unsteady page. CV2 valve starts with the right number of fields for its model: instant 0, linear 1, sigmoid 2. Switch models and the fields appear and disappear in the right places, keeping form order.
+- Same check for every other CV that has a model dropdown.
+- Advanced (propellant chemistry & regression law) starts locked, reads 900 kg/m3 / 0.000132 / 0.555, and the padlock toggles editability.
+- Rocket Body tab renders its placeholder rather than an empty tab.
+- Parametric study: "+ Add parameter" stays glued directly under the last card, never stranded at the bottom of the panel. Add four, delete the middle two, confirm it's still glued.
+- The sweepable-variable dropdown lists exactly the 7 valid ones.
+- Load ui_01 / ui_05 (missing field) -> validator popup names the field, the right tab highlights it, and no unrelated field rings. Three CVs have a "drag coefficient" field, so check only the intended one lights up.
+- Load ui_02 / ui_06 (both alternates filled) -> both-filled error. Clear one, Run works. Clear the other instead, Run still works.
+- Load ui_03 (neither filled) -> required error. Type 0 into fuel_mass and the error clears; 0 counts as filled.
+
+PREFLIGHT
+- Load ui_07 -> modal lists one advisory and one warning, no criticals. Cancel returns to the form with every input intact. Run anyway finishes.
+- Load ui_08 -> modal lists two criticals, sorted above anything else. Run anyway proceeds, then fails with a readable error popup.
+- Preflight never fires on a clean config.
+
+RUNNING
+- Loading bar appears only after the first terminal line, not instantly.
+- Phase headings are picked up from the backend's "--- PHASE_2 ---" output and shown in the progress line.
+- Cancel: first click arms it, second click within 3 s stops the run and returns to the input page you came from, inputs intact. A second click after 3 s reverts to the armed-off state instead of cancelling.
+- Cancel a run, then start another one. The second run works. (Thread cancellation leaves scipy's LSODA state behind if this is broken.)
+- Halt & report: two-click semantics as above, then lands on the bug page with the terminal output already in the diagnostics box.
+- Make the backend raise -> error popup with a scrollable message, and the Back and Report buttons stay visible no matter how long the traceback is.
+- Run a config that stalls the solver -> SolverStalledError shows as a friendly hint, not a raw exception.
+
+RESULTS
+- After a run finishes, the results page is populated. (It used to come up blank when the page hadn't been built yet.)
+- SI / IMP / MRT buttons: the three together are exactly as wide as the button above them, and clicking one reformats every number on the page, including the labels that aren't simple key/value rows.
+- Unsteady "Choose graphs…": pick a few, each opens in its own window with a working matplotlib toolbar, titled with the plot's name, cascaded rather than stacked. They match what's in graphs.pdf.
+- Pick all 28. Nothing freezes. Close them all, pick again, and confirm the old windows are gone rather than accumulating.
+- Leave the results page -> every graph window closes.
+- One broken plot doesn't take the rest down; it reports as skipped.
+- Steady Graphs button: convergence run says "Show graphs…", parametric says "Parametric graphs…", hotfire is greyed out with the tooltip.
+- Parametric graph dialog: axis dropdowns refuse the "--- X ---" header rows, hold pickers appear for the variables not on an axis, and both 2D and 3D render.
+
+SAVED RUNS
+- Browser lists old-layout (.json) and new-layout (/) runs interleaved and correctly dated.
+- Delete removes the whole run directory, PDFs and PNGs included.
+- Rename renames the directory and the PDF/PNG paths still resolve.
+- The rename dialog is legible: no cramped 200 px box.
+- Show in folder opens the run's own folder, not Documents.
+
+SETTINGS
+- Rebind a shortcut, save, and the new key works. Rebinding onto a key another action already owns is refused with a message naming that action.
+- Cancel discards edits. Reset all to defaults restores Ctrl+R / Ctrl+S / Ctrl+O / Esc.
+- No "main thread is not in main loop" spam in the console after a run.
+- Default output units change is picked up by the next results page opened.
+- Auto-save on: Run writes a preset without prompting. Off: Run prompts.
+
+BUG REPORT
+- Manual report from Home sends and arrives.
+- Report from a failed run carries the traceback, terminal output and the config as separate fields.
+- Paste more than 20 KB of terminal output -> truncated from the FRONT with the "[... N earlier lines truncated ...]" notice, and it still sends.
+- Pull the nework cable and send -> friendly error plus a working "Copy report to clipboard" fallback.
+
+FROZEN BUILD
+- The exe launches with no console window, and the HOME SCREEN appears — not "Not built yet". That placeholder means build.spec stopped bundling the page modules.
+- First launch seeds %APPDATA%\MRT-Steady-Unsteady\ with the three example configs and default settings.
+- Version chip on Home matches the VERSION file, and the patch notes open.
+- A steady run completes: proves rocketcea and pypropep data got bundled.
+- An unsteady run completes: proves the N2O and CEA tables got bundled.
+- Advanced propellant defaults are filled in: proves src/common/static_data/default_inputs.jsonc got bundled.
+- Results write to %APPDATA%, not into the read-only install directory.
+- Installing over an older version keeps presets and past runs.

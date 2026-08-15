@@ -230,6 +230,12 @@ def plot_names() -> list[str]:
     return [spec.name for spec in PLOTS]
 
 
+def label_of(name: str) -> str:
+    """Human-readable title for a plot, used as its window title."""
+    spec = PLOTS_BY_NAME.get(name)
+    return spec.label if spec else name
+
+
 def build_figure(name: str, sim_results: dict) -> Optional["Figure"]:
     """Build one plot by name.  This is the UI's entry point.
 

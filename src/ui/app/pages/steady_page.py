@@ -1,19 +1,20 @@
 """
 Steady input form.
 
-Three simulation types share one form, with sections appearing and disappearing
-as the type changes:
+Three tabs:
 
-    hotfire               performance at one operating point, no trajectory
-    fuel_mass_convergence solves fuel mass until the apogee target is met
-    parametric_study      runs a convergence at every point of a sweep
+    Sim settings      name, type, save toggle, and the parametric sweep editor
+    Oxidizer & fuel   the operating point and grain geometry
+    Rocket body       mass, drag and mission, only used when there's a trajectory
 
-Kinematics only matters once there's a trajectory, so that section hides for
-hotfire. The fuel-mass / port-diameter pair is the opposite: only hotfire needs
-it, because the other two solve for it.
+Two sections appear conditionally. The hotfire alternates live inside the
+Oxidizer & fuel tab and only show for a hotfire, because the other two types
+solve for them. The Rocket body tab swaps its whole contents for a short
+explanation during a hotfire rather than emptying out, so the tab never looks
+broken.
 
-Which fields exist in each group comes from the backend schema, so adding an
-input there makes it appear here without touching this file.
+There's no output-units control here. Inputs carry their own unit per field,
+and the SI/MRT/IMP choice belongs to the results page where it's actually read.
 """
 
 from __future__ import annotations
@@ -22,9 +23,9 @@ import customtkinter as ctk
 
 from src.ui.app import backend_bridge, theme
 from src.ui.app import field_registry as registry
-from src.ui.app.pages.input_page import InputPage
+from src.ui.app import settings as user_settings
+from src.ui.app.pages.input_page import InputPage, VALUE_INDENT
 from src.ui.app.widgets.parametric_list import ParametricList
-from src.ui.app.widgets.section import CollapsibleSection, note, section_title
 
 
 SIM_TYPES: dict[str, str] = {
@@ -34,9 +35,17 @@ SIM_TYPES: dict[str, str] = {
 }
 SIM_TYPE_WIRE = {label: wire for wire, label in SIM_TYPES.items()}
 
-OUTPUT_UNIT_SYSTEMS = ("SI", "MRT", "IMP")
+_HOTFIRE_ALTERNATES = ("initial_internal_fuel_diameter", "fuel_mass")
 
-_HOTFIRE_ALTERNATES = ("fuel_mass", "initial_internal_fuel_diameter")
+# Inputs with defensible defaults that most runs never touch. Locked behind
+# the padlock so changing one is deliberate.
+_ADVANCED_KEYS = (
+    "fuel_grain_density",
+    "regression_rate_scaling_coefficient",
+    "regression_rate_exponent",
+    "liquid_oxidizer_type",
+    "solid_fuel_type",
+)
 
 
 class SteadyPage(InputPage):
@@ -44,86 +53,140 @@ class SteadyPage(InputPage):
     KIND = "steady"
 
     # ==================================================================
-    # Layout
+    # Tabs
     # ==================================================================
 
-    def _build_form(self, parent) -> None:
-        schema = registry.steady_schema_keys()
+    def _build_tabs(self) -> None:
+        self.sim_name_var = ctk.StringVar()
+        self.sim_type_var = ctk.StringVar(value=SIM_TYPES["fuel_mass_convergence"])
+        self.save_data_var = ctk.BooleanVar(value=True)
+        self.output_units_var = ctk.StringVar(
+            value=user_settings.get("default_output_units", "SI"))
 
-        self._build_settings(parent)
-        self._build_base(parent, schema.get("base_requirements", []))
-        self._build_kinematics(parent, schema.get("kinematics_requirements", []))
-        self._build_hotfire(parent)
-        self._build_parametric(parent)
+        self._build_sim_tab(self.add_tab("Sim Settings"))
+        self._build_oxfuel_tab(self.add_tab("Oxidizer & Fuel"))
+        self._build_body_tab(self.add_tab("Rocket Body"))
 
+    def _after_build(self) -> None:
         self._refresh_visibility()
 
-    def _build_settings(self, parent) -> None:
-        section_title(parent, "Simulation")
+    # ---- tab 1 --------------------------------------------------------
 
-        self.sim_type_var = ctk.StringVar(value=SIM_TYPES["fuel_mass_convergence"])
-        row = ctk.CTkFrame(parent, fg_color="transparent")
-        row.pack(fill="x", pady=theme.PAD_XS)
-        ctk.CTkLabel(row, text="Simulation type", width=220, anchor="w").pack(
-            side="left", padx=(0, theme.PAD_S))
-        ctk.CTkOptionMenu(row, values=list(SIM_TYPES.values()),
-                          variable=self.sim_type_var,
-                          command=lambda _v: self._refresh_visibility(),
-                          width=240).pack(side="left")
+    def _build_sim_tab(self, wrap) -> None:
+        self.add_section_title(wrap, "Simulation")
 
-        self.output_units_var = ctk.StringVar(value="SI")
-        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row = ctk.CTkFrame(wrap, fg_color="transparent")
         row.pack(fill="x", pady=theme.PAD_XS)
-        ctk.CTkLabel(row, text="Output units", width=220, anchor="w").pack(
+        ctk.CTkLabel(row, text="Simulation name", width=220, anchor="w").pack(
             side="left", padx=(0, theme.PAD_S))
-        ctk.CTkOptionMenu(row, values=list(OUTPUT_UNIT_SYSTEMS),
-                          variable=self.output_units_var, width=240).pack(side="left")
-
-        self.name_var = ctk.StringVar()
-        row = ctk.CTkFrame(parent, fg_color="transparent")
-        row.pack(fill="x", pady=theme.PAD_XS)
-        ctk.CTkLabel(row, text="Run name", width=220, anchor="w").pack(
-            side="left", padx=(0, theme.PAD_S))
-        ctk.CTkEntry(row, textvariable=self.name_var,
+        ctk.CTkEntry(row, textvariable=self.sim_name_var,
                      placeholder_text="optional; blank uses a timestamp").pack(
             side="left", fill="x", expand=True)
 
-        ctk.CTkLabel(parent, text="Description", anchor="w").pack(
+        row = ctk.CTkFrame(wrap, fg_color="transparent")
+        row.pack(fill="x", pady=theme.PAD_XS)
+        ctk.CTkLabel(row, text="Simulation type", width=220, anchor="w").pack(
+            side="left", padx=(0, theme.PAD_S))
+        ctk.CTkOptionMenu(row, variable=self.sim_type_var,
+                          values=list(SIM_TYPES.values()),
+                          command=lambda _v: self._refresh_visibility(),
+                          dynamic_resizing=False, width=260).pack(side="left")
+
+        row = ctk.CTkFrame(wrap, fg_color="transparent")
+        row.pack(fill="x", pady=theme.PAD_XS)
+        ctk.CTkCheckBox(row, text="Save simulation data to JSON",
+                        variable=self.save_data_var).pack(side="left")
+
+        ctk.CTkLabel(wrap, text="Description", anchor="w").pack(
             fill="x", pady=(theme.PAD_S, theme.PAD_XS))
-        self.description = ctk.CTkTextbox(parent, height=60, wrap="word")
+        self.description = ctk.CTkTextbox(wrap, height=60, wrap="word")
         self.description.pack(fill="x")
 
-    def _build_base(self, parent, keys) -> None:
-        self._base_section = CollapsibleSection(parent, "Motor")
-        self._base_section.pack(fill="x", pady=(theme.PAD_M, 0))
-        for key in keys:
-            self.add_field(self._base_section.body, key)
+        # ---- parametric sweep ----------------------------------------
+        self.add_divider(wrap)
+        self._parametric_section = ctk.CTkFrame(wrap, fg_color="transparent")
+        self._parametric_section.pack(fill="x", pady=(theme.PAD_S, 0))
 
-    def _build_kinematics(self, parent, keys) -> None:
-        self._kinematics_section = CollapsibleSection(parent, "Rocket and trajectory")
-        self._kinematics_section.pack(fill="x", pady=(theme.PAD_M, 0))
-        note(self._kinematics_section.body,
-             "Not used by a hotfire, which has no trajectory.", left_pad=0)
-        for key in keys:
-            self.add_field(self._kinematics_section.body, key)
+        self.add_section_title(self._parametric_section, "Parametric Study Settings")
+        ctk.CTkLabel(
+            self._parametric_section,
+            text=("Add one or more variables to sweep; each is given a "
+                  "low/high/step. Parametrized variables are hidden from the "
+                  "other tabs so you can't set them to a single value at the "
+                  "same time."),
+            anchor="w", justify="left", wraplength=820,
+            text_color=theme.TEXT_MUTED,
+            font=ctk.CTkFont(size=theme.SIZE_SMALL),
+        ).pack(fill="x", pady=(0, theme.PAD_S))
 
-    def _build_hotfire(self, parent) -> None:
-        self._hotfire_section = CollapsibleSection(parent, "Fuel grain (hotfire)")
-        self._hotfire_section.pack(fill="x", pady=(theme.PAD_M, 0))
-        note(self._hotfire_section.body,
-             "Fill exactly one of these. The other is derived from it. "
-             "The other simulation types solve for both.", left_pad=0)
+        self.parametric_list = ParametricList(
+            self._parametric_section, system=self.system,
+            on_change=self._refresh_visibility)
+        self.parametric_list.pack(fill="x", pady=(0, theme.PAD_S))
+
+    # ---- tab 2 --------------------------------------------------------
+
+    def _build_oxfuel_tab(self, wrap) -> None:
+        self.add_section_title(wrap, "Combustion")
+        self.add_field(wrap, "oxidizer_mass_flow_rate")
+        self.add_field(wrap, "chamber_pressure")
+
+        self.add_divider(wrap)
+        self.add_section_title(wrap, "Fuel geometry")
+        self.add_field(wrap, "fuel_external_diameter")
+        self.add_field(wrap, "fuel_length")
+
+        # One container for the hotfire-only pair, so it hides and shows as a
+        # unit and keeps its internal order across toggles.
+        self._hotfire_section = ctk.CTkFrame(wrap, fg_color="transparent")
+        # Deliberately not packed; _refresh_visibility owns it.
+        ctk.CTkLabel(
+            self._hotfire_section,
+            text=("Fill in EITHER 'Initial port diameter' OR 'Fuel mass' — the "
+                  "solver derives the other. Only used for hotfires."),
+            anchor="w", justify="left", wraplength=820,
+            text_color=theme.TEXT_MUTED,
+            font=ctk.CTkFont(size=theme.SIZE_SMALL, slant="italic"),
+        ).pack(fill="x", padx=(VALUE_INDENT, 0), pady=(theme.PAD_S, theme.PAD_XS))
         for key in _HOTFIRE_ALTERNATES:
-            self.add_field(self._hotfire_section.body, key)
+            self.add_field(self._hotfire_section, key)
 
-    def _build_parametric(self, parent) -> None:
-        self._parametric_section = CollapsibleSection(parent, "Swept variables")
-        self._parametric_section.pack(fill="x", pady=(theme.PAD_M, 0))
-        note(self._parametric_section.body,
-             "Each swept variable runs a full convergence at every point, so "
-             "the run time is the product of all the step counts.", left_pad=0)
-        self.parametric_list = ParametricList(self._parametric_section.body)
-        self.parametric_list.pack(fill="x")
+        self.add_divider(wrap)
+        self.add_advanced_header(
+            wrap, "Advanced (propellant chemistry & regression law)")
+        for key in _ADVANCED_KEYS:
+            self.add_advanced_field(wrap, key)
+
+    # ---- tab 3 --------------------------------------------------------
+
+    def _build_body_tab(self, wrap) -> None:
+        # Content and placeholder are siblings in the same wrap; exactly one is
+        # packed at a time. Keeping the content in its own frame means the
+        # field order survives every toggle.
+        self._body_content = ctk.CTkFrame(wrap, fg_color="transparent")
+        self._body_content.pack(fill="x")
+
+        self._body_placeholder = ctk.CTkLabel(
+            wrap,
+            text=("A hotfire has no trajectory, so none of these inputs are "
+                  "used.\n\nSwitch to fuel mass convergence or a parametric "
+                  "study to set them."),
+            font=ctk.CTkFont(size=theme.SIZE_H2),
+            text_color=theme.TEXT_FAINT,
+            wraplength=600, justify="center",
+        )
+
+        content = self._body_content
+        self.add_section_title(content, "Rocket")
+        self.add_field(content, "dry_mass")
+        self.add_field(content, "rocket_external_diameter")
+        self.add_field(content, "drag_coefficient")
+
+        self.add_divider(content)
+        self.add_section_title(content, "Mission")
+        self.add_field(content, "target_apogee")
+        self.add_field(content, "launch_site_altitude")
+        self.add_field(content, "launch_angle")
 
     # ==================================================================
     # Visibility
@@ -134,20 +197,28 @@ class SteadyPage(InputPage):
         return SIM_TYPE_WIRE.get(self.sim_type_var.get(), "fuel_mass_convergence")
 
     def _refresh_visibility(self) -> None:
-        """Show only the sections this simulation type uses."""
+        """Show what this simulation type uses, hide what it doesn't."""
         sim_type = self.sim_type
         is_hotfire = sim_type == "hotfire"
         is_parametric = sim_type == "parametric_study"
+        swept = set(self.parametric_list.used_vars()) if is_parametric else set()
 
-        def show(section, visible: bool) -> None:
-            if visible and not section.winfo_ismapped():
-                section.pack(fill="x", pady=(theme.PAD_M, 0))
-            elif not visible and section.winfo_ismapped():
-                section.pack_forget()
+        self.set_packed(self._parametric_section, is_parametric,
+                        {"fill": "x", "pady": (theme.PAD_S, 0)})
+        self.set_packed(self._hotfire_section, is_hotfire, {"fill": "x"})
 
-        show(self._kinematics_section, not is_hotfire)
-        show(self._hotfire_section, is_hotfire)
-        show(self._parametric_section, is_parametric)
+        # Rocket body swaps content for an explanation rather than emptying.
+        self.set_packed(self._body_content, not is_hotfire, {"fill": "x"})
+        self.set_packed(self._body_placeholder, is_hotfire,
+                        {"pady": theme.PAD_XL, "padx": theme.PAD_L, "fill": "x"})
+
+        # A swept variable is supplied per point, so its static field would be
+        # misleading. Hide it rather than leaving a value that does nothing.
+        for path, field in self.fields.items():
+            if path in swept:
+                self.set_packed(field, False)
+            elif path not in _HOTFIRE_ALTERNATES:
+                self.set_packed(field, True)
 
     # ==================================================================
     # Serialisation
@@ -155,11 +226,13 @@ class SteadyPage(InputPage):
 
     def to_config(self) -> dict:
         sim_type = self.sim_type
-        swept = set(self.parametric_list.used_vars()) if sim_type == "parametric_study" else set()
+        swept = (set(self.parametric_list.used_vars())
+                 if sim_type == "parametric_study" else set())
 
         settings: dict = {
             "simulation_type": sim_type,
             "output_units": self.output_units_var.get(),
+            "save_output_data": bool(self.save_data_var.get()),
         }
         if sim_type == "parametric_study":
             settings["parametric_study_settings"] = self.parametric_list.to_dict()
@@ -167,20 +240,14 @@ class SteadyPage(InputPage):
         inputs: dict = {}
         for path, field in self.fields.items():
             key = path.rsplit(".", 1)[-1]
-            # A swept variable is supplied per point by the solver, so writing a
-            # static value for it would be misleading.
-            if key in swept:
-                continue
-            # Sections the current type hides contribute nothing, otherwise a
-            # stale hotfire value would leak into a convergence run.
-            if not self._is_key_active(key, sim_type):
+            if key in swept or not self._is_key_active(key, sim_type):
                 continue
             inputs[key] = field.to_pair()
 
         return {
             "metadata": {
                 "simulation_type": "steady",
-                "simulation_name": self.name_var.get().strip(),
+                "simulation_name": self.sim_name_var.get().strip(),
                 "simulation_description": self.description.get("0.0", "end").strip(),
                 "expected_output": "",
             },
@@ -189,11 +256,15 @@ class SteadyPage(InputPage):
         }
 
     def _is_key_active(self, key: str, sim_type: str) -> bool:
-        """Whether a field belongs in the config for this simulation type."""
-        schema = registry.steady_schema_keys()
+        """Whether a field belongs in the config for this simulation type.
+
+        Keeps a stale hotfire value from leaking into a convergence run, and
+        vice versa.
+        """
         if key in _HOTFIRE_ALTERNATES:
             return sim_type == "hotfire"
-        if key in schema.get("kinematics_requirements", []):
+        kinematics = registry.steady_schema_keys().get("kinematics_requirements", [])
+        if key in kinematics:
             return sim_type != "hotfire"
         return True
 
@@ -204,11 +275,10 @@ class SteadyPage(InputPage):
 
         wire = settings.get("simulation_type", "fuel_mass_convergence")
         self.sim_type_var.set(SIM_TYPES.get(wire, SIM_TYPES["fuel_mass_convergence"]))
+        self.output_units_var.set(settings.get("output_units", "SI"))
+        self.save_data_var.set(bool(settings.get("save_output_data", True)))
 
-        units = settings.get("output_units", "SI")
-        self.output_units_var.set(units if units in OUTPUT_UNIT_SYSTEMS else "SI")
-
-        self.name_var.set(str(metadata.get("simulation_name", "") or ""))
+        self.sim_name_var.set(str(metadata.get("simulation_name", "") or ""))
         self.description.delete("0.0", "end")
         self.description.insert("0.0", str(metadata.get("simulation_description", "") or ""))
 
@@ -235,14 +305,14 @@ class SteadyPage(InputPage):
         return backend_bridge.preflight_steady(config.get("rocket_inputs") or {})
 
     def _default_run_name(self) -> str:
-        return self.name_var.get().strip() or "steady_run"
+        return self.sim_name_var.get().strip() or "steady_run"
 
     def reset_to_defaults(self) -> None:
         super().reset_to_defaults()
-        self.name_var.set("")
+        self.sim_name_var.set("")
         self.description.delete("0.0", "end")
         self.sim_type_var.set(SIM_TYPES["fuel_mass_convergence"])
-        self.output_units_var.set("SI")
+        self.save_data_var.set(True)
         self.parametric_list.clear()
         self._refresh_visibility()
         self._clean_snapshot = self.to_config()

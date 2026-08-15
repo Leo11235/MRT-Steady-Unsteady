@@ -29,6 +29,7 @@ optional and probed with hasattr:
 
 from __future__ import annotations
 
+import gc
 import importlib
 import tkinter as tk
 from dataclasses import dataclass
@@ -39,6 +40,7 @@ import customtkinter as ctk
 from src.ui.app import settings as user_settings
 from src.ui.app import theme
 from src.ui.app.pages.placeholder import PlaceholderPage
+from src.ui.app.services import recent_presets
 from src.ui.app.services.shortcuts import ShortcutRouter, load_bindings
 from src.ui.app.widgets.confirm_button import ConfirmButton
 
@@ -73,8 +75,10 @@ class AppShell(ctk.CTk):
     def __init__(self) -> None:
         super().__init__()
 
-        appearance = user_settings.get("theme_appearance", theme.APPEARANCE)
-        ctk.set_appearance_mode(appearance)
+        # Dark only. Every colour in theme.py is tuned against the dark
+        # background, and a light mode nobody used was one more thing to check
+        # on every screenshot.
+        ctk.set_appearance_mode(theme.APPEARANCE)
         ctk.set_default_color_theme(theme.COLOR_THEME)
 
         self.title(f"{theme.APP_TITLE}")
@@ -92,10 +96,23 @@ class AppShell(ctk.CTk):
 
         self.pages: dict[str, ctk.CTkFrame] = {}
         self.current_page: Optional[str] = None
-        # Where a run was launched from, so Cancel knows where to return.
+        # Where a run was launched from, so Cancel returns there rather than
+        # dumping the user somewhere they have to navigate back from.
         self._pre_loading_page: Optional[str] = None
+        # The last input page visited, kept as a fallback and deliberately
+        # never cleared. Falling back to "main" would be actively destructive:
+        # go("main") resets every page, so a cancel that missed its origin
+        # would throw away the inputs the user was about to re-run.
+        self._last_input_page: str = "steady"
 
         self.shortcut_router = ShortcutRouter(self, self._dispatch_shortcut)
+
+        # Drop recent presets whose files have gone, so the menu doesn't grow
+        # a tail of dead entries after someone reorganises their folders.
+        try:
+            recent_presets.prune()
+        except Exception:                       # noqa: BLE001
+            pass
 
         self.go("main")
 
@@ -240,6 +257,8 @@ class AppShell(ctk.CTk):
         page = self._ensure_page(name)
         page.tkraise()
         self.current_page = name
+        if name in ("steady", "unsteady"):
+            self._last_input_page = name
 
         # Main menu carries its own hero text, so the top bar stays empty.
         self.page_title.configure(
@@ -286,6 +305,18 @@ class AppShell(ctk.CTk):
 
         loading = self._ensure_page("loading")
         self.go("loading")
+
+        # Collect on the MAIN thread before the worker starts.
+        #
+        # Navigating here drops the input page's transient Tk objects (the
+        # preset prompt's StringVars, a preflight dialog's widgets). If they're
+        # still garbage when the worker triggers a collection, tkinter runs
+        # their __del__ on that thread and the console fills with
+        # "RuntimeError: main thread is not in main loop". Harmless, but it
+        # looks like a crash. Freeing them here means there's nothing left for
+        # the worker to trip over.
+        gc.collect()
+
         if hasattr(loading, "start_run"):
             loading.start_run(title, run_fn, on_complete, on_error)
 
@@ -297,9 +328,11 @@ class AppShell(ctk.CTk):
                 loading.cancel()
             except Exception:                   # noqa: BLE001
                 pass
-        target = self._pre_loading_page or "main"
-        self._pre_loading_page = None
-        self.go(target)
+        # Back to the form, with everything still filled in. Cancelling a run
+        # means "not like that", not "start over", so the inputs have to
+        # survive. _pre_loading_page is deliberately NOT cleared: a second
+        # cancel should behave the same as the first.
+        self.go(self._pre_loading_page or self._last_input_page)
 
     def _do_halt_and_report(self) -> None:
         """Second click on Halt & report: stop the run, then open the bug page
@@ -327,7 +360,8 @@ class AppShell(ctk.CTk):
                 )
             except Exception:                   # noqa: BLE001
                 pass
-        self._pre_loading_page = None
+        # _pre_loading_page survives here too, so leaving the bug page and
+        # cancelling a later run still knows where the form was.
         self.go("bug")
 
     # ==================================================================
@@ -358,5 +392,6 @@ class AppShell(ctk.CTk):
         self.shortcut_router.rebind(load_bindings())
 
     def refresh_appearance(self) -> None:
-        """Re-apply the light/dark setting. Called by the settings page."""
-        ctk.set_appearance_mode(user_settings.get("theme_appearance", "system"))
+        """Kept so the settings page has one call site to make when appearance
+        becomes configurable again. The app is dark-only for now."""
+        ctk.set_appearance_mode(theme.APPEARANCE)
