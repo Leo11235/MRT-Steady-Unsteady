@@ -467,31 +467,35 @@ class InputPage(ctk.CTkFrame):
         self._launch(config)
 
     def _auto_save(self, config: dict) -> None:
-        """Write the inputs beside the run without prompting.
+        """Write the inputs to a NEW preset without prompting.
 
-        Overwrites the loaded preset when there is one, so re-running a preset
-        keeps a single file rather than accumulating copies.
+        Deliberately never overwrites the preset that was loaded. Editing a
+        template and running it used to redefine that template, so the next
+        person to open steady_example got somebody's experiment instead of the
+        example. A run is not an edit.
+
+        The name carries a timestamp, so repeated runs are distinguishable
+        rather than clobbering each other.
         """
-        target = self._loaded_path
-        if target is None:
-            target = self._presets_dir() / f"{self._default_run_name()}.jsonc"
+        target = self._presets_dir() / f"{self._default_run_name()}.jsonc"
         try:
             backend_bridge.save_jsonc(target, config)
-            self._loaded_path = target
-            self._clean_snapshot = config
+            self._set_status(f"Inputs saved as {target.stem}")
         except Exception:                       # noqa: BLE001
             pass    # never let a save problem stop a run
 
     def _launch(self, config: dict) -> None:
+        # The runner writes `config` to a scratch file of its own. It is never
+        # given the loaded preset's path: the backend has to see what's on
+        # screen, and running must not rewrite the file you opened.
         shell = self.winfo_toplevel()
         runner = (backend_bridge.run_steady if self.KIND == "steady"
                   else backend_bridge.run_unsteady)
-        path = self._loaded_path
 
         self._set_status("Running…")
         shell.start_loading_run(
             title=f"{self.KIND.capitalize()} simulation",
-            run_fn=lambda: runner(config, path),
+            run_fn=lambda: runner(config),
             on_complete=self._on_run_complete,
             on_error=lambda exc, tb: self._on_run_error(exc, tb, config),
         )

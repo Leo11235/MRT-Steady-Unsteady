@@ -195,13 +195,27 @@ multiplicative.
 systems, SI included. `SI_UNITS` still says `rad`, because that's what the
 physics wants. Nobody reads a launch angle in radians.
 
-### 3.3 Ambiguities, resolved once
+### 3.3 Hardware lengths vs mission distances
+
+`length` and `distance` are separate DISPLAY categories over the same unit
+table. A fuel grain is 15 cm / 6 in; an apogee is 13716 m / 45000 ft. Showing
+a grain diameter in feet or an apogee in centimetres is useless both ways, and
+no unit string can tell them apart — "m" is "m". So the distinction lives on
+`FieldSpec.category`, and `kv_row.category_of_key()` is how results-page code
+asks for it rather than inferring from the unit. Conversions are identical;
+only the default display unit differs.
+
+`distance` covers `target_apogee`, `launch_site_altitude`,
+`launch_site_altitude_asl`, `main_parachute_deployment_altitude_agl` and the
+computed apogee/altitude outputs. Everything else is `length`.
+
+### 3.4 Ambiguities, resolved once
 
 - `"g"` is grams. Gravitational acceleration is `"g0"`.
 - `"kn"` is knots. Kilonewtons are `"kN"`. Case matters.
 - `"ms"` is milliseconds. Velocity is `"m/s"`.
 
-### 3.4 Where the conversion happens
+### 3.5 Where the conversion happens
 
 Exactly once, at the boundary:
 
@@ -214,7 +228,7 @@ The single biggest class of bug in this program's history is converting twice.
 If you find yourself writing `np.radians(...)` on a value that came out of
 `to_SI`, stop.
 
-### 3.5 Diameters in, radii inside
+### 3.6 Diameters in, radii inside
 
 The user always types a diameter. Physics always uses a radius. The halving
 happens in the same place as the SI conversion and nowhere else.
@@ -222,7 +236,7 @@ happens in the same place as the SI conversion and nowhere else.
 the UI can show `fuel_external_diameter` for a schema that says
 `fuel_external_radius`.
 
-### 3.6 `src/common/static_data/default_inputs.jsonc`
+### 3.7 `src/common/static_data/default_inputs.jsonc`
 
 Physical defaults with a documented source for each, loaded by
 `src/common/default_inputs.py`. Fuel grain density 900 kg/m³, regression
@@ -446,8 +460,13 @@ The only module allowed to import from `src/backend/`. 493 lines.
 - **Validation:** `validate_steady_config`, `validate_unsteady_config`,
   `check_alternate_fields`, `_is_filled`.
 - **Preflight:** `preflight_steady`, `preflight_unsteady`, `worst_severity`.
-- **Running:** `run_steady`, `run_unsteady`. Both take an output path and
-  return the path actually written.
+- **Running:** `run_steady(config)`, `run_unsteady(config)`. Each writes the
+  config to a scratch directory, runs from there, and deletes it afterwards.
+  **Neither ever receives the loaded preset's path.** An earlier version passed
+  it through, which meant the backend read the FILE rather than the form —
+  switching a loaded preset to hotfire and clicking Run gave you a convergence
+  — and running a preset silently rewrote it. Saving is a deliberate act;
+  running is not one.
 - **Runs:** `list_runs`, `run_json_path`, `run_display_name`, `run_timestamp`,
   `load_run`.
 
@@ -854,6 +873,10 @@ already SI.
 `set_packed`.
 
 **`_ensure_page`, not `pages.get`.** Pages are built lazily.
+
+**A run never writes to a preset.** The bridge always uses a scratch file.
+Auto-save creates a new timestamped preset; it does not overwrite the one you
+opened.
 
 **Never call `self.after()` from a worker thread.** Push to the queue.
 

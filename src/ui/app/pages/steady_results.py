@@ -26,7 +26,7 @@ from src.ui.app import theme
 from src.ui.app import field_registry as registry
 from src.ui.app.pages.results_page import ResultsPage
 from src.ui.app.widgets.graph_picker import show_graph_picker, steady_specs
-from src.ui.app.widgets.kv_row import describe, format_scalar
+from src.ui.app.widgets.kv_row import category_of_key, describe, format_scalar
 from src.ui.app.widgets import figure_window
 from src.ui.app.widgets.parametric_graph_dialog import show_parametric_graph_dialog
 from src.ui.app.widgets.section import CollapsibleSection
@@ -262,13 +262,17 @@ class SteadyResultsPage(ResultsPage):
     def _range_text(name: str, values):
         """A builder for '<label> (unit): v1, v2, v3', re-run on unit change."""
         label, si_unit = describe(name)
+        # Explicit category: metres are both "length" and "distance", and only
+        # the key knows which.
+        category = category_of_key(name)
 
         def build(system: str) -> str:
             shown, unit = [], ""
             for value in values:
                 if isinstance(value, (int, float)) and si_unit:
                     try:
-                        unit = vc.unit_for_system(vc.category_of(si_unit), system)
+                        unit = vc.unit_for_system(
+                            category or vc.category_of(si_unit), system)
                         value = vc.convert(float(value), si_unit, unit)
                     except (ValueError, KeyError):
                         pass
@@ -288,7 +292,8 @@ class SteadyResultsPage(ResultsPage):
                 unit = ""
                 if isinstance(value, (int, float)) and si_unit:
                     try:
-                        unit = vc.unit_for_system(vc.category_of(si_unit), system)
+                        unit = vc.unit_for_system(
+                            category_of_key(name) or vc.category_of(si_unit), system)
                         value = vc.convert(float(value), si_unit, unit)
                     except (ValueError, KeyError):
                         pass
@@ -383,7 +388,9 @@ class SteadyResultsPage(ResultsPage):
                 shown, unit = value, ""
                 if isinstance(value, (int, float)) and si_unit:
                     try:
-                        unit = vc.unit_for_system(vc.category_of(si_unit), self.system)
+                        unit = vc.unit_for_system(
+                            category_of_key(wire) or vc.category_of(si_unit),
+                            self.system)
                         shown = vc.convert(float(value), si_unit, unit)
                     except (ValueError, KeyError):
                         pass
@@ -410,7 +417,8 @@ class SteadyResultsPage(ResultsPage):
             if not si_unit:
                 return label, None
             try:
-                target = vc.unit_for_system(vc.category_of(si_unit), self.system)
+                target = vc.unit_for_system(
+                    category_of_key(wire) or vc.category_of(si_unit), self.system)
             except (ValueError, KeyError):
                 return label, None
             labelled = f"{label} ({target})"

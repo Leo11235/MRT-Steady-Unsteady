@@ -113,6 +113,10 @@ seed_files = [
     project_root / "user_data" / "simulation_configs" / "steady" / "steady_example.jsonc",
     project_root / "user_data" / "simulation_configs" / "steady" / "steady_parametric_example.jsonc",
     project_root / "user_data" / "simulation_configs" / "unsteady" / "unsteady_example.jsonc",
+    # The UI failure-path configs, so the bug checklist can be walked against
+    # the exe. Globbed rather than listed, so adding one needs no edit here.
+    *sorted((project_root / "user_data" / "simulation_configs" / "ui_configs")
+            .glob("*.jsonc")),
 ]
 seed_data = [
     (str(f), str(f.parent.relative_to(project_root)))

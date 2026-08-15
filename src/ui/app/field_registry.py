@@ -150,10 +150,10 @@ _STEADY: tuple[FieldSpec, ...] = (
               value_type="text", choices=("EICOSANE (PARAFFIN)",)),
 
     # kinematics
-    FieldSpec("target_apogee", "Target apogee", "length",
+    FieldSpec("target_apogee", "Target apogee", "distance",
               "Design apogee. The convergence solver iterates fuel mass until "
               "the trajectory reaches this."),
-    FieldSpec("launch_site_altitude", "Launch site altitude", "length",
+    FieldSpec("launch_site_altitude", "Launch site altitude", "distance",
               "Launch-site elevation above sea level."),
     FieldSpec("dry_mass", "Dry mass", "mass",
               "Rocket dry mass: structure, electronics and empty tanks."),
@@ -273,13 +273,13 @@ _UNSTEADY: tuple[FieldSpec, ...] = (
               "Drogue parachute drag coefficient."),
     FieldSpec("drogue_parachute_diameter", "Drogue diameter", "length",
               "Drogue parachute canopy diameter."),
-    FieldSpec("main_parachute_deployment_altitude_agl", "Main deploy altitude AGL", "length",
+    FieldSpec("main_parachute_deployment_altitude_agl", "Main deploy altitude AGL", "distance",
               "Altitude above ground at which the main parachute deploys."),
     FieldSpec("main_parachute_drag_coefficient", "Main drag coefficient", DIMENSIONLESS,
               "Main parachute drag coefficient."),
     FieldSpec("main_parachute_diameter", "Main diameter", "length",
               "Main parachute canopy diameter."),
-    FieldSpec("launch_site_altitude_asl", "Launch site altitude ASL", "length",
+    FieldSpec("launch_site_altitude_asl", "Launch site altitude ASL", "distance",
               "Launch-site elevation above sea level."),
 )
 

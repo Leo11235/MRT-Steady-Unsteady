@@ -236,9 +236,19 @@ MOLAR_MASS: dict[str, float] = {
 # REGISTRY
 # everything above, indexed.  
 # these three tables are what the generic helpers, the UI dropdowns, and the config validator all read
+# "distance" shares the LENGTH table but is a separate DISPLAY category.
+#
+# Hardware and mission distances want different units from the same physical
+# dimension: a fuel grain is 6 in / 15 cm, an apogee is 45000 ft / 13716 m.
+# Showing a grain diameter in feet or an apogee in centimetres is useless in
+# both directions, and no unit string can tell the two apart — "m" is "m".
+# So the distinction lives on the field, via FieldSpec.category, and this
+# category exists to carry it. Conversions are identical; only the default
+# display unit differs.
 CATEGORIES: dict[str, dict[str, float]] = {
     "dimensionless": DIMENSIONLESS,
     "length": LENGTH,
+    "distance": LENGTH,
     "area": AREA,
     "volume": VOLUME,
     "mass": MASS,
@@ -259,6 +269,7 @@ CATEGORIES: dict[str, dict[str, float]] = {
 SI_UNITS: dict[str, str] = {
     "dimensionless": ".",
     "length": "m",
+    "distance": "m",       # same physical dimension as length; see CATEGORIES
     "area": "m2",
     "volume": "m3",
     "mass": "kg",
@@ -585,10 +596,14 @@ UNIT_SYSTEMS: dict[str, dict[str, str]] = {
         # launch angle in radians. This is a display choice only; SI_UNITS still
         # says "rad" and every conversion still goes through it.
         "angle": "deg",
+        # Hardware is measured in centimetres, not metres: a 0.1524 m grain
+        # diameter reads as 15.24 cm. "distance" keeps metres.
+        "length": "cm",
     },
     "MRT": {
         "angle":        "deg",
-        "length":       "ft",   # altitudes; hardware dimensions are overridden per-field
+        "length":       "in",   # hardware
+        "distance":     "ft",   # apogees, altitudes
         "area":         "in2",
         "pressure":     "psi",
         "velocity":     "ft/s",
@@ -596,7 +611,8 @@ UNIT_SYSTEMS: dict[str, dict[str, str]] = {
     },
     "IMP": {
         "angle":        "deg",
-        "length":       "ft",
+        "length":       "in",   # hardware
+        "distance":     "ft",   # apogees, altitudes
         "area":         "in2",
         "volume":       "ft3",
         "mass":         "lb",

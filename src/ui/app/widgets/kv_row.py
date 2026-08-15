@@ -55,6 +55,7 @@ _COMPUTED_FIELDS: dict[str, tuple[str, str]] = {
     "total_impulse":                   ("Total impulse", "N*s"),
     "wet_mass":                        ("Wet mass", "kg"),
     "reached_apogee":                  ("Apogee reached", "m"),
+    "apogee":                          ("Apogee", "m"),
     "chamber_temperature":             ("Chamber temperature", "K"),
     "nozzle_throat_area":              ("Nozzle throat area", "m2"),
     "nozzle_exit_area":                ("Nozzle exit area", "m2"),
@@ -73,6 +74,31 @@ _COMPUTED_FIELDS: dict[str, tuple[str, str]] = {
     "nozzle_gas_exit_mach_number":     ("Nozzle exit Mach", "."),
     "chamber_gas_molar_weight":        ("Chamber gas molar mass", "kg/mol"),
 }
+
+
+# Computed outputs that are mission distances rather than hardware sizes, so
+# they display in metres/feet instead of centimetres/inches.
+_COMPUTED_CATEGORIES: dict[str, str] = {
+    "reached_apogee": "distance",
+    "apogee": "distance",
+    "altitude": "distance",
+    "altitude_max": "distance",
+    "altitude_final": "distance",
+}
+
+
+def category_of_key(key: str) -> Optional[str]:
+    """The DISPLAY category for a result key, or None if we can only guess.
+
+    Needed because "length" and "distance" share a unit table: both are metres
+    in SI, so the unit string alone can't say whether a value is a grain
+    diameter (centimetres, inches) or an apogee (metres, feet). The registry
+    knows; ask it rather than inferring from "m".
+    """
+    if registry.has(key):
+        category = registry.get(key).category
+        return None if category == "dimensionless" else category
+    return _COMPUTED_CATEGORIES.get(key)
 
 
 def describe(key: str) -> tuple[str, Optional[str]]:
@@ -154,9 +180,13 @@ def as_pair(value: Any) -> Optional[tuple[float, str]]:
     return float(number), unit
 
 
-def convert_for_display(value: Any, si_unit: Optional[str],
-                        system: str) -> tuple[str, str]:
+def convert_for_display(value: Any, si_unit: Optional[str], system: str,
+                        category: Optional[str] = None) -> tuple[str, str]:
     """(formatted value, unit label) for a value in the given unit system.
+
+    `category` overrides what would otherwise be inferred from `si_unit`. Pass
+    it whenever you know it: metres are both "length" and "distance", and only
+    the caller can say which.
 
     Non-numeric values and dimensionless quantities pass through untouched.
     """
@@ -174,7 +204,7 @@ def convert_for_display(value: Any, si_unit: Optional[str],
     if si_unit is None or not isinstance(value, (int, float)) or isinstance(value, bool):
         return format_scalar(value), ""
     try:
-        target = vc.unit_for_system(vc.category_of(si_unit), system)
+        target = vc.unit_for_system(category or vc.category_of(si_unit), system)
         return format_scalar(vc.convert(float(value), si_unit, target)), target
     except (ValueError, KeyError):
         return format_scalar(value), si_unit
@@ -196,8 +226,10 @@ class KVRow(ctk.CTkFrame):
         self.key = key
         self._value = value
         self._label, self._si_unit = describe(key)
+        self._category = category_of_key(key)
 
-        shown, unit_label = convert_for_display(value, self._si_unit, system)
+        shown, unit_label = convert_for_display(value, self._si_unit, system,
+                                                self._category)
 
         self._name_widget = ctk.CTkLabel(
             self, text=self._compose_name(unit_label),
@@ -216,7 +248,8 @@ class KVRow(ctk.CTkFrame):
 
     def update_system(self, system: str) -> None:
         """Re-label and re-convert for a new unit system.  No rebuild."""
-        shown, unit_label = convert_for_display(self._value, self._si_unit, system)
+        shown, unit_label = convert_for_display(self._value, self._si_unit, system,
+                                                self._category)
         self._name_widget.configure(text=self._compose_name(unit_label))
         self._value_widget.configure(text=shown)
 

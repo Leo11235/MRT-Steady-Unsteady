@@ -116,6 +116,7 @@ def _seed_writable_root(root: Path) -> None:
         "user_data",
         "user_data/simulation_configs/steady",
         "user_data/simulation_configs/unsteady",
+        "user_data/simulation_configs/ui_configs",
         "user_data/simulation_results/steady",
         "user_data/simulation_results/unsteady",
     ):
@@ -132,6 +133,18 @@ def _seed_writable_root(root: Path) -> None:
         "user_data/simulation_configs/steady/steady_example.jsonc",
         "user_data/simulation_configs/steady/steady_parametric_example.jsonc",
         "user_data/simulation_configs/unsteady/unsteady_example.jsonc",
+        # The UI failure-path configs. They ship with the exe so the checklist
+        # can be walked against a real build, which is where the bugs they
+        # exist to catch actually live.
+        "user_data/simulation_configs/ui_configs/ui_01_steady_missing_field.jsonc",
+        "user_data/simulation_configs/ui_configs/ui_02_steady_both_alternates.jsonc",
+        "user_data/simulation_configs/ui_configs/ui_03_steady_neither_alternate.jsonc",
+        "user_data/simulation_configs/ui_configs/ui_04_steady_unknown_unit.jsonc",
+        "user_data/simulation_configs/ui_configs/ui_05_unsteady_missing_field.jsonc",
+        "user_data/simulation_configs/ui_configs/ui_06_unsteady_both_alternates.jsonc",
+        "user_data/simulation_configs/ui_configs/ui_07_unsteady_preflight_warnings.jsonc",
+        "user_data/simulation_configs/ui_configs/ui_08_unsteady_preflight_critical.jsonc",
+        "user_data/simulation_configs/ui_configs/ui_09_unsteady_instant_valve.jsonc",
     ]
     for rel in seeds:
         src, dst = src_root / rel, root / rel
@@ -226,13 +239,26 @@ def save_jsonc(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, indent=4), encoding="utf-8")
 
 
+def ui_test_configs_dir() -> Path:
+    """The deliberately-broken configs that drive the UI bug checklist."""
+    return project_root() / "user_data" / "simulation_configs" / "ui_configs"
+
+
 def list_presets(kind: str) -> list[Path]:
-    """Saved presets for "steady" or "unsteady", newest first."""
+    """Saved presets for "steady" or "unsteady", newest first.
+
+    Includes the ui_configs/ test files, so the checklist can be walked from
+    the normal Load preset dialog rather than by hunting through %APPDATA%.
+    They're named ui_NN_<kind>_* and sort to the bottom by mtime anyway.
+    """
     directory = steady_presets_dir() if kind == "steady" else unsteady_presets_dir()
-    if not directory.is_dir():
-        return []
-    return sorted(directory.glob("*.jsonc"),
-                  key=lambda p: p.stat().st_mtime, reverse=True)
+    found = list(directory.glob("*.jsonc")) if directory.is_dir() else []
+
+    ui_dir = ui_test_configs_dir()
+    if ui_dir.is_dir():
+        found += [p for p in ui_dir.glob(f"ui_*_{kind}_*.jsonc")]
+
+    return sorted(found, key=lambda p: p.stat().st_mtime, reverse=True)
 
 
 # =============================================================================
@@ -409,41 +435,52 @@ def worst_severity(warnings: dict) -> str | None:
 # Running
 # =============================================================================
 #
-# Both simulators read their config from a file rather than a dict, so a config
-# built in the form has to be written somewhere first. When the user has saved
-# a preset we run that file directly; otherwise we drop a temp copy.
+# Both simulators read their config from a FILE rather than a dict, so what's
+# in the form has to be written somewhere before a run.
+#
+# It goes to a scratch file, every time, and never to the user's preset. An
+# earlier version passed the loaded preset's path straight through, which was
+# wrong twice over:
+#
+#   * The backend then read whatever was on disk, not what was in the form.
+#     Loading steady_example, switching it to hotfire and clicking Run gave you
+#     a fuel-mass convergence, because the file still said convergence. It only
+#     appeared to work when auto-save happened to write the edits back first —
+#     which is why it reproduced in the exe and not from source.
+#   * Running a preset quietly rewrote it. Open steady_example, tweak a number,
+#     run, and steady_example was now the tweaked version forever.
+#
+# Saving a preset is a separate, deliberate act. Running is not one.
 
-def _config_to_file(config: dict, kind: str,
-                    config_file_path: Path | None) -> tuple[str, Path, bool]:
-    """Resolve a config into (filename, directory, is_temporary)."""
-    if config_file_path is not None:
-        path = Path(config_file_path)
-        return path.name, path.parent, False
+def _config_to_file(config: dict, kind: str) -> tuple[str, Path]:
+    """Write the config to a scratch directory. Returns (filename, directory).
+
+    The caller deletes the directory when the run finishes.
+    """
     tmp_dir = Path(tempfile.mkdtemp(prefix=f"mrt_{kind}_"))
     name = f"{kind}_run.jsonc"
     save_jsonc(tmp_dir / name, config)
-    return name, tmp_dir, True
+    return name, tmp_dir
 
 
-def run_steady(config: dict, config_file_path: Path | None = None) -> Path:
+def run_steady(config: dict) -> Path:
     """Run a steady simulation.  Returns the path of the results JSON.
 
     Blocking and slow enough to matter, so callers run it on a worker thread.
     """
     from src.backend.steady.steady_main import run_steady as _run
 
-    name, directory, is_temp = _config_to_file(config, "steady", config_file_path)
+    name, directory = _config_to_file(config, "steady")
     out_dir = steady_results_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
     try:
         return Path(_run(name, directory, out_dir))
     finally:
-        if is_temp:
-            import shutil
-            shutil.rmtree(directory, ignore_errors=True)
+        import shutil
+        shutil.rmtree(directory, ignore_errors=True)
 
 
-def run_unsteady(config: dict, config_file_path: Path | None = None) -> Path:
+def run_unsteady(config: dict) -> Path:
     """Run an unsteady simulation.  Returns the path of the results JSON.
 
     Much slower than steady — tens of seconds to minutes — so this always
@@ -451,15 +488,14 @@ def run_unsteady(config: dict, config_file_path: Path | None = None) -> Path:
     """
     from src.backend.unsteady.engine.phase_runner import run_unsteady as _run
 
-    name, directory, is_temp = _config_to_file(config, "unsteady", config_file_path)
+    name, directory = _config_to_file(config, "unsteady")
     out_dir = unsteady_results_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
     try:
         return Path(_run(name, directory, out_dir))
     finally:
-        if is_temp:
-            import shutil
-            shutil.rmtree(directory, ignore_errors=True)
+        import shutil
+        shutil.rmtree(directory, ignore_errors=True)
 
 
 # =============================================================================
