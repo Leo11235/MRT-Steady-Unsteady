@@ -1,0 +1,38 @@
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Hotfire long grain",
+        "simulation_description": "Long fuel grain. Forked from 02_hotfire_baseline: fuel_length increased from 0.6096 m to 1.5 m, and fuel_mass scaled up proportionally from 9 kg to 22 kg to keep the same initial port radius. Exercises high L/D combustion where the regression law integrates over a much longer surface. Expected: success; thrust and Isp should stay in the same band as baseline (mass flow is unchanged), but fuel inventory is much larger.",
+        "expected_output": "success",
+        "checks": {
+            "files_exist": ["Hotfire long grain.json"],
+            "json_path_exists": ["rocket_parameters.thrust", "rocket_parameters.Isp"],
+            "value_between": {
+                "rocket_parameters.thrust": [1000, 20000],
+                "rocket_parameters.Isp": [100, 350],
+                "rocket_parameters.fuel_mass": [21, 23]
+            }
+        }
+    },
+
+    "simulation_settings": {
+        "simulation_type": "hotfire",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [1.5, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+
+        "fuel_mass": [22, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

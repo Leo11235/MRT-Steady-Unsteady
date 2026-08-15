@@ -1,0 +1,84 @@
+{
+    "config": {
+        "metadata": {
+            "simulation_type": "unsteady_test",
+            "simulation_name": "Stall Luminor verbatim",
+            "simulation_description": "Regression guard for the known Luminor_test2 case. Ported verbatim from the old radius-based config style to the new [value, unit] pair style; every physical value is preserved. Original run: LSODA stalled at t~0.0088s with dp_C/dt oscillating between -36000 and +180 bar. This is a real Luminor motor geometry (~76 mm grain OD, ~64 mm port, 38 mm throat, aggressive regression coefficients from a fit to their hotfire data). It should complete cleanly. If it stalls, the integrator has a bug we need to fix, not the config.",
+            "expected_output": "success",
+            "warnings": true,
+            "save_to_pdf": false,
+            "save_to_png": false,
+            "checks": {
+                "files_exist": ["sim_data.json"],
+                "json_path_exists": ["performance.overall", "event_log", "data.time"],
+                "reaches_phases": ["phase_1", "phase_2", "phase_3"],
+                "value_between": {
+                    "performance.overall.peak_chamber_pressure_Pa": [1000000, 12000000],
+                    "performance.overall.burntime_s": [1, 20]
+                },
+                "no_nans_in": ["time", "p_C", "F_thrust"]
+            }
+        },
+        "rocket_inputs": {
+            "CV1_tank": {
+                "model": "saturated_equilibrium",
+                "tank_internal_diameter": [0.1936749999999999, "m"],
+                "tank_temperature": [298.15, "K"],
+                "tank_oxidizer_mass": [13, "kg"],
+                "dip_tube_external_diameter": [0.00635, "m"],
+                "dip_tube_internal_diameter": [0.00508, "m"],
+                "dip_tube_length": [0.02999994, "m"],
+                "tank_ullage_fraction": [0.05, "."],
+                "tank_internal_length": [null, "m"]
+            },
+            "CV2_valve": {
+                "model": "linear",
+                "valve_time_constant": [0.01, "s"],
+                "sigmoid_half_time": [0.05, "s"],
+                "sigmoid_steepness": [10.0, "."]
+            },
+            "CV3_injector": {
+                "model": "SPI",
+                "injector_discharge_coefficient": [0.4, "."],
+                "injector_number_of_holes": [26, "."],
+                "injector_hole_diameter": [0.002, "m"],
+                "feed_pressure_loss": [137895.14586336, "Pa"]
+            },
+            "CV4_chamber": {
+                "model": "0D_quasi_steady",
+                "chamber_fuel_length": [0.6095999999999999, "m"],
+                "chamber_fuel_density": [900, "kg/m3"],
+                "chamber_fuel_external_diameter": [0.085725, "m"],
+                "chamber_regression_rate_scaling_constant": [0.0304, "."],
+                "chamber_regression_rate_exponent": [0.681, "."],
+                "pre_chamber_diameter": [0.085725, "m"],
+                "pre_chamber_length": [0.05061, "m"],
+                "post_chamber_diameter": [0.085725, "m"],
+                "post_chamber_length": [0.14135, "m"],
+                "chamber_fuel_mass": [1.99, "kg"],
+                "chamber_fuel_internal_diameter": [null, "m"]
+            },
+            "CV5_nozzle": {
+                "model": "1D_frozen",
+                "nozzle_throat_diameter": [0.038354, "m"],
+                "nozzle_exit_diameter": [0.07653019999999999, "m"]
+            },
+            "CV6_trajectory": {
+                "model": "2dof",
+                "rocket_dry_mass": [50.4, "kg"],
+                "rocket_drag_coefficient": [0.46, "."],
+                "rocket_outer_diameter": [0.20624799999999996, "m"],
+                "rocket_launch_angle": [6, "deg"],
+                "drogue_parachute_drag_coefficient": [1.5, "."],
+                "drogue_parachute_diameter": [1.12, "m"],
+                "main_parachute_deployment_altitude_agl": [457.2, "m"],
+                "main_parachute_drag_coefficient": [1.5, "."],
+                "main_parachute_diameter": [4.3, "m"],
+                "launch_site_altitude_asl": [300, "m"]
+            }
+        }
+    },
+    "simulation_settings_override": {
+        "output_units": "SI"
+    }
+}

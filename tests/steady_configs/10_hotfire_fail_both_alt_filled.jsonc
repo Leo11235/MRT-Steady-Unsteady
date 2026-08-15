@@ -1,0 +1,29 @@
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Hotfire fail both alt filled",
+        "simulation_description": "Regression guard for the both-filled alternate-field rule. Forked from 02_hotfire_baseline: BOTH fuel_mass (9 kg) AND initial_internal_fuel_diameter (0.04836 m) are set. The alternate-field validator must reject this so the solver never has to guess which side is the input and which side to derive. 0 counts as filled per the product rule, but here we use real values on both sides. Expected: validation_error.",
+        "expected_output": "validation_error"
+    },
+
+    "simulation_settings": {
+        "simulation_type": "hotfire",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+
+        "fuel_mass": [9, "kg"],
+        "initial_internal_fuel_diameter": [0.04836, "m"]
+    }
+}

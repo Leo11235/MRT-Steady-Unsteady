@@ -1,0 +1,38 @@
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Hotfire high chamber pressure",
+        "simulation_description": "Upper-end operating point for chamber pressure. Forked from 02_hotfire_baseline: chamber_pressure raised from 3.447 MPa to 7 MPa (2 x baseline, near the realistic upper bound for a mid-size student hybrid). Exercises the high-p_c branches of CEA lookup and nozzle expansion math. Expected: success with thrust noticeably higher than baseline and Isp modestly higher (deeper expansion, better throat conditions).",
+        "expected_output": "success",
+        "checks": {
+            "files_exist": ["Hotfire high chamber pressure.json"],
+            "json_path_exists": ["rocket_parameters.thrust", "rocket_parameters.Isp"],
+            "value_between": {
+                "rocket_parameters.thrust": [3000, 30000],
+                "rocket_parameters.Isp": [100, 350],
+                "rocket_parameters.chamber_temperature": [2000, 4000]
+            }
+        }
+    },
+
+    "simulation_settings": {
+        "simulation_type": "hotfire",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [7000000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+
+        "fuel_mass": [9, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

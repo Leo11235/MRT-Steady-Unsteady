@@ -1,0 +1,28 @@
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Hotfire fail missing ox type",
+        "simulation_description": "Required-field enforcement. Forked from 02_hotfire_baseline: liquid_oxidizer_type is removed. Every steady simulation type needs this to key into the CEA/PROPEP combustion tables, so the schema validator must reject before the physics ever loads. Expected: validation_error.",
+        "expected_output": "validation_error"
+    },
+
+    "simulation_settings": {
+        "simulation_type": "hotfire",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+
+        "fuel_mass": [9, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

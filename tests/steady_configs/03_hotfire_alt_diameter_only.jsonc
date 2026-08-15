@@ -1,0 +1,40 @@
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Hotfire alt diameter only",
+        "simulation_description": "Alternate-field coverage for the hotfire fuel-inventory input. Forked from 02_hotfire_baseline: fuel_mass is cleared and initial_internal_fuel_diameter is set to 0.04836 m (2 x baseline's implied port radius of 0.02418 m). Same physical rocket, opposite side of the either-or pair. Expected: success, with rocket_parameters.fuel_mass converging to the baseline ~9 kg from the diameter side. Guards the branch that used to break before v1.5.",
+        "expected_output": "success",
+        "checks": {
+            "files_exist": ["Hotfire alt diameter only.json"],
+            "json_path_exists": ["rocket_parameters.thrust", "rocket_parameters.Isp"],
+            "value_within": {
+                "rocket_parameters.fuel_mass": [9.0, 0.5]
+            },
+            "value_between": {
+                "rocket_parameters.thrust": [1000, 20000],
+                "rocket_parameters.Isp": [100, 350]
+            }
+        }
+    },
+
+    "simulation_settings": {
+        "simulation_type": "hotfire",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+
+        "fuel_mass": [null, "kg"],
+        "initial_internal_fuel_diameter": [0.04836, "m"]
+    }
+}

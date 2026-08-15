@@ -1,0 +1,53 @@
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Parametric sweep chamber pressure",
+        "simulation_description": "Single-variable sweep over chamber pressure. Forked from 01_parametric_baseline: the 2D grid is replaced by one sweep of chamber_pressure from 300 psi to 800 psi in 100 psi steps (6 points). Different sweep axis than 20 and 21; also exercises the unit-conversion path in the sweep definition (points come in as psi and land in Pa in the results). Expected: success with 6 converged combinations.",
+        "expected_output": "success",
+        "checks": {
+            "files_exist": ["Parametric sweep chamber pressure.json"],
+            "json_path_exists": ["parametric_results.combinations", "parametric_results.variable_ranges"],
+            "list_length": {
+                "parametric_results.combinations": 6,
+                "parametric_results.rocket_parameters": 6,
+                "parametric_results.flight_data": 6,
+                "parametric_results.variable_ranges.chamber_pressure": 6
+            }
+        }
+    },
+
+    "simulation_settings": {
+        "simulation_type": "parametric_study",
+        "output_units": "SI",
+        "save_output_data": true,
+
+        "parametric_study_settings": {
+            "chamber_pressure": {
+                "low_end":   [300, "psi"],
+                "high_end":  [800, "psi"],
+                "step_size": [100, "psi"]
+            }
+        }
+    },
+
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+
+        "target_apogee": [13716, "m"],
+        "launch_site_altitude": [364, "m"],
+        "dry_mass": [88.89, "kg"],
+        "rocket_external_diameter": [0.20574, "m"],
+        "drag_coefficient": [0.641606, "."],
+        "launch_angle": [6, "deg"],
+
+        "fuel_mass": [null, "kg"],
+        "initial_internal_fuel_diameter": [0.04, "m"]
+    }
+}

@@ -1,0 +1,53 @@
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Parametric sweep fuel length",
+        "simulation_description": "Single-variable sweep over fuel grain length. Forked from 01_parametric_baseline: the ox_flow x chamber_pressure grid is replaced by a single sweep of fuel_length from 0.3 m to 0.9 m in 5 steps (7 points). Guards the single-variable code path (no Cartesian product needed) and confirms convergence works at every grain length. Expected: success with 7 converged combinations.",
+        "expected_output": "success",
+        "checks": {
+            "files_exist": ["Parametric sweep fuel length.json"],
+            "json_path_exists": ["parametric_results.combinations", "parametric_results.variable_ranges"],
+            "list_length": {
+                "parametric_results.combinations": 7,
+                "parametric_results.rocket_parameters": 7,
+                "parametric_results.flight_data": 7,
+                "parametric_results.variable_ranges.fuel_length": 7
+            }
+        }
+    },
+
+    "simulation_settings": {
+        "simulation_type": "parametric_study",
+        "output_units": "SI",
+        "save_output_data": true,
+
+        "parametric_study_settings": {
+            "fuel_length": {
+                "low_end":   [0.3, "m"],
+                "high_end":  [0.9, "m"],
+                "step_size": [0.1, "m"]
+            }
+        }
+    },
+
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+
+        "target_apogee": [13716, "m"],
+        "launch_site_altitude": [364, "m"],
+        "dry_mass": [88.89, "kg"],
+        "rocket_external_diameter": [0.20574, "m"],
+        "drag_coefficient": [0.641606, "."],
+        "launch_angle": [6, "deg"],
+
+        "fuel_mass": [null, "kg"],
+        "initial_internal_fuel_diameter": [0.04, "m"]
+    }
+}

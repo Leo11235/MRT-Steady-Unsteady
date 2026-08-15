@@ -1,0 +1,43 @@
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Parametric fail zero step size",
+        "simulation_description": "Zero step_size trap. Forked from 01_parametric_baseline: sweeps oxidizer_mass_flow_rate from 1 to 5 kg/s with step_size=0. Naively iterating would loop forever; the validator must reject before entering the sweep. Expected: validation_error.",
+        "expected_output": "validation_error"
+    },
+
+    "simulation_settings": {
+        "simulation_type": "parametric_study",
+        "output_units": "SI",
+        "save_output_data": true,
+
+        "parametric_study_settings": {
+            "oxidizer_mass_flow_rate": {
+                "low_end":   [1, "kg/s"],
+                "high_end":  [5, "kg/s"],
+                "step_size": [0, "kg/s"]
+            }
+        }
+    },
+
+    "rocket_inputs": {
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+
+        "target_apogee": [13716, "m"],
+        "launch_site_altitude": [364, "m"],
+        "dry_mass": [88.89, "kg"],
+        "rocket_external_diameter": [0.20574, "m"],
+        "drag_coefficient": [0.641606, "."],
+        "launch_angle": [6, "deg"],
+
+        "fuel_mass": [null, "kg"],
+        "initial_internal_fuel_diameter": [0.04, "m"]
+    }
+}

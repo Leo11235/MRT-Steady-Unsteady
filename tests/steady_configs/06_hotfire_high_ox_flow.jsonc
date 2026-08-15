@@ -1,0 +1,38 @@
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Hotfire high ox flow",
+        "simulation_description": "High oxidizer mass flow rate. Forked from 02_hotfire_baseline: oxidizer_mass_flow_rate raised from 3.012 kg/s to 6.0 kg/s (~2 x baseline). Exercises high-G regime where O/F shifts fuel-lean and regression rate rises. Expected: success with thrust roughly proportional to flow and O/F higher than baseline.",
+        "expected_output": "success",
+        "checks": {
+            "files_exist": ["Hotfire high ox flow.json"],
+            "json_path_exists": ["rocket_parameters.thrust", "rocket_parameters.Isp"],
+            "value_between": {
+                "rocket_parameters.thrust": [2000, 30000],
+                "rocket_parameters.Isp": [100, 350],
+                "rocket_parameters.average_oxidizer_to_fuel_ratio": [1, 20]
+            }
+        }
+    },
+
+    "simulation_settings": {
+        "simulation_type": "hotfire",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [6.0, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+
+        "fuel_mass": [9, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

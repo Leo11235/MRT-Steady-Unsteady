@@ -1,0 +1,36 @@
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Convergence impossible apogee",
+        "simulation_description": "Physically unreachable target. Forked from 00_fuel_mass_convergence_baseline: target_apogee raised to 100 km (space) while keeping the ~89 kg dry mass, small motor, and paraffin/N2O propellant. Even fully consuming the biggest port that fits in the grain, this rocket cannot reach that altitude. The convergence loop must detect it hit its bounds and error cleanly rather than spin forever. Expected: physics_error (the loop reports it cannot converge inside the allowed fuel-mass range).",
+        "expected_output": "physics_error"
+    },
+
+    "simulation_settings": {
+        "simulation_type": "fuel_mass_convergence",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+
+        "target_apogee": [100000, "m"],
+        "launch_site_altitude": [364, "m"],
+        "dry_mass": [88.89, "kg"],
+        "rocket_external_diameter": [0.20574, "m"],
+        "drag_coefficient": [0.641606, "."],
+        "launch_angle": [6, "deg"],
+
+        "fuel_mass": [null, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

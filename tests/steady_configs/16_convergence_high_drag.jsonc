@@ -1,0 +1,46 @@
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Convergence high drag",
+        "simulation_description": "Drag-dominated flight. Forked from 00_fuel_mass_convergence_baseline: drag_coefficient raised from 0.64 to 1.2 (a chunky, bluff shape). Drag scales as v^2, so ascent loses much more energy at burnout. The convergence loop must compensate with more propellant to still reach target apogee. Expected: success with reached_apogee near target and fuel_mass converging noticeably higher than baseline.",
+        "expected_output": "success",
+        "checks": {
+            "files_exist": ["Convergence high drag.json"],
+            "json_path_exists": ["rocket_parameters", "flight_dict"],
+            "value_within": {
+                "rocket_parameters.reached_apogee": [13716, 200]
+            },
+            "value_between": {
+                "rocket_parameters.fuel_mass": [1, 15]
+            }
+        }
+    },
+
+    "simulation_settings": {
+        "simulation_type": "fuel_mass_convergence",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+
+        "target_apogee": [13716, "m"],
+        "launch_site_altitude": [364, "m"],
+        "dry_mass": [88.89, "kg"],
+        "rocket_external_diameter": [0.20574, "m"],
+        "drag_coefficient": [1.2, "."],
+        "launch_angle": [6, "deg"],
+
+        "fuel_mass": [null, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

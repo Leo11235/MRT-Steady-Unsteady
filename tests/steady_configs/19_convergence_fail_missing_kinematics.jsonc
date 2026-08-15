@@ -1,0 +1,35 @@
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Convergence fail missing kinematics",
+        "simulation_description": "Kinematics-required-field enforcement. Forked from 00_fuel_mass_convergence_baseline: launch_site_altitude is removed. Convergence and parametric_study both need the kinematics block; the schema validator must reject this before any trajectory integration is attempted. Expected: validation_error.",
+        "expected_output": "validation_error"
+    },
+
+    "simulation_settings": {
+        "simulation_type": "fuel_mass_convergence",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+
+        "target_apogee": [13716, "m"],
+        "dry_mass": [88.89, "kg"],
+        "rocket_external_diameter": [0.20574, "m"],
+        "drag_coefficient": [0.641606, "."],
+        "launch_angle": [6, "deg"],
+
+        "fuel_mass": [null, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

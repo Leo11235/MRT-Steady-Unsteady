@@ -1,0 +1,38 @@
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Hotfire short grain",
+        "simulation_description": "Short fuel grain, near the boundary of the 'short grain' advisory. Forked from 02_hotfire_baseline: fuel_length reduced from 0.6096 m to 0.2 m, and fuel_mass reduced proportionally from 9 kg to 3 kg to keep the initial port geometry sane. Exercises low L/D combustion where 1D regression assumptions get weakest. Expected: success; results should stay physical (positive thrust, sensible Isp) even at the L/D limit.",
+        "expected_output": "success",
+        "checks": {
+            "files_exist": ["Hotfire short grain.json"],
+            "json_path_exists": ["rocket_parameters.thrust", "rocket_parameters.Isp"],
+            "value_between": {
+                "rocket_parameters.thrust": [500, 20000],
+                "rocket_parameters.Isp": [80, 350],
+                "rocket_parameters.chamber_temperature": [2000, 4000]
+            }
+        }
+    },
+
+    "simulation_settings": {
+        "simulation_type": "hotfire",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.2, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+
+        "fuel_mass": [3, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

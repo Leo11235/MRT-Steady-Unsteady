@@ -1,0 +1,38 @@
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Hotfire low ox flow",
+        "simulation_description": "Low oxidizer mass flow rate. Forked from 02_hotfire_baseline: oxidizer_mass_flow_rate dropped from 3.012 kg/s to 1.0 kg/s (~0.3 x baseline). Low-G regime where the port is oversized for the flow, O/F drops fuel-rich, and c* drops with it. Expected: success with thrust well below baseline and O/F noticeably lower.",
+        "expected_output": "success",
+        "checks": {
+            "files_exist": ["Hotfire low ox flow.json"],
+            "json_path_exists": ["rocket_parameters.thrust", "rocket_parameters.Isp"],
+            "value_between": {
+                "rocket_parameters.thrust": [200, 8000],
+                "rocket_parameters.Isp": [80, 320],
+                "rocket_parameters.average_oxidizer_to_fuel_ratio": [0.5, 12]
+            }
+        }
+    },
+
+    "simulation_settings": {
+        "simulation_type": "hotfire",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [1.0, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+
+        "fuel_mass": [9, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}
