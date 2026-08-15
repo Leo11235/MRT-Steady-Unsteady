@@ -1,13 +1,5 @@
 UI BUG CHECKLIST
-================
-
-Things the automated backend tests can't cover. Work through this before
-cutting a release. The configs in tests/ui_configs/ exist to drive the
-failure paths; each one says at the top what it should do.
-
-Launch:  python -m src.ui.main       (from the project root)
-Build:   build_tools\build.bat
-
+last updated Aug. 2026
 
 GENERAL
 - Work through this checklist before cutting a release to cover scenarios automated backend tests cannot cover.
@@ -27,7 +19,7 @@ UNITS
 
 INPUT FORM
 - Open a fresh Unsteady page. CV2 valve starts with the right number of fields for its model: instant 0, linear 1, sigmoid 2. Switch models and the fields appear and disappear in the right places, keeping form order.
-- Same check for every other CV that has a model dropdown.
+- Same check for every other CV that has a model dropdown (as of now, none)
 - Advanced (propellant chemistry & regression law) starts locked, reads 900 kg/m3 / 0.000132 / 0.555, and the padlock toggles editability.
 - Rocket Body tab renders its placeholder rather than an empty tab.
 - Parametric study: "+ Add parameter" stays glued directly under the last card, never stranded at the bottom of the panel. Add four, delete the middle two, confirm it's still glued.
@@ -68,6 +60,7 @@ SAVED RUNS
 - Show in folder opens the run's own folder, not Documents.
 
 SETTINGS
+- Contains the following: default output units (dropdown), auto-save inputs on run (checkbox), keyboard shortcuts (run sim, save preset, load preset, cancel run)
 - Rebind a shortcut, save, and the new key works. Rebinding onto a key another action already owns is refused with a message naming that action.
 - Cancel discards edits. Reset all to defaults restores Ctrl+R / Ctrl+S / Ctrl+O / Esc.
 - No "main thread is not in main loop" spam in the console after a run.
