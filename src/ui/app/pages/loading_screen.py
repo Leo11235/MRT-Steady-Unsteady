@@ -248,7 +248,12 @@ class LoadingScreen(ctk.CTkFrame):
 
         self._output_q = queue.Queue()
         self._result_q = queue.Queue()
-        self._bar.start()
+        # The rocket stays parked until the backend actually says something.
+        # A bar that starts moving the instant you click Run implies progress
+        # nobody has made yet — an unsteady run spends its first seconds
+        # loading CEA tables in silence.
+        self._bar_started = False
+        self._bar.reset()
         self._schedule_poll()
 
         # Redirect the process's streams. This is global, but the worker is
@@ -369,6 +374,11 @@ class LoadingScreen(ctk.CTkFrame):
             return
 
         text = "".join(chunks)
+
+        # First output of the run: now the rocket may move.
+        if not self._bar_started:
+            self._bar_started = True
+            self._bar.start()
 
         # Take the LAST phase marker in the batch, not the first — a burst
         # often spans a transition and the newest one is what's current.

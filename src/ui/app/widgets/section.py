@@ -108,6 +108,9 @@ class CollapsibleSection(ctk.CTkFrame):
         )
         self._subtitle.pack(side="left", padx=(theme.PAD_S, 0))
 
+        # Built on demand by set_flagged(); most sections never need one.
+        self._flag: Optional[ctk.CTkLabel] = None
+
         # The whole header is the hit target, not just the arrow — a 38-pixel
         # strip is far easier to hit than an 18-pixel glyph.
         for widget in (self._header, self._arrow, self._title, self._subtitle):
@@ -151,3 +154,30 @@ class CollapsibleSection(ctk.CTkFrame):
         collapsed.
         """
         self._subtitle.configure(text=text)
+
+    def set_flagged(self, text: str = "") -> None:
+        """Mark this section as a problem: red title plus a short reason.
+
+        The point is that it reads while COLLAPSED. A parametric sweep of
+        fifteen points all looks identical from the outside, so the ones that
+        failed have to announce themselves rather than waiting to be opened
+        one by one.
+
+        Passing "" clears the flag.
+        """
+        if text:
+            self._title.configure(text_color=theme.ERROR)
+            if self._flag is None:
+                self._flag = ctk.CTkLabel(
+                    self._header, text="", anchor="w",
+                    text_color=theme.ERROR,
+                    font=ctk.CTkFont(size=theme.SIZE_SMALL, weight="bold"),
+                )
+                self._flag.bind("<Button-1>", lambda _e: self.toggle())
+                self._flag.configure(cursor="hand2")
+            self._flag.configure(text=text)
+            self._flag.pack(side="right", padx=(theme.PAD_S, theme.PAD_S))
+        else:
+            self._title.configure(text_color=theme.TEXT_NORMAL)
+            if self._flag is not None:
+                self._flag.pack_forget()

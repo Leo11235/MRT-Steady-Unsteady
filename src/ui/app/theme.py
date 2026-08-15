@@ -80,6 +80,10 @@ WARNING_STRONG  = ("#e76f51", "#ff9e7a")
 ERROR           = ("#b00020", "#ff6b6b")
 
 # Neutral / faded text
+# CTk's own default label colour. Needed by anything that recolours text
+# and has to restore it afterwards; "reset to default" is not a thing
+# you can ask a CTkLabel for.
+TEXT_NORMAL     = ("gray10", "gray90")
 TEXT_MUTED      = ("gray35", "gray65")
 TEXT_FAINT      = ("gray40", "gray60")
 TEXT_LOCKED     = ("gray55", "gray55")

@@ -1,16 +1,20 @@
 """
 Steady results.
 
-Four tabs, and which have anything in them depends on the simulation type:
+Four tabs, but only the ones that apply to the run are shown:
 
-    Performance   computed outputs. Hotfire and convergence.
-    Inputs        what was fed in, echoed back post-conversion. Always.
-    Trajectory    flight summary. Convergence only.
-    Sweep         one collapsible block per swept point. Parametric only.
+    Performance         computed outputs. Hotfire and convergence.
+    Inputs              what was fed in, echoed back. Always.
+    Trajectory          flight summary. Convergence only.
+    Parametric sweep    one collapsible block per swept point. Parametric only.
 
-A parametric study has no single performance block or trajectory, because it
-produced one of each per point; those live in the Sweep tab. The empty tabs say
-so rather than sitting blank, and point at where the data actually is.
+A parametric study produces one performance block and one trajectory PER
+POINT, so there is no single one of either; those tabs are hidden rather than
+left to say "look in the sweep tab". Conversely the sweep tab is hidden for
+everything else. See ResultsPage.set_tab_visible.
+
+Points that never reached the target apogee are flagged red on their collapsed
+header, from the target_apogee_reached flag the steady engine sets.
 """
 
 from __future__ import annotations
@@ -99,9 +103,18 @@ class SteadyResultsPage(ResultsPage):
         # Loading a different run invalidates whatever is on screen.
         figure_window.close_all()
 
-        self._render_performance()
+        # A parametric study computes one result set per point, so there is no
+        # single performance block and no single trajectory. Those two tabs
+        # could only ever say "look in the sweep tab", so hide them instead.
+        parametric = self._sim_type == "parametric_study"
+        self.set_tab_visible("Performance", not parametric)
+        self.set_tab_visible("Trajectory", not parametric)
+        self.set_tab_visible("Parametric sweep", parametric)
+
+        if not parametric:
+            self._render_performance()
+            self._render_trajectory()
         self._render_inputs()
-        self._render_trajectory()
         self._render_sweep()
         self._sync_graphs_button()
 
@@ -122,8 +135,14 @@ class SteadyResultsPage(ResultsPage):
 
     def _render_inputs(self) -> None:
         inputs = self.results.get("rocket_inputs") or {}
-        settings = self.results.get("simulation_settings") or {}
+        settings = dict(self.results.get("simulation_settings") or {})
         metadata = self.results.get("metadata") or {}
+
+        # Pull the sweep definition out and render it under its own heading.
+        # Left in place it inherits the chained title and comes out as
+        # "Simulation settings — parametric_study_settings — chamber_pressure",
+        # which is a mouthful for what is just "chamber pressure".
+        sweep_settings = settings.pop("parametric_study_settings", None)
 
         if metadata:
             self.add_dict(self._inputs, "Metadata", metadata)
@@ -133,7 +152,11 @@ class SteadyResultsPage(ResultsPage):
             self.add_dict(self._inputs, "Rocket inputs", inputs)
         if settings:
             self.add_dict(self._inputs, "Simulation settings", settings)
-        if not (inputs or settings or metadata):
+        if isinstance(sweep_settings, dict) and sweep_settings:
+            self.add_dict(self._inputs, "Parametric settings", sweep_settings,
+                          child_title=lambda _parent, key: registry.label(key)
+                          if registry.has(key) else key)
+        if not (inputs or settings or metadata or sweep_settings):
             self.add_empty(self._inputs, "No inputs recorded in this file.")
 
     def _render_trajectory(self) -> None:
@@ -209,6 +232,16 @@ class SteadyResultsPage(ResultsPage):
             # everything else.
             self.add_dynamic_label(section._subtitle,          # noqa: SLF001
                                    self._coords_text(variables, coords))
+
+            # A point that never hit the target apogee has to say so from the
+            # collapsed row. Every point looks identical from the outside, and
+            # opening fifteen of them to find the failures is not a workflow.
+            #
+            # The key is target_apogee_reached, NOT reached_apogee: the latter
+            # is the altitude actually achieved, in metres, which the tests
+            # check numerically.
+            if params[index].get("target_apogee_reached") is False:
+                section.set_flagged("Did not reach target apogee")
 
             self.add_dict(section.body, "Rocket parameters", params[index])
             if index < len(flights) and isinstance(flights[index], dict):

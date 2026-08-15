@@ -137,12 +137,40 @@ def format_scalar(value: Any) -> str:
     return str(value)
 
 
+def as_pair(value: Any) -> Optional[tuple[float, str]]:
+    """Recognise a config-style [value, unit] pair.
+
+    Results files echo the inputs back verbatim, pairs included, so a results
+    page will meet them. Without this they render as "[2 items]", which is
+    both useless and slightly insulting.
+    """
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        return None
+    number, unit = value
+    if isinstance(number, bool) or not isinstance(number, (int, float)):
+        return None
+    if not isinstance(unit, str) or not vc.is_known_unit(unit):
+        return None
+    return float(number), unit
+
+
 def convert_for_display(value: Any, si_unit: Optional[str],
                         system: str) -> tuple[str, str]:
     """(formatted value, unit label) for a value in the given unit system.
 
     Non-numeric values and dimensionless quantities pass through untouched.
     """
+    # A pair carries its own unit, which beats whatever the registry guessed
+    # for the key.
+    pair = as_pair(value)
+    if pair is not None:
+        number, unit = pair
+        try:
+            target = vc.unit_for_system(vc.category_of(unit), system)
+            return format_scalar(vc.convert(number, unit, target)), target
+        except (ValueError, KeyError):
+            return format_scalar(number), unit
+
     if si_unit is None or not isinstance(value, (int, float)) or isinstance(value, bool):
         return format_scalar(value), ""
     try:

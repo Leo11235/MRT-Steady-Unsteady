@@ -153,6 +153,25 @@ class RocketLoadingBar(ctk.CTkFrame):
     # Public API
     # -----------------------------------------------------------------
 
+    def reset(self) -> None:
+        """Park the rocket at zero without animating.
+
+        Used between clicking Run and the backend's first line of output, so
+        the bar shows a rocket sitting on the pad rather than one already
+        climbing toward a milestone nothing has reached.
+        """
+        self._running = False
+        self._stopped_done = False
+        self._t_anim = 0
+        self._progress = 0.0
+        if self._after_id is not None:
+            try:
+                self.after_cancel(self._after_id)
+            except Exception:                   # noqa: BLE001
+                pass
+            self._after_id = None
+        self._render_rocket()
+
     def start(self) -> None:
         if self._running:
             return

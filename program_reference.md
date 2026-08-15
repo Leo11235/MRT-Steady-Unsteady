@@ -611,7 +611,16 @@ conversion but aren't key/value rows, `add_dict`, `add_heading`, `add_empty`,
 
 ### 9.7 `steady_results.py`
 
-Four tabs: Performance, Inputs, Trajectory, Parametric sweep. `_sync_graphs_button()` picks the button's
+Four tabs, but only the applicable ones are shown: a parametric study hides
+Performance and Trajectory (it produces one of each per point, not one
+overall), everything else hides Parametric sweep. `ResultsPage.set_tab_visible`
+does this by adding and removing the SEGMENTED BUTTON entry, not the tab —
+`CTkTabview.delete` destroys the frame and everything rendered into it.
+
+Sweep points carry a red header and "Did not reach target apogee" when the
+engine's `target_apogee_reached` flag is False, readable with the point still
+collapsed. That flag is separate from `reached_apogee`, which is the altitude
+actually achieved in metres and is what the test configs check numerically. `_sync_graphs_button()` picks the button's
 behaviour from the run type: a parametric study gives "Parametric graphs…", a
 convergence run gives "Show graphs…", and a hotfire gives a *disabled* "Show
 graphs…" with a tooltip explaining that one operating point has no time series
@@ -678,15 +687,17 @@ entry's version equal to the `VERSION` file.
 | `section.py` | titled group box |
 | `parametric_list.py` | the sweep editor: one card per parameter, "+ Add parameter" glued under the last card |
 | `parametric_graph_dialog.py` | axis pickers, hold pickers, 2D/3D |
-| `graph_picker.py` | searchable multi-select over a plot registry |
+| `graph_picker.py` | multi-select over a plot registry; clamps itself to the screen |
 | `figure_window.py` | one figure per window, with the matplotlib toolbar |
+| `filter_combo.py` | entry plus a focusless suggestion list; prefix matching |
 | `preflight_dialog.py` | the warnings modal, worst first, Cancel or Run anyway |
 | `error_popup.py` | scrollable exception text with Back and Report a bug always visible |
 | `text_prompt.py` | `ask_text(...)`, replaces `simpledialog` |
 | `key_capture.py` | `capture_key(...)` for the shortcut rebind |
 | `confirm_button.py` | the two-click Cancel / Halt pattern |
 | `loading_bar.py` | phase-aware progress |
-| `search_entry.py`, `tooltip.py`, `help_icon.py`, `recent_preset_menu.py`, `placeholder.py` | small shared pieces |
+| `tooltip.py` | hover text that stays inside the window and beside its widget |
+| `search_entry.py`, `help_icon.py`, `recent_preset_menu.py`, `placeholder.py` | small shared pieces |
 
 `LabeledField` keeps `_si_cache`, the exact SI value behind the displayed
 number. Without it, switching mm -> in -> mm turns 32 into 31.9999 and then
@@ -845,6 +856,20 @@ already SI.
 **`_ensure_page`, not `pages.get`.** Pages are built lazily.
 
 **Never call `self.after()` from a worker thread.** Push to the queue.
+
+**Don't mix `winfo_screenwidth()` with `winfo_rootx()`.** Under Windows
+display scaling they aren't in the same coordinate space, so "clamp to the
+screen" arithmetic lands somewhere unrelated. `tooltip._bounds()` measures the
+app window through the widget tree instead, so both numbers agree.
+
+**A Tk menu grabs the keyboard when it posts.** That's why `filter_combo`
+builds its own borderless Toplevel instead of using CTkComboBox: refreshing a
+posted menu on each keystroke stole focus from the entry and ate the next
+character.
+
+**CTkToplevel schedules its own lift a few hundred ms after construction.**
+Opening several at once means the last one's callback lands after yours, so a
+plain `lift()` loses. `figure_window._raise_all` pulses `-topmost` instead.
 
 **Build figures on the main thread where you can, and never let matplotlib
 pick its own backend.** `src/common/plotting/__init__.py` pins Agg for exactly

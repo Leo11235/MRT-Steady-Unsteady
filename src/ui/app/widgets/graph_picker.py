@@ -70,13 +70,26 @@ def show_graph_picker(parent, specs=None, *,
     window.transient(parent.winfo_toplevel())
     window.resizable(False, False)
 
+    # Clamp to the screen and centre vertically. The old fixed 620 px hung off
+    # the bottom of a laptop display once the taskbar took its cut, which hid
+    # the Cancel and Render buttons.
     width, height = 560, 620
     window.update_idletasks()
     try:
+        screen_h = window.winfo_screenheight()
+        screen_w = window.winfo_screenwidth()
+        # Leave room for the title bar and taskbar rather than assuming a
+        # specific size for either.
+        height = min(height, int(screen_h * 0.85))
+        width = min(width, int(screen_w * 0.9))
+
         root = parent.winfo_toplevel()
         x = root.winfo_rootx() + (root.winfo_width() - width) // 2
-        y = root.winfo_rooty() + (root.winfo_height() - height) // 4
-        window.geometry(f"{width}x{height}+{max(x, 0)}+{max(y, 0)}")
+        y = root.winfo_rooty() + (root.winfo_height() - height) // 2
+        # Keep it fully on screen even if the main window is near an edge.
+        x = max(0, min(x, screen_w - width))
+        y = max(0, min(y, screen_h - height - 40))
+        window.geometry(f"{width}x{height}+{x}+{y}")
     except Exception:                           # noqa: BLE001
         window.geometry(f"{width}x{height}")
     window.after(10, window.grab_set)
@@ -105,19 +118,12 @@ def show_graph_picker(parent, specs=None, *,
                   command=confirm).pack(side="left", padx=theme.PAD_S)
     window.protocol("WM_DELETE_WINDOW", cancel)
 
-    ctk.CTkLabel(window, text=title,
-                 font=ctk.CTkFont(size=theme.SIZE_H1, weight="bold")).pack(
-        pady=(theme.PAD_L, theme.PAD_XS))
-    ctk.CTkLabel(
-        window,
-        text=f"{len(specs)} available. Each one takes a moment to draw, so "
-             f"pick what you need.",
-        text_color=theme.TEXT_MUTED,
-        font=ctk.CTkFont(size=theme.SIZE_SMALL)).pack(pady=(0, theme.PAD_S))
+    # No heading and no blurb. The window title already says "Choose graphs",
+    # and the list is self-explanatory; that space is better spent on the list.
 
     # ---- select-all / none -------------------------------------------
     bulk = ctk.CTkFrame(window, fg_color="transparent")
-    bulk.pack(fill="x", padx=theme.PAD_M, pady=(0, theme.PAD_XS))
+    bulk.pack(fill="x", padx=theme.PAD_M, pady=(theme.PAD_M, theme.PAD_XS))
     ctk.CTkButton(bulk, text="All", width=70, height=26,
                   fg_color="transparent", border_width=1,
                   text_color=theme.TEXT_MUTED,

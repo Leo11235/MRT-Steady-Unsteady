@@ -77,6 +77,9 @@ class ResultsPage(ctk.CTkFrame):
         # What the preference said last time we looked, so on_show can tell a
         # settings change apart from the user's own toolbar click.
         self._settings_system = self.system
+        # Tab names in creation order, so set_tab_visible can put one back
+        # where it belongs instead of at the end.
+        self._tab_order: list[str] = []
         self._system_var = ctk.StringVar(value=self.system)
         self._filter_var = ctk.StringVar()
 
@@ -171,7 +174,40 @@ class ResultsPage(ctk.CTkFrame):
         tab = self.tabs.add(name)
         wrap = ctk.CTkScrollableFrame(tab, label_text="")
         wrap.pack(fill="both", expand=True)
+        self._tab_order.append(name)
         return wrap
+
+    def set_tab_visible(self, name: str, visible: bool) -> None:
+        """Show or hide a tab, keeping the original left-to-right order.
+
+        Which tabs make sense depends on the run: a parametric study has no
+        single performance block or trajectory, so those tabs would only ever
+        say "nothing here".
+
+        CTkTabview has no hide. Its own `delete` destroys the tab's frame and
+        everything in it, and `insert` builds a fresh empty one, so using those
+        would throw away the panel we just rendered. We hide the BUTTON on the
+        segmented bar instead: the frame stays alive, the content survives, and
+        tabs.set(name) still works. Insert index comes from the build order, so
+        a re-shown tab lands back in place rather than at the end.
+        """
+        if name not in self._tab_order:
+            return
+        bar = self.tabs._segmented_button                # noqa: SLF001
+        shown = list(bar._value_list)                    # noqa: SLF001
+
+        if visible and name not in shown:
+            wanted = self._tab_order.index(name)
+            before = [n for n in self._tab_order[:wanted] if n in shown]
+            bar.insert(len(before), name)
+        elif not visible and name in shown:
+            # Never leave the view sitting on a tab with no button.
+            if self.tabs.get() == name:
+                others = [n for n in self._tab_order
+                          if n in shown and n != name]
+                if others:
+                    self.tabs.set(others[0])
+            bar.delete(name)
 
     # ==================================================================
     # Subclass hooks
@@ -251,18 +287,25 @@ class ResultsPage(ctk.CTkFrame):
                      font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold")).pack(
             fill="x", pady=(theme.PAD_M, theme.PAD_XS))
 
-    def add_dict(self, parent, title: str, data: dict) -> None:
+    def add_dict(self, parent, title: str, data: dict, *, child_title=None) -> None:
         """A heading and one row per entry, skipping nested structures.
 
         Nested dicts get their own section rather than being flattened into an
         unreadable single row.
+
+        `child_title(parent_title, key) -> str` overrides the heading a nested
+        dict gets. The default chains them, which reads fine two levels deep
+        and turns into "Simulation settings — parametric_study_settings —
+        oxidizer_mass_flow_rate" at three.
         """
         if not isinstance(data, dict) or not data:
             return
         self.add_heading(parent, title)
         for key, value in data.items():
             if isinstance(value, dict):
-                self.add_dict(parent, f"{title} — {key}", value)
+                nested = (child_title(title, key) if child_title
+                          else f"{title} — {key}")
+                self.add_dict(parent, nested, value, child_title=child_title)
             else:
                 self.add_row(parent, key, value)
 

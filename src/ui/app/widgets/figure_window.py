@@ -118,13 +118,40 @@ def show_figures(parent, built: Iterable[tuple[str, object]]) -> tuple[int, int,
         _cascade(window, index)
         drawn += 1
 
-    # Bring the whole batch forward once, after they all exist.
+    _raise_all()
+    return (drawn, skipped, failed)
+
+
+def _raise_all() -> None:
+    """Bring every open graph window in front of the main window and leave it
+    there.
+
+    A plain lift() is not enough. CTkToplevel schedules its own deferred
+    lift/redraw a couple of hundred milliseconds after construction, so with
+    two windows the second one's callback ran after our lift and the main
+    window ended up on top — which is why one graph stayed in front and a
+    2D + 3D pair flashed and sank.
+
+    Setting -topmost wins that race outright, then we drop it again so the
+    windows behave like normal windows once the user is looking at them.
+    """
     for window in _OPEN:
         try:
+            window.attributes("-topmost", True)
             window.lift()
         except Exception:                       # noqa: BLE001
             pass
-    return (drawn, skipped, failed)
+
+    def release() -> None:
+        for window in _OPEN:
+            try:
+                window.attributes("-topmost", False)
+            except Exception:                   # noqa: BLE001
+                pass
+
+    if _OPEN:
+        # Long enough to outlast CTk's own deferred lift.
+        _OPEN[0].after(400, release)
 
 
 def close_all() -> None:

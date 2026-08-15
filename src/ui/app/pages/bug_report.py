@@ -18,11 +18,6 @@ from src.ui.app.services.bug_report_client import (
     submit_bug_report,
 )
 
-# CTkTextbox has no "default" text colour constant to restore after the
-# placeholder, so hold onto the one it was built with.
-_TEXT_NORMAL = ("gray10", "gray90")
-
-
 # Placeholder text that seeds the description box.  Cleared on first
 # focus.  If the user submits with the placeholder still present, we
 # treat the description as empty.
@@ -304,7 +299,7 @@ class BugReportPage(ctk.CTkFrame):
     def _on_desc_focus_in(self, _event=None) -> None:
         if self._desc_has_placeholder:
             self._desc.delete("0.0", "end")
-            self._desc.configure(text_color=_TEXT_NORMAL)
+            self._desc.configure(text_color=theme.TEXT_NORMAL)
             self._desc_has_placeholder = False
 
     def _on_desc_focus_out(self, _event=None) -> None:
