@@ -204,6 +204,7 @@ class SteadyResultsPage(ResultsPage):
         params = sweep.get("rocket_parameters") or []
         flights = sweep.get("flight_data") or []
 
+        native = self.native_system
         self.add_heading(self._sweep, "What was swept")
         for name, values in ranges.items():
             # Each swept range is a list of SI numbers. Rendering it as a
@@ -212,7 +213,7 @@ class SteadyResultsPage(ResultsPage):
             label = ctk.CTkLabel(self._sweep, anchor="w", justify="left",
                                  wraplength=760)
             label.pack(fill="x", pady=1)
-            self.add_dynamic_label(label, self._range_text(name, values))
+            self.add_dynamic_label(label, self._range_text(name, values, native))
 
         self.add_row(self._sweep, "total_combinations", len(combinations))
 
@@ -231,7 +232,7 @@ class SteadyResultsPage(ResultsPage):
             # The subtitle carries the swept coordinates, converted with
             # everything else.
             self.add_dynamic_label(section._subtitle,          # noqa: SLF001
-                                   self._coords_text(variables, coords))
+                                   self._coords_text(variables, coords, native))
 
             # A point that never hit the target apogee has to say so from the
             # collapsed row. Every point looks identical from the outside, and
@@ -259,7 +260,7 @@ class SteadyResultsPage(ResultsPage):
     # ---- unit-aware text builders ------------------------------------
 
     @staticmethod
-    def _range_text(name: str, values):
+    def _range_text(name: str, values, native: str = "SI"):
         """A builder for '<label> (unit): v1, v2, v3', re-run on unit change."""
         label, si_unit = describe(name)
         # Explicit category: metres are both "length" and "distance", and only
@@ -271,9 +272,10 @@ class SteadyResultsPage(ResultsPage):
             for value in values:
                 if isinstance(value, (int, float)) and si_unit:
                     try:
-                        unit = vc.unit_for_system(
-                            category or vc.category_of(si_unit), system)
-                        value = vc.convert(float(value), si_unit, unit)
+                        resolved = category or vc.category_of(si_unit)
+                        source = vc.storage_unit(resolved, native)
+                        unit = vc.unit_for_system(resolved, system)
+                        value = vc.convert(float(value), source, unit)
                     except (ValueError, KeyError):
                         pass
                 shown.append(format_scalar(value))
@@ -283,7 +285,7 @@ class SteadyResultsPage(ResultsPage):
         return build
 
     @staticmethod
-    def _coords_text(variables, coords):
+    def _coords_text(variables, coords, native: str = "SI"):
         """A builder for the 'ṁ = 3 kg/s, pc = 400 psi' subtitle on a point."""
         def build(system: str) -> str:
             parts = []
@@ -292,9 +294,11 @@ class SteadyResultsPage(ResultsPage):
                 unit = ""
                 if isinstance(value, (int, float)) and si_unit:
                     try:
-                        unit = vc.unit_for_system(
-                            category_of_key(name) or vc.category_of(si_unit), system)
-                        value = vc.convert(float(value), si_unit, unit)
+                        resolved = (category_of_key(name)
+                                    or vc.category_of(si_unit))
+                        source = vc.storage_unit(resolved, native)
+                        unit = vc.unit_for_system(resolved, system)
+                        value = vc.convert(float(value), source, unit)
                     except (ValueError, KeyError):
                         pass
                 parts.append(f"{label} = {format_scalar(value)}"
@@ -388,10 +392,11 @@ class SteadyResultsPage(ResultsPage):
                 shown, unit = value, ""
                 if isinstance(value, (int, float)) and si_unit:
                     try:
-                        unit = vc.unit_for_system(
-                            category_of_key(wire) or vc.category_of(si_unit),
-                            self.system)
-                        shown = vc.convert(float(value), si_unit, unit)
+                        resolved = (category_of_key(wire)
+                                    or vc.category_of(si_unit))
+                        source = vc.storage_unit(resolved, self.native_system)
+                        unit = vc.unit_for_system(resolved, self.system)
+                        shown = vc.convert(float(value), source, unit)
                     except (ValueError, KeyError):
                         pass
                 display = format_scalar(shown) + (f" {unit}" if unit else "")
@@ -417,14 +422,15 @@ class SteadyResultsPage(ResultsPage):
             if not si_unit:
                 return label, None
             try:
-                target = vc.unit_for_system(
-                    category_of_key(wire) or vc.category_of(si_unit), self.system)
+                resolved = category_of_key(wire) or vc.category_of(si_unit)
+                source = vc.storage_unit(resolved, self.native_system)
+                target = vc.unit_for_system(resolved, self.system)
             except (ValueError, KeyError):
                 return label, None
             labelled = f"{label} ({target})"
-            if target == si_unit:
+            if target == source:
                 return labelled, None
-            return labelled, (lambda v, _s=si_unit, _t=target:
+            return labelled, (lambda v, _s=source, _t=target:
                               vc.convert(float(v), _s, _t))
 
         def hold_label(wire: str, value) -> str:

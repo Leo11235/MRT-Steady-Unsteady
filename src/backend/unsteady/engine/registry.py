@@ -31,7 +31,8 @@ CV_REGISTRY = {
     },
     "CV2_valve": {
         "linear": {"universal": CV2.valve_linear_ramp},
-        "sigmoid": {"universal": CV2.valve_sigmoid_ramp}
+        "sigmoid": {"universal": CV2.valve_sigmoid_ramp},
+        "instant": {"universal": CV2.valve_linear_ramp}
     },
     "CV3_injector": {
         "SPI": {

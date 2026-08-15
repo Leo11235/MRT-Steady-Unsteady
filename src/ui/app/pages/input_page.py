@@ -500,9 +500,31 @@ class InputPage(ctk.CTkFrame):
             on_error=lambda exc, tb: self._on_run_error(exc, tb, config),
         )
 
+    def _review_result(self, result) -> bool:
+        """Last word before the results page opens. True to proceed.
+
+        Default is always yes. Subclasses override it to intercept outcomes
+        that are technically successful but probably not what you wanted — see
+        SteadyPage and a convergence run that never reached its target.
+        """
+        return True
+
     def _on_run_complete(self, result) -> None:
         shell = self.winfo_toplevel()
         target = "steady_results" if self.KIND == "steady" else "unsteady_results"
+
+        if not self._review_result(result):
+            # We're on the LOADING screen at this point, not the form — the
+            # run just finished there. Returning without navigating leaves the
+            # user staring at a finished progress bar, which is what "Back to
+            # inputs" appeared to do before this line existed.
+            #
+            # The run is saved either way, so it's still reachable from Browse
+            # saved results if they change their mind.
+            self._set_status("Run finished, but the target apogee wasn't "
+                             "reached. Results saved.")
+            shell.go(self.KIND)
+            return
 
         # _ensure_page, not pages.get: on the first run of a session the
         # results page hasn't been built yet, so .get() returns None, show_run

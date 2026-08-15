@@ -41,7 +41,7 @@ from src.ui.app import backend_bridge, theme
 from src.ui.app import settings as user_settings
 from src.ui.app.services import os_utils
 from src.ui.app.widgets.help_icon import HelpIcon
-from src.ui.app.widgets.kv_row import KVRow, describe, format_scalar
+from src.ui.app.widgets.kv_row import KVRow, describe, native_system_of, format_scalar
 from src.ui.app.widgets.search_entry import SearchEntry
 
 UNIT_SYSTEMS = ("SI", "IMP", "MRT")
@@ -80,6 +80,9 @@ class ResultsPage(ctk.CTkFrame):
         # Tab names in creation order, so set_tab_visible can put one back
         # where it belongs instead of at the end.
         self._tab_order: list[str] = []
+        # The unit system the OPEN FILE's numbers are stored in. Not always SI:
+        # see kv_row.native_system_of().
+        self.native_system = "SI"
         self._system_var = ctk.StringVar(value=self.system)
         self._filter_var = ctk.StringVar()
 
@@ -143,8 +146,9 @@ class ResultsPage(ctk.CTkFrame):
                  "IMP: feet, psi, pounds, Fahrenheit.\n"
                  "MRT: the team's mix — feet and psi, but still kilograms "
                  "and kelvin.\n\n"
-                 "Only changes what's displayed. The saved file always holds "
-                 "SI.").pack(side="left", padx=(theme.PAD_XS, 0))
+                 "Changes only what's displayed here, never the saved file. "
+                 "The file is written in whatever the run's Output units "
+                 "setting said.").pack(side="left", padx=(theme.PAD_XS, 0))
 
         # Three buttons that together span exactly the width of one action
         # button above, gaps included — so the sidebar reads as one column
@@ -243,6 +247,8 @@ class ResultsPage(ctk.CTkFrame):
 
         try:
             self.results = json.loads(json_path.read_text(encoding="utf-8"))
+            # Do this before anything renders: every row converts FROM this.
+            self.native_system = native_system_of(self.results)
         except Exception as exc:                # noqa: BLE001
             self._set_status(f"Could not read {json_path.name}: {exc}", error=True)
             return
@@ -265,7 +271,8 @@ class ResultsPage(ctk.CTkFrame):
 
     def add_row(self, parent, key: str, value: Any) -> KVRow:
         """One name/value row, registered for filtering and unit switching."""
-        row = KVRow(parent, key, value, self.system)
+        row = KVRow(parent, key, value, self.system,
+                    native_system=self.native_system)
         row.pack(fill="x", pady=1)
         self._rows.append(row)
         return row

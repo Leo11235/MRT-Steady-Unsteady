@@ -129,17 +129,16 @@ _STEADY: tuple[FieldSpec, ...] = (
     FieldSpec("oxidizer_mass_flow_rate", "Oxidizer mass flow rate", "mass_flow",
               "Steady-state N2O mass flow rate through the injector."),
     FieldSpec("chamber_pressure", "Chamber pressure", "pressure",
-              "Combustion-chamber stagnation pressure. MRT motors run around "
-              "3.4 MPa (500 psi)."),
+              "Combustion-chamber stagnation pressure."),
     FieldSpec("fuel_external_diameter", "Fuel external diameter", "length",
               "Outer diameter of the fuel grain, bounded by the case."),
     FieldSpec("fuel_length", "Fuel length", "length",
               "Length of the fuel grain."),
     FieldSpec("fuel_grain_density", "Fuel grain density", "density",
-              "Bulk density of the solid fuel. Paraffin is about 900 kg/m3."),
+              "Bulk density of the solid fuel."),
     FieldSpec("regression_rate_scaling_coefficient", "Regression coefficient (a)", DIMENSIONLESS,
               "The 'a' in r_dot = a*G^n, with G in kg/m2/s and r_dot in m/s. "
-              "Paraffin with N2O is around 1.3e-4."),
+              "Paraffin with N2O is around 0.000132."),
     FieldSpec("regression_rate_exponent", "Regression exponent (n)", DIMENSIONLESS,
               "The 'n' in r_dot = a*G^n. Paraffin with N2O is around 0.555."),
     FieldSpec("liquid_oxidizer_type", "Liquid oxidizer", DIMENSIONLESS,
@@ -151,15 +150,13 @@ _STEADY: tuple[FieldSpec, ...] = (
 
     # kinematics
     FieldSpec("target_apogee", "Target apogee", "distance",
-              "Design apogee. The convergence solver iterates fuel mass until "
-              "the trajectory reaches this."),
+              "Design apogee. The convergence solver iterates fuel mass until the trajectory reaches this."),
     FieldSpec("launch_site_altitude", "Launch site altitude", "distance",
               "Launch-site elevation above sea level."),
     FieldSpec("dry_mass", "Dry mass", "mass",
-              "Rocket dry mass: structure, electronics and empty tanks."),
+              "The mass of the rocket without any fuel."),
     FieldSpec("rocket_external_diameter", "Rocket external diameter", "length",
-              "Airframe outer diameter. Combines with the drag coefficient to "
-              "set aerodynamic drag."),
+              "Airframe outer diameter."),
     FieldSpec("drag_coefficient", "Drag coefficient", DIMENSIONLESS,
               "Rocket drag coefficient. Slender rockets sit around 0.5 to 0.7."),
     FieldSpec("launch_angle", "Launch angle", "angle",
@@ -171,7 +168,7 @@ _STEADY: tuple[FieldSpec, ...] = (
               "diameter, not both."),
     FieldSpec("initial_internal_fuel_diameter", "Initial port diameter", "length",
               "Initial fuel port diameter. Fill this OR the fuel mass, not "
-              "both. The other simulation types solve for it."),
+              "both."),
 )
 
 
@@ -184,10 +181,9 @@ _UNSTEADY: tuple[FieldSpec, ...] = (
     FieldSpec("tank_internal_diameter", "Internal diameter", "length",
               "Inner diameter of the oxidizer tank shell."),
     FieldSpec("tank_temperature", "Initial temperature", "temperature",
-              "Initial N2O bulk temperature. Room-temperature fills land "
-              "between 285 and 300 K."),
+              "Initial N2O bulk temperature."),
     FieldSpec("tank_oxidizer_mass", "Oxidizer mass", "mass",
-              "Total oxidizer mass loaded at t=0."),
+              "Total oxidizer mass."),
     FieldSpec("dip_tube_external_diameter", "Dip tube external diameter", "length",
               "External diameter of the dip tube."),
     FieldSpec("dip_tube_internal_diameter", "Dip tube internal diameter", "length",
@@ -198,14 +194,13 @@ _UNSTEADY: tuple[FieldSpec, ...] = (
               "Fraction of tank volume that is gas at t=0, from 0 to 1. Fill "
               "this OR the internal length, not both."),
     FieldSpec("tank_internal_length", "Internal length", "length",
-              "Full internal length including end caps. Fill this OR the "
+              "Full internal length, including end caps. Fill this OR the "
               "ullage fraction, not both."),
 
     # ---- CV2 valve ----
     FieldSpec("valve_time_constant", "Time constant", "time",
               "How long the linear ramp takes to go fully open. 0 means "
-              "instantaneous. Slow valves above roughly 0.05 s can destabilise "
-              "the solver."),
+              "instantaneous. \nWARNING: Slow valves with an opening time of above ~0.05s can destabilise the solver."),
     FieldSpec("sigmoid_half_time", "Sigmoid half-time", "time",
               "Time at which the sigmoid valve reaches 50 percent open."),
     FieldSpec("sigmoid_steepness", "Sigmoid steepness", DIMENSIONLESS,
@@ -213,26 +208,24 @@ _UNSTEADY: tuple[FieldSpec, ...] = (
 
     # ---- CV3 injector ----
     FieldSpec("injector_discharge_coefficient", "Discharge coefficient", DIMENSIONLESS,
-              "Injector discharge coefficient. MRT's single-phase "
-              "incompressible injectors run 0.6 to 0.85."),
+              "Injector discharge coefficient. MRT's injectors run 0.6 to 0.85."),
     FieldSpec("injector_number_of_holes", "Number of holes", DIMENSIONLESS,
               "Total number of orifices in the injector plate.",
               value_type="int"),
     FieldSpec("injector_hole_diameter", "Hole diameter", "length",
               "Diameter of one injector hole."),
     FieldSpec("feed_pressure_loss", "Feed pressure loss", "pressure",
-              "Static pressure lost upstream of the injector, across the feed "
-              "lines and valve."),
+              "Static pressure lost upstream of the injector, across the feed lines and valve."),
 
     # ---- CV4 chamber ----
     FieldSpec("chamber_fuel_length", "Fuel length", "length",
               "Length of the fuel grain."),
     FieldSpec("chamber_fuel_density", "Fuel density", "density",
-              "Bulk density of the solid fuel. Paraffin is about 900 kg/m3."),
+              "Bulk density of the solid fuel."),
     FieldSpec("chamber_fuel_external_diameter", "Fuel external diameter", "length",
               "Outer diameter of the fuel grain, bounded by the case."),
     FieldSpec("chamber_regression_rate_scaling_constant", "Regression coefficient (a)", DIMENSIONLESS,
-              "The 'a' in r_dot = a*G^n. Paraffin with N2O is around 1.3e-4."),
+              "The 'a' in r_dot = a*G^n. Paraffin with N2O is around 0.000132."),
     FieldSpec("chamber_regression_rate_exponent", "Regression exponent (n)", DIMENSIONLESS,
               "The 'n' in r_dot = a*G^n. Paraffin with N2O is around 0.555."),
     FieldSpec("pre_chamber_diameter", "Pre-chamber diameter", "length",
@@ -245,11 +238,9 @@ _UNSTEADY: tuple[FieldSpec, ...] = (
     FieldSpec("post_chamber_length", "Post-chamber length", "length",
               "Length of the empty volume between the grain and the throat."),
     FieldSpec("chamber_fuel_mass", "Fuel mass", "mass",
-              "Total solid fuel loaded. Fill this OR the internal diameter, "
-              "not both."),
+              "Total solid fuel loaded. Fill this OR the internal diameter, not both."),
     FieldSpec("chamber_fuel_internal_diameter", "Fuel internal diameter", "length",
-              "Initial fuel port diameter. Fill this OR the fuel mass, not "
-              "both."),
+              "Initial fuel port diameter. Fill this OR the fuel mass, not both."),
 
     # ---- CV5 nozzle ----
     FieldSpec("nozzle_throat_diameter", "Throat diameter", "length",
@@ -261,12 +252,11 @@ _UNSTEADY: tuple[FieldSpec, ...] = (
 
     # ---- CV6 trajectory ----
     FieldSpec("rocket_dry_mass", "Dry mass", "mass",
-              "Rocket dry mass: structure, electronics and empty tanks."),
+              "The mass of the rocket without any fuel."),
     FieldSpec("rocket_drag_coefficient", "Drag coefficient", DIMENSIONLESS,
               "Rocket drag coefficient. Slender rockets sit around 0.5 to 0.7."),
     FieldSpec("rocket_outer_diameter", "Outer diameter", "length",
-              "Rocket maximum outer diameter, used with the drag coefficient "
-              "to set frontal area."),
+              "Rocket maximum outer diameter."),
     FieldSpec("rocket_launch_angle", "Launch angle", "angle",
               "Launch rail angle from vertical. 0 degrees is straight up."),
     FieldSpec("drogue_parachute_drag_coefficient", "Drogue drag coefficient", DIMENSIONLESS,

@@ -1,10 +1,6 @@
-# MRT Steady-Unsteady Flight Simulator — Program Reference
+# MRT Steady-Unsteady Flight Simulator Program Reference
 
-Written for whoever picks this up next. It describes the program as it stands
-at v1.5, after the units-and-UI refactor.
-
-If you only read one section, read §3 (the unit system). Almost every rule in
-the rest of the document follows from it.
+Written for whoever picks this up next. It describes the program as it stands at v1.5, after the units-and-UI refactor.
 
 ---
 
@@ -13,24 +9,22 @@ the rest of the document follows from it.
 1. [Overview](#1-overview)
 2. [Repository layout](#2-repository-layout)
 3. [The unit system](#3-the-unit-system)
-4. [Backend — Steady](#4-backend--steady)
-5. [Backend — Unsteady](#5-backend--unsteady)
-6. [Backend — Common](#6-backend--common)
+4. [Backend: Steady](#4-backend--steady)
+5. [Backend: Unsteady](#5-backend--unsteady)
+6. [Backend: Common](#6-backend--common)
 7. [Plotting](#7-plotting)
-8. [UI — Shell and infrastructure](#8-ui--shell-and-infrastructure)
-9. [UI — Pages](#9-ui--pages)
-10. [UI — Widgets and services](#10-ui--widgets-and-services)
+8. [UI: Shell and infrastructure](#8-ui--shell-and-infrastructure)
+9. [UI: Pages](#9-ui--pages)
+10. [UI: Widgets and services](#10-ui--widgets-and-services)
 11. [End-to-end pipelines](#11-end-to-end-pipelines)
 12. [Testing](#12-testing)
 13. [Build and release](#13-build-and-release)
 14. [Conventions and gotchas](#14-conventions-and-gotchas)
-15. [Appendix — file inventory](#15-appendix--file-inventory)
+15. [Appendix: file inventory](#15-appendix--file-inventory)
 
 ---
 
 ## 1. Overview
-
-Two simulators, one UI.
 
 **Steady** answers "at a fixed operating point, what does the rocket do?" It
 does algebraic hotfire performance, iterative fuel-mass sizing to hit a target
@@ -43,8 +37,7 @@ landing. Tens of seconds to minutes. Phase-switched.
 
 The UI is a customtkinter desktop app wrapping both. It handles presets,
 validation, preflight warnings, run monitoring, results browsing, graphing,
-export, settings and bug reporting. It never calls physics directly —
-everything goes through `src/ui/app/backend_bridge.py`.
+export, settings and bug reporting. It never calls physics directly. Everything goes through `src/ui/app/backend_bridge.py`.
 
 Three trees matter at runtime:
 
@@ -159,12 +152,9 @@ Two rules about this layout:
 "drag_coefficient": [0.641606, "."],
 ```
 
-Not `chamber_pressure_Pa`. Not a bare number. The unit travels with the value
-from the config file, through the UI form, into the bridge, and is stripped to
-SI exactly once on the way into the physics.
+The unit travels with the value from the config file, through the UI form, into the bridge, and is stripped to SI on the way into the physics.
 
-Dimensionless quantities use `"."`. Unused alternates (the "one or the other"
-fields) use `null` for the value and keep their unit:
+Dimensionless quantities use `"."`. Unused alternates (the "one or the other" fields) use `null` for the value and keep their unit:
 `"tank_internal_length": [null, "m"]`. Model selectors and type strings
 (`"model"`, `"liquid_oxidizer_type"`) are plain strings, not pairs.
 
@@ -205,15 +195,40 @@ no unit string can tell them apart — "m" is "m". So the distinction lives on
 asks for it rather than inferring from the unit. Conversions are identical;
 only the default display unit differs.
 
-`distance` covers `target_apogee`, `launch_site_altitude`,
-`launch_site_altitude_asl`, `main_parachute_deployment_altitude_agl` and the
-computed apogee/altitude outputs. Everything else is `length`.
+For INPUTS the split comes from `FieldSpec.category`: `distance` covers
+`target_apogee`, both launch-site altitudes and the main-deploy altitude.
+
+For OUTPUTS there's no registry entry, so `kv_row.category_of_key()` decides
+from the name: a length-dimensioned key mentioning apogee, altitude,
+downrange, range, distance, asl or agl is a `distance`; anything else
+length-dimensioned is hardware. Matched rather than enumerated because
+unsteady emits dozens of these (`apogee_m_asl`, `apogee_m_agl`,
+`max_altitude_m`, …) and a fixed list would go stale the first time someone
+adds an output.
 
 ### 3.4 Ambiguities, resolved once
 
 - `"g"` is grams. Gravitational acceleration is `"g0"`.
 - `"kn"` is knots. Kilonewtons are `"kN"`. Case matters.
 - `"ms"` is milliseconds. Velocity is `"m/s"`.
+
+### 3.4b Results files are not always SI
+
+`steady_main` rewrites every dict in the export — inputs, parameters, flight
+data, settings — into MRT units when `simulation_settings.output_units` is
+`"MRT"`. So an MRT run's file holds feet, inches and psi, and a 45000 ft
+target apogee is stored as the number `45000`.
+
+Anything reading a results file therefore needs two systems, not one: the one
+the numbers are IN and the one to show them in.
+`kv_row.native_system_of(results)` gives the first (only `"MRT"` triggers the
+rewrite; `"IMP"` falls through and stays SI), and `ResultsPage.native_system`
+carries it to every row.
+
+`vc.storage_unit(category, system)` is the file-side lookup and
+`vc.unit_for_system(category, system)` the display-side one. **They differ for
+SI**: a file holds metres, while the SI display shows hardware lengths in
+centimetres. Confusing the two makes a 0.6096 m fuel grain read as 0.6096 cm.
 
 ### 3.5 Where the conversion happens
 
@@ -590,6 +605,13 @@ Three tabs: Sim Settings, Oxidizer & Fuel, Rocket Body. The parametric study
 sub-panel lives on Sim Settings and appears when the simulation type is
 `parametric_study`.
 
+It also overrides `_review_result()`, the base class's seam between a finished
+run and the results page. A convergence run that never reached its target
+still *succeeds* — it returns a complete result — so nothing else flags it and
+the results page looks converged until you read the apogee.
+`widgets/apogee_dialog.show_apogee_shortfall()` says so first and offers Back
+to inputs or See results anyway. The run is saved either way.
+
 ### 9.4 `unsteady_page.py`
 
 Seven tabs: Sim settings plus one per control volume.
@@ -710,6 +732,7 @@ entry's version equal to the `VERSION` file.
 | `figure_window.py` | one figure per window, with the matplotlib toolbar |
 | `filter_combo.py` | entry plus a focusless suggestion list; prefix matching |
 | `preflight_dialog.py` | the warnings modal, worst first, Cancel or Run anyway |
+| `apogee_dialog.py` | convergence fell short: back to inputs, or see results |
 | `error_popup.py` | scrollable exception text with Back and Report a bug always visible |
 | `text_prompt.py` | `ask_text(...)`, replaces `simpledialog` |
 | `key_capture.py` | `capture_key(...)` for the shortcut rebind |
@@ -757,8 +780,11 @@ other three are dispatched to whichever page implements `handle_shortcut`.
 7. The worker calls `backend_bridge.run_steady/run_unsteady`, which converts to
    SI, halves diameters and calls into the physics. Its stdout is teed into the
    terminal box.
-8. On success the bridge returns the written path; `_on_run_complete` does
-   `shell._ensure_page(target)`, hands the results over and navigates.
+8. On success the bridge returns the written path. `_on_run_complete` first
+   calls `_review_result()`, the hook that lets a page refuse to navigate —
+   steady uses it to warn about a convergence run that fell short. If that
+   passes, it does `shell._ensure_page(target)`, hands the results over and
+   navigates.
 9. On failure `_on_run_error` opens the error popup, which can prefill the bug
    page with the traceback, terminal output and config.
 
@@ -873,6 +899,10 @@ already SI.
 `set_packed`.
 
 **`_ensure_page`, not `pages.get`.** Pages are built lazily.
+
+**A results file's numbers may not be SI.** Read
+`simulation_settings.output_units` before converting anything out of one, and
+use `vc.storage_unit()` for the source unit rather than `unit_for_system()`.
 
 **A run never writes to a preset.** The bridge always uses a scratch file.
 Auto-save creates a new timestamped preset; it does not overwrite the one you

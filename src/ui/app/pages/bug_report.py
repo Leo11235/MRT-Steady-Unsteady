@@ -135,8 +135,7 @@ class BugReportPage(ctk.CTkFrame):
         ctk.CTkLabel(
             wrap,
             text="Reports go to the MRT Steady-Unsteady maintainer. A copy is "
-                 "also written to user_data/bug_reports/ on this machine, so "
-                 "nothing is lost if the mail doesn't get through.",
+                 "also written to user_data/bug_reports/ on this machine.",
             text_color=theme.TEXT_MUTED,
             font=ctk.CTkFont(size=theme.SIZE_SMALL),
             anchor="w", justify="left", wraplength=740,

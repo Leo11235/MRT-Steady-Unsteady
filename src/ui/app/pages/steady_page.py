@@ -19,6 +19,8 @@ and the SI/MRT/IMP choice belongs to the results page where it's actually read.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import customtkinter as ctk
 
 from src.ui.app import backend_bridge, theme
@@ -70,6 +72,46 @@ class SteadyPage(InputPage):
     def _after_build(self) -> None:
         self._refresh_visibility()
 
+    # ==================================================================
+    # After a run
+    # ==================================================================
+
+    def _review_result(self, result) -> bool:
+        """Warn when a convergence run never reached the target apogee.
+
+        The run succeeded — it produced a complete result — so nothing else in
+        the pipeline flags it, and the results page looks exactly like a
+        converged one until you read the apogee. Only convergence runs can
+        fail this way: a hotfire has no target, and a parametric study flags
+        its failing points individually in the sweep tab.
+        """
+        if self.sim_type_var.get() != SIM_TYPES["fuel_mass_convergence"]:
+            return True
+
+        try:
+            results = backend_bridge.load_run(Path(result))
+        except Exception:                       # noqa: BLE001
+            return True                         # can't tell; don't block
+
+        params = results.get("rocket_parameters") or {}
+        if params.get("target_apogee_reached") is not False:
+            return True
+
+        from src.ui.app.widgets.apogee_dialog import show_apogee_shortfall
+        from src.ui.app.widgets.kv_row import native_system_of
+
+        inputs = results.get("rocket_inputs") or {}
+        return show_apogee_shortfall(
+            self,
+            reached=params.get("reached_apogee"),
+            target=inputs.get("target_apogee"),
+            system=self.system,
+            # The file is in MRT units when the run's output_units said so, so
+            # a 45000 ft target is stored as the number 45000. Reading that as
+            # metres is exactly the bug this argument exists to prevent.
+            native=native_system_of(results),
+        )
+
     def _on_system_changed(self, system: str) -> None:
         """The base class re-presents the plain fields; these two widgets carry
         units of their own and have to be told separately."""
@@ -117,10 +159,7 @@ class SteadyPage(InputPage):
         self.add_section_title(self._parametric_section, "Parametric Study Settings")
         ctk.CTkLabel(
             self._parametric_section,
-            text=("Add one or more variables to sweep; each is given a "
-                  "low/high/step. Parametrized variables are hidden from the "
-                  "other tabs so you can't set them to a single value at the "
-                  "same time."),
+            text=("Add one or more variables to sweep; each is given a low/high/step."),
             anchor="w", justify="left", wraplength=820,
             text_color=theme.TEXT_MUTED,
             font=ctk.CTkFont(size=theme.SIZE_SMALL),
@@ -149,7 +188,7 @@ class SteadyPage(InputPage):
         # Deliberately not packed; _refresh_visibility owns it.
         ctk.CTkLabel(
             self._hotfire_section,
-            text=("Fill in EITHER 'Initial port diameter' OR 'Fuel mass' — the "
+            text=("Fill in EITHER 'Initial port diameter' OR 'Fuel mass.' The "
                   "solver derives the other. Only used for hotfires."),
             anchor="w", justify="left", wraplength=820,
             text_color=theme.TEXT_MUTED,

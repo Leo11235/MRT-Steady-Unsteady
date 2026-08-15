@@ -641,6 +641,25 @@ def unit_for_system(category: str, system: str = "SI") -> str:
     return UNIT_SYSTEMS.get(system, {}).get(category, SI_UNITS[category])
 
 
+def storage_unit(category: str, system: str = "SI") -> str:
+    """The unit a results FILE stores this category in, for a given system.
+
+    Not the same as unit_for_system(), which is a DISPLAY preference. An SI
+    results file holds SI base units — metres, pascals — while the SI display
+    system shows hardware lengths in centimetres. Confusing the two makes a
+    0.6096 m fuel grain read as 0.6096 cm.
+
+    Only "MRT" makes the backend rewrite a file away from SI (see
+    steady_main.convert_*_SI_to_MRT), and it rewrites into exactly the units
+    the MRT display table names, so that case can share the table.
+    """
+    if category not in SI_UNITS:
+        raise ValueError(f"Unknown category: {category!r}")
+    if system == "SI":
+        return SI_UNITS[category]
+    return unit_for_system(category, system)
+
+
 def to_system(value: Optional[float], category: str, system: str = "SI") -> Optional[float]:
     """Convert an SI value into whatever unit `system` displays that category in."""
     return from_SI(value, unit_for_system(category, system))

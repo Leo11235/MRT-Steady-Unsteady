@@ -1,7 +1,6 @@
 UI BUG CHECKLIST
 last updated Aug. 2026
 
-GENERAL
 - Work through this checklist before cutting a release to cover scenarios automated backend tests cannot cover.
 - The configs in tests/ui_configs/ exist to drive failure paths; each specifies what it should do at the top.
 - Launch command: 
@@ -9,13 +8,14 @@ GENERAL
     python -m src.ui.main
 - Build command: 
     build_tools\build.bat
+- Run all the files in user_data\simulation_configs\ui_configs. Expected output is written in simulation description block. 
 
 UNITS
 - Enter 32 in a length field set to mm, switch to in, switch back to mm. It reads 32, not 31.9999. Switch a dozen more times; still 32.
 - Every field's unit dropdown opens on the SI unit by default (or whatever Settings -> Default output units is set to), not on a random one.
 - Angle fields default to deg, never rad, in all three unit systems.
-- Load ui_04_steady_unknown_unit.jsonc -> readable error naming the unit, not a KeyError traceback.
 - Set launch angle to 6 deg, run unsteady, check the trajectory. A near-vertical flight means the deg->rad conversion is being applied twice.
+- In SI, all short inputs that expect short lengths should be in cm. In MRT/IMP, should be in inches. 
 
 INPUT FORM
 - Open a fresh Unsteady page. CV2 valve starts with the right number of fields for its model: instant 0, linear 1, sigmoid 2. Switch models and the fields appear and disappear in the right places, keeping form order.
@@ -24,14 +24,6 @@ INPUT FORM
 - Rocket Body tab renders its placeholder rather than an empty tab.
 - Parametric study: "+ Add parameter" stays glued directly under the last card, never stranded at the bottom of the panel. Add four, delete the middle two, confirm it's still glued.
 - The sweepable-variable dropdown lists exactly the 7 valid ones.
-- Load ui_01 / ui_05 (missing field) -> validator popup names the field, the right tab highlights it, and no unrelated field rings. Three CVs have a "drag coefficient" field, so check only the intended one lights up.
-- Load ui_02 / ui_06 (both alternates filled) -> both-filled error. Clear one, Run works. Clear the other instead, Run still works.
-- Load ui_03 (neither filled) -> required error. Type 0 into fuel_mass and the error clears; 0 counts as filled.
-
-PREFLIGHT
-- Load ui_07 -> modal lists one advisory and one warning, no criticals. Cancel returns to the form with every input intact. Run anyway finishes.
-- Load ui_08 -> modal lists two criticals, sorted above anything else. Run anyway proceeds, then fails with a readable error popup.
-- Preflight never fires on a clean config.
 
 RUNNING
 - Loading bar appears only after the first terminal line, not instantly.

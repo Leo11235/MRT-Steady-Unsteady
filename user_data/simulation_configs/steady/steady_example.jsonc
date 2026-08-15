@@ -2,7 +2,7 @@
     "metadata": {
         "simulation_type": "steady", // can be "steady", "unsteady", "steady_test", "unsteady_test"
         "simulation_name": "", // str, optional; blank falls back to a timestamp
-        "simulation_description": "", // a brief description of the simulation, eg what is being tried for the rocket if it is a regular config or what is being tested+expected output if it is a test config
+        "simulation_description": "An example of a steady fuel mass convergence simulation.", // a brief description of the simulation, eg what is being tried for the rocket if it is a regular config or what is being tested+expected output if it is a test config
         "expected_output": "", // test configs only; "success"/"error: errortype"/etc
         "warnings": true, // true or false; whether to include warnings in the final report
         "save_to_pdf": true, // whether to save all output plots to a pdf file
