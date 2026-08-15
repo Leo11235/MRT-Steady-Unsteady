@@ -648,3 +648,35 @@ def print_summary(console: Console, contexts: list[TestContext]) -> None:
 
     console.print()
     console.print(table)
+
+
+# =============================================================================
+# Reports
+# =============================================================================
+#
+# The console output above is for watching a run. This is for reading one
+# afterwards, and for handing to someone else.
+#
+# The rendering lives in tests/report_builder.py and tests/report_renderers.py
+# rather than here, because it's a few hundred lines of analysis and formatting
+# that has nothing to do with deciding pass or fail. This is the entry point.
+
+def write_reports(contexts, out_dir=None, *, stamp: str = "") -> dict:
+    """Write html / md / json reports for a finished batch.
+
+    Returns {"html": Path, "md": Path, "json": Path}.
+
+      html   for a person. Print it (Ctrl+P) to get a PDF with one page per
+             failure. Not a real PDF because reportlab isn't a dependency and
+             a browser's print engine does the job.
+      md     for handing to an assistant, and a fine fallback for a person.
+             Markdown rather than JSON: fewer tokens for the same content and
+             the structure survives.
+      json   for machines. Run-over-run diffing, CI, that sort of thing.
+    """
+    from pathlib import Path as _Path
+    from tests.report_renderers import write_reports as _write
+
+    if out_dir is None:
+        out_dir = _Path(__file__).resolve().parent / "reports"
+    return _write(contexts, out_dir, stamp=stamp)

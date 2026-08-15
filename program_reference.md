@@ -833,6 +833,45 @@ cancels one), `TestContext`, `classify_exception`, and rich console output.
 Configs live in `tests/steady_configs/` and `tests/unsteady_configs/` and use
 `output_units: "SI"` so checks can compare against fixed numbers.
 
+### 12.1b Reports
+
+Every run writes three files to `tests/reports/` (gitignored) unless you pass
+`reports=False`:
+
+| file | for | why |
+|---|---|---|
+| `report_<stamp>.html` | a person | print stylesheet, one page per failure. Ctrl+P, Save as PDF |
+| `report_<stamp>.md` | an assistant | fewer tokens than JSON for the same content, and the structure survives |
+| `report_<stamp>.json` | machines | run-over-run diffing, CI |
+
+All three come from one `Report` object, so they can't disagree.
+`backend_tests_helpers.write_reports()` is the entry point; the analysis lives
+in `tests/report_builder.py` and the formatting in `tests/report_renderers.py`.
+
+HTML rather than a real PDF because reportlab isn't a dependency and a
+browser's print engine honours the page breaks perfectly well.
+
+Both readable formats lead with the environment, then **failure clusters**,
+then the full pass/fail list, then a section per failure. Clustering is the
+part that saves time: a dozen failures usually come from three causes, and
+saying so up front stops you debugging the same bug four times.
+
+Per failure, in the order you'd want to read it: failed checks, check values
+with a percent error, the exception, the config diff **from the numbered
+baseline in the same directory**, the config **as the physics received it**
+(SI, radii not diameters), key outputs, convergence trace, phases, warnings,
+non-finite scan, terminal output, and the full config last.
+
+The physics view is the one to look at first. Nearly every real bug this
+project has had was a conversion mistake, and they're obvious the moment
+"as written" sits beside "as converted" — a launch angle that reads
+`[6, 'deg'] -> 0.10472` is right, and `-> 0.001827` is the double-conversion
+bug.
+
+The analysis is recomputed from each `TestContext` rather than being produced
+by the checks, so adding a diagnostic never touches the code that decides pass
+or fail.
+
 ### 12.2 UI tests
 
 Not automated. `tests/ui_configs/` holds nine configs that each drive one

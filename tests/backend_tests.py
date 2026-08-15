@@ -23,6 +23,7 @@ from src.backend.unsteady.engine.phase_runner import run_unsteady
 from tests.backend_tests_helpers import (
     cleanup_output, discover_configs, execute_test, make_console,
     print_failure_detail, print_section, print_summary, print_test_result,
+    write_reports,
 )
 
 
@@ -33,7 +34,8 @@ TEST_OUTPUTS_DIR = _TESTS_DIR / "test_outputs"
 
 
 def run_backend_tests(all_steady_tests=True, all_unsteady_tests=True,
-                      only=None, keep_results=False, timeout=100):
+                      only=None, keep_results=False, timeout=100,
+                      reports=True):
     """
     Run the backend test suite and print the results
 
@@ -41,6 +43,9 @@ def run_backend_tests(all_steady_tests=True, all_unsteady_tests=True,
     only: none for everything, or a string / list of strings
     keep_results: false deletes each test's output once its checks have run, leaving test_outputs empty
     timeout: per-test wall-clock budget in seconds, can be none for no timeout
+    reports: write tests/reports/report_<stamp>.{html,md,json} at the end.
+             The html prints to a PDF with one page per failure; the md is the
+             one to hand to an assistant. Set false to skip.
 
     returns the list of TestContext objects, so a caller can inspect results beyond what gets printed
     """
@@ -61,6 +66,22 @@ def run_backend_tests(all_steady_tests=True, all_unsteady_tests=True,
             print_failure_detail(console, ctx)
 
     print_summary(console, contexts)
+
+    if reports:
+        try:
+            written = write_reports(contexts)
+            console.print()
+            console.print("[bold]Reports[/bold]")
+            for label, path in written.items():
+                console.print(f"  {label:5s} {path}")
+            console.print("[dim]  open the .html and print to PDF; "
+                          "hand the .md to an assistant[/dim]")
+        except Exception as exc:                # noqa: BLE001
+            # A reporting failure must never mask the test results, which are
+            # already on screen at this point.
+            console.print(f"\n[yellow]Could not write reports: "
+                          f"{type(exc).__name__}: {exc}[/yellow]")
+
     return contexts
 
 

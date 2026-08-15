@@ -478,8 +478,7 @@ class BugReportPage(ctk.CTkFrame):
                      if self._saved_path else "")
             self._set_state(
                 "success",
-                f"Server accepted the report ({server_message}). If nothing "
-                f"reaches the inbox, it was filtered on their end.{saved}")
+                "Report sent!")
         except urllib.error.HTTPError as exc:
             self._set_state(
                 "error_send",

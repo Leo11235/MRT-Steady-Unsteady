@@ -4,7 +4,7 @@ __pycache__/
 
 # individual user settings & configs
 user_data/ui_settings.json
-#user_data/simulation_configs
+user_data/simulation_configs
 user_data/simulation_results
 
 # everything the build produces lives in build_tools/
@@ -15,5 +15,8 @@ build_tools/output/
 
 # scratch output from the backend test suite
 tests/test_outputs/
+# generated test reports
+tests/reports/
 
+# my own notes
 to do.txt
