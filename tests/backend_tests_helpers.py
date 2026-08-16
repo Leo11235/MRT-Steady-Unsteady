@@ -328,6 +328,29 @@ def check_value_within(ctx: TestContext, spec: dict) -> tuple[bool, str]:
     return (not problems), "; ".join(problems) or "all within tolerance"
 
 
+def check_value_equals(ctx: TestContext, spec: dict) -> tuple[bool, str]:
+    """
+    {"path.to.value": expected} <-- exact match
+
+    For booleans and strings, where value_within makes no sense. Compares with
+    == rather than `is`, so JSON true/false and Python True/False agree, but
+    guards the bool/number case: in Python False == 0 is true, and a test
+    asserting a flag is false shouldn't silently accept a zero.
+    """
+    problems = []
+    for dotted, expected in spec.items():
+        found, value = _resolve(ctx.result, dotted)
+        if not found:
+            problems.append(f"{dotted} absent")
+        elif isinstance(expected, bool) != isinstance(value, bool):
+            problems.append(f"{dotted} is {type(value).__name__} "
+                            f"({value!r}), wanted {type(expected).__name__} "
+                            f"{expected!r}")
+        elif value != expected:
+            problems.append(f"{dotted}={value!r}, wanted {expected!r}")
+    return (not problems), "; ".join(problems) or "all equal"
+
+
 def check_value_between(ctx: TestContext, spec: dict) -> tuple[bool, str]:
     """
     {"path.to.value": [low, high]} <-- inclusive band
@@ -476,6 +499,7 @@ CHECKS: dict[str, Callable[..., tuple[bool, str]]] = {
     "files_exist":      check_files_exist,
     "json_path_exists": check_json_path_exists,
     "value_within":     check_value_within,
+    "value_equals":     check_value_equals,
     "value_between":    check_value_between,
     "list_length":      check_list_length,
     "warnings_equal":   check_warnings_equal,

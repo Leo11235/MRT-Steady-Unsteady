@@ -107,7 +107,7 @@ def initialize_state_vector_using_tank_length(rocket_inputs, v_l, v_v, m_o_tot_0
     Uses tank length to initialize the state vector.
     """
     # unpack rocket length
-    L_T = rocket_inputs["tank_internal_length_m"]
+    L_T = rocket_inputs["tank_internal_length"]
     
     # do the lin alg stuff
     A = numpy.array([

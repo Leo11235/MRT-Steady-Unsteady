@@ -41,6 +41,7 @@ def runCEA(OF_ratio: float,
     try:
         cea = CEA_Obj(oxName=oxidizer_name, fuelName=fuel_name)
     except Exception as e:
+        print(f"NASA-CEA initialization failed: {e}")
         return {"error": f"Invalid propellant name or CEA initialization failed: {e}"}
 
 
@@ -62,6 +63,7 @@ def runCEA(OF_ratio: float,
         cstar = cstar_ft * 0.3048
 
     except Exception as e:
+        print(f"NASA-CEA calculation failed: {e}")
         return {"error": f"CEA calculation failed: {e}"}
 
     return (chamber_temp, molar_weight, heat_ratio, cstar)

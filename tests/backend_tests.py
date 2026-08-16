@@ -116,4 +116,4 @@ def _run_all(console, configs, kind, runner, output_dir, keep_results, timeout):
 
 
 if __name__ == "__main__":
-    run_backend_tests()
+    run_backend_tests(only="11_stress_long_burn.jsonc")

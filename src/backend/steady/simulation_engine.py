@@ -38,8 +38,8 @@ def simulate_fuel_mass_convergence(rocket_inputs, rocket_parameters, simulation_
             print(f'    LOOP {i} - FINAL APOGEE: {round(rocket_parameters["reached_apogee"], 1)} meters ({round(abs(rocket_parameters["reached_apogee"] - rocket_inputs["target_apogee"]), 5)} meters off from target)')
             return (rocket_parameters, flight_dict)
         else: 
-            # check if rocket failed to reach apogee even with lowest allowed internal fuel radius
-            if rocket_parameters["initial_internal_fuel_radius"] == smallest_radius: # AND not reached apogee, but that possibility has already been filtered out
+            # if the rocket did not get high enough AND has the smallest allowed fuel inner radius, it cannot succeed
+            if rocket_parameters["initial_internal_fuel_radius"] <= smallest_radius and rocket_parameters["reached_apogee"] < rocket_inputs["target_apogee"]: 
                 # if the code makes it to here, the rocket cannot reach the target apogee
                 rocket_parameters["target_apogee_reached"] = False
                 print(f"    ROCKET CANNOT REACH APOGEE (final apogee reached: {rocket_parameters["reached_apogee"]} meters)")

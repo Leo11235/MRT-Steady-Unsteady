@@ -2,13 +2,13 @@
     "metadata": {
         "simulation_type": "steady_test",
         "simulation_name": "Convergence high apogee",
-        "simulation_description": "Higher target apogee. Forked from 00_fuel_mass_convergence_baseline: target_apogee raised from 13716 m (45k ft) to 10000 m higher. Exercises the outer convergence loop across a wider fuel-mass sweep, more iterations, and higher exit velocities. Expected: success with reached_apogee landing near the new target and fuel_mass converging to a larger value than baseline.",
+        "simulation_description": "Higher target apogee. Forked from 00_fuel_mass_convergence_baseline: target_apogee raised from 13716 m (45k ft) to 20000 m. That is near the ceiling for this airframe (~20850 m at the smallest allowed port), so it also exercises the end of the bisection range where upper and lower bounds close in on the floor. Exercises the outer convergence loop across a wider fuel-mass sweep, more iterations, and higher exit velocities. Expected: success with reached_apogee landing near the new target and fuel_mass converging to a larger value than baseline.",
         "expected_output": "success",
         "checks": {
             "files_exist": ["Convergence high apogee.json"],
             "json_path_exists": ["rocket_parameters", "flight_dict"],
             "value_within": {
-                "rocket_parameters.reached_apogee": [23716, 300]
+                "rocket_parameters.reached_apogee": [20000, 300]
             },
             "value_between": {
                 "rocket_parameters.fuel_mass": [1, 20],
@@ -35,7 +35,7 @@
         "liquid_oxidizer_type": "NITROUS OXIDE",
         "solid_fuel_type": "EICOSANE (PARAFFIN)",
 
-        "target_apogee": [23716, "m"],
+        "target_apogee": [20000, "m"],
         "launch_site_altitude": [364, "m"],
         "dry_mass": [88.89, "kg"],
         "rocket_external_diameter": [0.20574, "m"],

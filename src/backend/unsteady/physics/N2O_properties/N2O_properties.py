@@ -132,8 +132,7 @@ def _check_temperature_range(T: float) -> None:
     T_MAX_N2O = 309.52
     if not (T_MIN_N2O <= T <= T_MAX_N2O):
         raise ValueError(
-            f"N2O saturated-property lookup valid only for "
-            f"{T_MIN_N2O:.2f} K <= T <= {T_MAX_N2O:.2f} K.")
+            f"N2O saturated-property lookup valid only for {T_MIN_N2O:.2f} K <= T <= {T_MAX_N2O:.2f} K. Input value: {T} K. ")
         
 
 def _p_sat(T):

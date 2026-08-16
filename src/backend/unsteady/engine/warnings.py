@@ -1,7 +1,7 @@
 """
 Warnings look for an log validity/runtime information. They do not affect the program while it is running, but rather get returned to the user afterward. They can be global of phase/CV specific. 
     - Advisory (of note, not necessarily bad)
-    - Warning (potential problems with the input rcket config)
+    - Warning (potential problems with the input rocket config)
     - Critical (cause the simulation to fail or to be severely unphysical)
     
     - Debug (more about the simulation engine than physics)
@@ -9,12 +9,33 @@ Warnings look for an log validity/runtime information. They do not affect the pr
 
 import math
 
-# input range checks
-# checks whether a whole bunch of rocket input values are within the model's validity range
+# input range & sanity checks
+# checks whether a whole bunch of rocket input values are valid and within the model's validity range
 # !!! this function is used directly by the frontend. Do not change the inputs, and only add to warning_dict if it would be reasonable for the user to get a popup warning them about that input. 
 def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = None): 
     if warning_dict is None: 
         warning_dict={}
+    
+    ###### check for mutually exclusive inputs
+    # labelled as critical since it is ambiguous which input the user wants, thus potentially producing unpredictable results
+    # tank_ullage_fraction <==> tank_internal_length
+    # chamber_fuel_mass <==> chamber_fuel_internal_radius
+    
+    _PAIRS = (
+        ("tank_ullage_fraction", "tank_internal_length",
+         "Tank ullage fraction and tank internal length both given. Each one determines the other, so supplying both over-constrains the tank."),
+        ("chamber_fuel_mass", "chamber_fuel_internal_radius",
+         "Chamber fuel mass and fuel internal diameter both given. Each one determines the other, so supplying both over-constrains the grain."))
+    
+    for first, second, explanation in _PAIRS:
+        if rocket_inputs.get(first) is not None and rocket_inputs.get(second) is not None:
+            warning_dict[f"init_both__{first}__and__{second}"] = {
+                "severity": "critical",
+                "message": f"{explanation} Clear one of the two.",
+                first: rocket_inputs[first],
+                second: rocket_inputs[second],
+            }
+    
     
     ###### fuel grain
     L_f = rocket_inputs["chamber_fuel_length"]
@@ -52,6 +73,16 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
             "message": f"Inner fuel radius ({r_f}{" m" if r_f is not None else ""}) either impossible to calculate or is larger than outer fuel radius ({R_f} m)", 
             "inner_radius": r_f, 
             "outer_radius": R_f
+        }
+        
+    ##### check if fuel grain radius is larger than rocket external radius
+    R_r = rocket_inputs["rocket_outer_radius"]
+    if R_f > R_r:
+        warning_dict["init_fuel_outer_radius_greater_than_rocket_outer_radius"] = {
+            "severity": "critical", 
+            "message": f"Outer fuel radius ({R_f} m) is larger than rocket outer radius ({R_r} m)", 
+            "fuel_outer_radius": R_f, 
+            "rocket_outer_radius": R_r
         }
     
     ##### tank ullage

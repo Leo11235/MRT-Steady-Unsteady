@@ -8,6 +8,14 @@ The N2O flow through the injector is multiplied by this fraction
 
 import numpy as np
 
+
+###################### instant valve opening model
+def valve_instant(t: float, state_vector: dict, rocket_inputs: dict, live: dict, constants: dict):
+    """
+    instantaneous valve opening model, fully open from t = 0.
+    """
+    return valve_linear_ramp(t, state_vector, {**rocket_inputs, "valve_time_constant": 0.0}, live, constants)
+
 ###################### linear ramp valve opening model
 def valve_linear_ramp(t: float, state_vector: dict, rocket_inputs: dict, live: dict, constants: dict):
     """

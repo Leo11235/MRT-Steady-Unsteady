@@ -1,7 +1,7 @@
 import re, json
 from pathlib import Path
 from math import pi
-from src.common.variable_conversions import to_SI
+from src.common.variable_conversions import to_SI, pair_to_SI
 
 _STEADY_DIR = Path(__file__).resolve().parent
 _STATIC_DATA_DIR = _STEADY_DIR / "static_data"
@@ -36,7 +36,7 @@ def load_steady_config(input_file_path):
         if "diameter" in key:
             p1, p2 = key.split("diameter")
             newkey = f"{p1}radius{p2}"
-            newval = diameter_to_radius(newval)
+            newval = _diameter_to_radius(newval)
         else:
             newkey = key
         # add newkey, newval to dict
@@ -138,14 +138,18 @@ def validate_simulation_inputs(rocket_inputs, simulation_settings):
             raise ValueError(f"Hotfire requires exactly one of: {alternatives}, got both")
 
         if rocket_inputs.get("fuel_mass") is None:
-            rocket_inputs["fuel_mass"] = calculate_fuel_mass(rocket_inputs)
+            rocket_inputs["fuel_mass"] = _calculate_fuel_mass(rocket_inputs)
         else:
             rocket_inputs["initial_internal_fuel_radius"] = \
-                calculate_initial_radius(rocket_inputs)
+                _calculate_initial_radius(rocket_inputs)
+    
+    # parametric: sweep definition has to describe a real range
+    if sim_type == "parametric_study":
+        _validate_parametric_settings(simulation_settings)
 
 
 # helpers
-def calculate_initial_radius(rocket_inputs):
+def _calculate_initial_radius(rocket_inputs):
     Lf = rocket_inputs["fuel_length"]
     Re = rocket_inputs["fuel_external_radius"]
     p = rocket_inputs["fuel_grain_density"]
@@ -153,14 +157,48 @@ def calculate_initial_radius(rocket_inputs):
     # Mf = π L (Re² − Ri²) p  →  Ri = sqrt(Re² − Mf / (π L p))
     return (Re**2 - Mf / (pi * Lf * p)) ** 0.5
 
-def calculate_fuel_mass(rocket_inputs):
+def _calculate_fuel_mass(rocket_inputs):
     Lf = rocket_inputs["fuel_length"]
     Ri0 = rocket_inputs["initial_internal_fuel_radius"]
     Re = rocket_inputs["fuel_external_radius"]
     p = rocket_inputs["fuel_grain_density"]
     return pi * Lf * (Re**2 - Ri0**2) * p
 
-def diameter_to_radius(var):
+def _diameter_to_radius(var):
     if var is None:
         return None
     return var/2
+
+def _validate_parametric_settings(simulation_settings):
+    """
+    check that every swept variable defines a range the solver can walk
+    """
+    settings = simulation_settings.get("parametric_study_settings")
+    if not isinstance(settings, dict) or not settings:
+        raise ValueError("Parametric study requires a 'parametric_study_settings' block with at least one variable to sweep")
+
+    for var_name, bounds in settings.items():
+        if not isinstance(bounds, dict):
+            raise ValueError(f"Parametric variable '{var_name}' must be a block with low_end, high_end and step_size")
+
+        for key in ("low_end", "high_end", "step_size"):
+            if key not in bounds:
+                raise ValueError(f"Parametric variable '{var_name}' is missing '{key}'")
+
+        try:
+            low = pair_to_SI(bounds["low_end"])
+            high = pair_to_SI(bounds["high_end"])
+            step = pair_to_SI(bounds["step_size"])
+        except (ValueError, KeyError, TypeError) as e:
+            raise ValueError(f"Parametric variable '{var_name}' has an unreadable bound: {e}") from e
+
+        if None in (low, high, step):
+            raise ValueError(f"Parametric variable '{var_name}' has an empty bound")
+        
+        if step <= 0:
+            raise ValueError(
+                f"Parametric variable '{var_name}' has step_size {step}; it must be greater than zero")
+            
+        if low > high:
+            raise ValueError(
+                f"Parametric variable '{var_name}' has low_end {low} above high_end {high}")

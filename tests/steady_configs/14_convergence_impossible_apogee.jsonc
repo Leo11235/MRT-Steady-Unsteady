@@ -2,8 +2,20 @@
     "metadata": {
         "simulation_type": "steady_test",
         "simulation_name": "Convergence impossible apogee",
-        "simulation_description": "Physically unreachable target. Forked from 00_fuel_mass_convergence_baseline: target_apogee raised to 100 km (space) while keeping the ~89 kg dry mass, small motor, and paraffin/N2O propellant. Even fully consuming the biggest port that fits in the grain, this rocket cannot reach that altitude. The convergence loop must detect it hit its bounds and error cleanly rather than spin forever. Expected: physics_error (the loop reports it cannot converge inside the allowed fuel-mass range).",
-        "expected_output": "physics_error"
+        "simulation_description": "Physically unreachable target. Forked from 00_fuel_mass_convergence_baseline: target_apogee raised to 100 km (space) while keeping the ~89 kg dry mass, small motor, and paraffin/N2O propellant. Even fully consuming the biggest port that fits in the grain, this rocket cannot reach that altitude. The convergence loop must detect it hit its bounds and error cleanly rather than spin forever. Expected: success with target_apogee_reached=false. Failing to reach a target is a result, not an error: the run produces a complete, valid flight and flags the shortfall.",
+        "expected_output": "success",
+        "checks": {
+            "json_path_exists": ["rocket_parameters", "flight_dict"],
+            // The point of the test: the engine detects it cannot get there and
+            // says so, rather than erroring or silently reporting a shortfall.
+            "value_equals": {
+                "rocket_parameters.target_apogee_reached": false
+            },
+            // Whatever it managed is the airframe's ceiling, nowhere near 100 km.
+            "value_between": {
+                "rocket_parameters.reached_apogee": [15000, 25000]
+            }
+        }
     },
 
     "simulation_settings": {
