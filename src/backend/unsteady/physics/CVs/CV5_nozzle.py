@@ -21,24 +21,9 @@ def nozzle_joel_unsteady(t: float, state_vector: dict, rocket_inputs: dict, live
     A_e = np.pi * r_e**2
     A_ratio = A_e / A_t
     
-    # if chamber pressure drops below ambient, no thrust or mass flow can be generated we add a 100 Pa buffer to prevent solver chatter right at the boundary
-    if p_C <= p_amb + 100.0:
-        return {
-            "m_dot_n": 0.0,
-            "F_thrust": 0.0,
-            "p_e": p_amb,
-            "v_e": 0.0,
-            "M_e": 0.0,
-            "flow_regime": "sub_ambient_cutoff",
-            "OF": 7.0,
-            "T_c": rocket_inputs["tank_temperature"],
-            "W_c": 0.029, "gamma": 1.4, "cstar": 1000.0,
-            "dT_dOF": 0.0, "dW_dOF": 0.0, "dT_dp": 0.0, "dW_dp": 0.0,
-        }
-
     m_o = state_vector["m_o"]
     m_f = state_vector["m_f"]
-    
+
     # if the chamber has no gas yet, use realistic fallback parameters 
     if m_f < 1e-4 or m_o < 1e-4:
         OF = 7.0 
@@ -51,11 +36,11 @@ def nozzle_joel_unsteady(t: float, state_vector: dict, rocket_inputs: dict, live
         OF = m_o / m_f
         T_c, W_c, gamma, cstar, dT_dOF, dT_dp, dW_dOF, dW_dp = CEA_interpolation_lookup(OF, p_C)
 
-    # if the chamber pressure hasn't significantly exceeded ambient, there is no meaningful flow or expansion yet.
-    if p_C <= p_amb + 1000.0:
+    # nothing leaves the nozzle unless the chamber is above ambient 
+    if p_C <= p_amb:
         return {
             "m_dot_n": 0.0, "F_thrust": 0.0, "p_e": p_amb,
-            "M_e": 0.0, "v_e": 0.0, "flow_regime": "unstarted",
+            "M_e": 0.0, "v_e": 0.0, "flow_regime": "sub_ambient",
             "OF": OF, "T_c": T_c, "W_c": W_c, "gamma": gamma, "cstar": cstar,
             "dT_dOF": dT_dOF, "dW_dOF": dW_dOF, "dT_dp": dT_dp, "dW_dp": dW_dp
         }
@@ -74,7 +59,7 @@ def nozzle_joel_unsteady(t: float, state_vector: dict, rocket_inputs: dict, live
         M_1 = np.clip(M_1 - f / dF_dM, 0.0001, 0.9999)
 
     # supersonic M2x (Newton-Raphson)
-    M_2x = 3.0 # robust initial guess
+    M_2x = 3.0 # initial guess
     for _ in range(10):
         term_inner = (2.0 / (gamma + 1.0)) * (1.0 + (gamma - 1.0) / 2.0 * M_2x**2)
         F = (1.0 / M_2x) * term_inner**G
@@ -113,21 +98,28 @@ def nozzle_joel_unsteady(t: float, state_vector: dict, rocket_inputs: dict, live
         p_e, M_e = p_2x, M_2x
         flow_regime = "fully_supersonic"
     elif p_2 < p_amb < p_1:
+        # M_e is only M_2 at the far end of this range, where the shock reaches the exit
         p_e, M_e = p_amb, M_2 
         flow_regime = "shock_inside"
     elif p_amb > p_1:
-        p_e, M_e, M_t = p_amb, M_1, M_1 
+        # unchoked: the throat never goes sonic, 
+        # so the area ratio is irrelevant here and the flow has to be metered at the exit instead
+        p_e, M_e, M_t = p_amb, _subsonic_exit_mach(p_C, p_amb, gamma), 0.0
         flow_regime = "fully_subsonic"
     else:
         p_e, M_e = p_amb, 0.0
         flow_regime = "logic_error"
 
     # mass flow and thrust
-    if M_t > 0.0:
+    A_flow, M_flow = (A_t, M_t) if M_t > 0.0 else (A_e, M_e)
+
+    if M_flow > 0.0:
+        term_mdot = (1.0 + ((gamma - 1.0) / 2.0) * M_flow**2) ** (-(gamma + 1.0) / (2.0 * (gamma - 1.0)))
+        m_dot_n = A_flow * p_C * M_flow * np.sqrt((gamma * W_c) / (R_u * T_c)) * term_mdot
+        if flow_regime == "shock_inside":
+            M_e = _shocked_exit_mach(m_dot_n, p_amb, A_e, T_c, W_c, gamma, R_u)
         T_e = T_c / (1.0 + ((gamma - 1.0) / 2.0) * M_e**2)
         v_e = M_e * np.sqrt((gamma * R_u * T_e) / W_c)
-        term_mdot = (1.0 + ((gamma - 1.0) / 2.0) * M_t**2) ** (-(gamma + 1.0) / (2.0 * (gamma - 1.0)))
-        m_dot_n = A_t * p_C * M_t * np.sqrt((gamma * W_c) / (R_u * T_c)) * term_mdot
         F_thrust = (m_dot_n * v_e) + ((p_e - p_amb) * A_e)
     else:
         m_dot_n, v_e, F_thrust = 0.0, 0.0, 0.0
@@ -150,7 +142,7 @@ def nozzle_residual_blowdown(t: float, state_vector: dict, rocket_inputs: dict, 
     p_amb = live.get("p_amb", 101325.0)
     
     # if chamber pressure drops below ambient, force mass flow to 0 to prevent solver chatter
-    if p_C <= p_amb + 100.0:
+    if p_C <= p_amb:
         return {
             "m_dot_n": 0.0,
             "F_thrust": 0.0,
@@ -205,3 +197,26 @@ def nozzle_residual_blowdown(t: float, state_vector: dict, rocket_inputs: dict, 
         "v_e": F_thrust / max(m_dot_n, 1e-9),
         "flow_regime": flow_regime
     }
+
+
+# helpers
+
+# exit mach of a nozze whose throat never reaches mach 1
+# with no sonic throat the area ratio says nothing about the flow. It is set by the rocket's altitude
+# returns 0 at p_C = p_amb, and rises to exactly M_1 at the pressure where the throat chokes
+def _subsonic_exit_mach(p_C, p_amb, gamma):
+    if p_C <= p_amb:
+        return 0.0
+    m_squared = (2.0 / (gamma - 1.0)) * ((p_C / p_amb) ** ((gamma - 1.0) / gamma) - 1.0)
+    return float(min(math.sqrt(max(m_squared, 0.0)), 1.0))
+
+# exit mach with a normal shock somewhere inside the diverging section
+# the shock's location and exit mach depend on p_amb. They run from M1 with the shock at the throat to M2 with it in the exit plane. 
+# 
+def _shocked_exit_mach(m_dot_n, p_amb, A_e, T_c, W_c, gamma, R_u):
+    if m_dot_n <= 0.0 or p_amb <= 0.0:
+        return 0.0
+    R_spec = R_u / W_c
+    K = m_dot_n / (p_amb * A_e * math.sqrt(gamma / (R_spec * T_c)))
+    M_squared = (-1.0 + math.sqrt(1.0 + 2.0 * (gamma - 1.0) * K * K)) / (gamma - 1.0)
+    return float(min(math.sqrt(max(M_squared, 0.0)), 1.0))
