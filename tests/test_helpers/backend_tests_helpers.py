@@ -43,7 +43,6 @@ class TestContext:
     """
     everything known about one test, before and after it runs
     """
-
     config_path: Path
     kind: str # "steady" or "unsteady"
     config: dict = field(default_factory=dict)
@@ -70,8 +69,6 @@ class TestContext:
     # output dir path
     @property
     def output_dir(self) -> Optional[Path]:
-        """Directory the run's artifacts live in.  Paths in 'files_exist' are
-        resolved against this."""
         return self.result_path.parent if self.result_path else None
 
     # what gets deleted on cleanup
@@ -102,11 +99,10 @@ class TestContext:
 
 
 # discovery and loading
-
 def discover_configs(configs_dir: Path, only: Any = None) -> list[Path]:
     """
-    every .jsonc under 'configs_dir', sorted, optionally filtered
-    'only' may be None (everything), a string, or a list of strings
+    every .jsonc under 'configs_dir', sorted, optionally filtered.
+    'only' may be None (everything), a string, or a list of strings. 
     """
     configs_dir = Path(configs_dir)
     if not configs_dir.is_dir():
@@ -131,16 +127,11 @@ def load_test_config(path: Path) -> tuple[dict, dict]:
     return cfg, (metadata or {})
 
 
-# =============================================================================
 # Stdout capture
-# =============================================================================
-
 @contextlib.contextmanager
 def capture_stdout():
     """
     Swallow everything the backend prints and hand it back as a string
-
-    the simulators are chatty (phase banners, convergence iterations); keep it and print only when a test fails
     """
     buffer = io.StringIO()
     with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
@@ -157,6 +148,7 @@ class TestTimeout(Exception):
 def _raise_in_thread(thread_ident: int, exc_type: type) -> bool:
     """
     schedule 'exc_type' to be raised inside the thread with this id
+    
     returns True if exactly one thread was targeted
     """
     affected = ctypes.pythonapi.PyThreadState_SetAsyncExc(
@@ -180,7 +172,7 @@ def run_with_timeout(fn: Callable[[], Any], timeout_s: Optional[float],
     def _worker():
         try:
             box["result"] = fn()
-        except BaseException as exc:      # noqa: BLE001 - we report, not handle
+        except BaseException as exc:
             box["exc"] = exc
 
     thread = threading.Thread(target=_worker, daemon=True)
@@ -664,25 +656,16 @@ def print_summary(console: Console, contexts: list[TestContext]) -> None:
 # that has nothing to do with deciding pass or fail. This is the entry point.
 
 def write_reports(contexts, out_dir=None, *, stamp: str = "") -> dict:
-    """Write html / md / json reports for a finished batch.
-
-    Everything lands in tests/reports/<YYYY-MM-DD---HH-MM-SS>/, one folder per
-    run. Returns {"pdf": Path, "md": Path, "json": Path}.
-
-      pdf    for reading and sending. One page per failure.
-      md     for handing to an assistant, and a fine fallback for a person.
-             Markdown rather than JSON: fewer tokens for the same content and
-             the structure survives.
-      json   for machines. Run-over-run diffing, CI, that sort of thing.
-
-    The PDF needs reportlab. Without it you get report.html instead, which
-    prints to a PDF from any browser.
+    """
+    write html / md / json reports for a finished batch
+    
+    lands in tests/reports/<YYYY-MM-DD---HH-MM-SS>/
+    
+    creates a pdf, md, and json version
     """
     from pathlib import Path as _Path
     from tests.test_helpers.report_renderers import write_reports as _write
 
     if out_dir is None:
-        # tests/test_helpers/ -> tests/reports/. Reports are output, not
-        # helper code, so they stay beside the configs rather than in here.
         out_dir = _Path(__file__).resolve().parents[1] / "reports"
     return _write(contexts, out_dir, stamp=stamp)

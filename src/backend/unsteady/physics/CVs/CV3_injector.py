@@ -36,32 +36,31 @@ def injector_joel_liquid_blowdown(t: float, state_vector: dict, rocket_inputs: d
     # effective pressure drop across the injector/feed system
     delta_p = p_T - feed_pressure_loss - p_C
 
-    # Define a small transition region (e.g., 0.1 bar = 10,000 Pa)
-    # This is small enough to not affect nominal 50-psi operation, 
-    # but large enough to stabilize the solver.
+    # define a small transition region (e.g., 0.1 bar = 10,000 Pa)
+    # this is small enough to not affect nominal 50-psi operation, but large enough to stabilize the solver.
     dp_transition = 10000.0 
 
-    # 1. Nominal region (standard square root)
+    ##### Nominal region (standard square root)
     if delta_p > dp_transition:
         n_dot_ox_ideal = (injector_discharge_coefficient * injector_number_of_holes * injector_hole_area_m2 * np.sqrt(2.0 * delta_p / (W_o * v_l)))
 
-    # 2. Transition region (Quadratic Parabola)
-    # A quadratic function f(x) = ax^2 + bx + c that matches value AND derivative
-    # at the transition point delta_p = dp_transition.
+    ##### transition region
     elif delta_p > 0.0:
-        # Flow at transition point
+        # flow at transition point
         f_trans = (injector_discharge_coefficient * injector_number_of_holes * injector_hole_area_m2 * np.sqrt(2.0 * dp_transition / (W_o * v_l)))
-        # Derivative at transition point: f'(x) = 0.5 * f(x) / x
-        df_trans = 0.5 * f_trans / dp_transition
         
-        # Quadratic coefficients ensuring value and slope continuity
-        a = -0.25 * f_trans / (dp_transition**2)
-        b = df_trans - 2.0 * a * dp_transition
-        c = f_trans - a * dp_transition**2 - b * dp_transition
+        # quadratic through the origin that also meets the sqrt branch in both value and slope at dp_transition
+        # g(0) = 0 (no flow at no pressure drop)
+        # g(dp_t) = f_trans (continuous with the sqrt)
+        # g'(dp_t) = 0.5 * f_trans / dp_t (same slope as the sqrt)
+        # solving those gives the constants below:
+        a = -0.5 * f_trans / (dp_transition**2)
+        b = 1.5 * f_trans / dp_transition
+        c = 0.0
         
         n_dot_ox_ideal = a * delta_p**2 + b * delta_p + c
     
-    # 3. Dead zone
+    ###### dead zone
     else:
         n_dot_ox_ideal = 0.0
 
@@ -99,32 +98,30 @@ def injector_joel_gaseous_blowdown(t: float, state_vector: dict, rocket_inputs: 
     # effective pressure drop across the injector/feed system
     delta_p = p_T - feed_pressure_loss - p_C
 
-    # Define a small transition region (e.g., 0.1 bar = 10,000 Pa)
-    # This is small enough to not affect nominal 50-psi operation, 
-    # but large enough to stabilize the solver.
+    # define a small transition region
     dp_transition = 10000.0 
 
-    # 1. Nominal region (standard square root)
+    ###### nominal region (standard square root)
     if delta_p > dp_transition:
         n_dot_ox_ideal = (injector_discharge_coefficient * injector_number_of_holes * injector_hole_area_m2 * np.sqrt(2.0 * delta_p / (W_o * v_v)))
 
-    # 2. Transition region (Quadratic Parabola)
-    # A quadratic function f(x) = ax^2 + bx + c that matches value AND derivative
-    # at the transition point delta_p = dp_transition.
+    ###### transition region (Quadratic Parabola)
     elif delta_p > 0.0:
-        # Flow at transition point
+        # flow at transition point
         f_trans = (injector_discharge_coefficient * injector_number_of_holes * injector_hole_area_m2 * np.sqrt(2.0 * dp_transition / (W_o * v_v)))
-        # Derivative at transition point: f'(x) = 0.5 * f(x) / x
-        df_trans = 0.5 * f_trans / dp_transition
         
-        # Quadratic coefficients ensuring value and slope continuity
-        a = -0.25 * f_trans / (dp_transition**2)
-        b = df_trans - 2.0 * a * dp_transition
-        c = f_trans - a * dp_transition**2 - b * dp_transition
+        # quadratic through the origin that also meets the sqrt branch in both value and slope at dp_transition
+        # g(0) = 0 (no flow at no pressure drop)
+        # g(dp_t) = f_trans (continuous with the sqrt)
+        # g'(dp_t) = 0.5 * f_trans / dp_t (same slope as the sqrt)
+        # solving those gives the constants below:
+        a = -0.5 * f_trans / (dp_transition**2)
+        b = 1.5 * f_trans / dp_transition
+        c = 0.0
         
         n_dot_ox_ideal = a * delta_p**2 + b * delta_p + c
     
-    # 3. Dead zone
+    ###### dead zone
     else:
         n_dot_ox_ideal = 0.0
 

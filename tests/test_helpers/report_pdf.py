@@ -32,6 +32,11 @@ _CODE_BG = colors.HexColor("#f7f7f7")
 # Monospace blocks are pre-wrapped rather than left to reportlab, which does
 # not break long unbroken tokens and silently runs them off the page.
 _CODE_COLS = 108
+# Lines per code-block row. At 8.5pt leading a row is about 170 points, so it
+# always fits a 700 point frame, and a page break wastes at most one row.
+_CODE_ROW_LINES = 20
+# Cap on a single table cell, for the same reason: a row can't be split.
+_MAX_CELL_CHARS = 3000
 
 
 def _styles() -> dict:
@@ -67,6 +72,21 @@ def _escape(value: Any) -> str:
                       .replace(">", "&gt;"))
 
 
+def _cell_text(value: Any) -> str:
+    """Escaped cell text, capped so one cell can never outgrow a page.
+
+    A table row is atomic to reportlab. If a single assertion message wrapped
+    to taller than the frame, the whole build would fail the way an oversized
+    code block does, and no amount of splitting would save it. Truncating is
+    the only option; the full text is in report.md and report.json anyway.
+    """
+    text = str(value)
+    if len(text) > _MAX_CELL_CHARS:
+        text = (text[:_MAX_CELL_CHARS]
+                + f"  [+{len(text) - _MAX_CELL_CHARS} more chars, see report.md]")
+    return _escape(text)
+
+
 def _table(headers, rows, widths, styles, *, header_colours=None) -> Table:
     """A bordered table whose header repeats across page breaks.
 
@@ -75,7 +95,7 @@ def _table(headers, rows, widths, styles, *, header_colours=None) -> Table:
     """
     data = [[Paragraph(_escape(h), styles["cellhead"]) for h in headers]]
     for row in rows:
-        data.append([Paragraph(_escape(c), styles["cell"]) for c in row])
+        data.append([Paragraph(_cell_text(c), styles["cell"]) for c in row])
 
     table = Table(data, colWidths=widths, repeatRows=1, hAlign="LEFT")
     style = [
@@ -96,8 +116,16 @@ def _table(headers, rows, widths, styles, *, header_colours=None) -> Table:
 def _code_block(text: str, styles) -> Table:
     """A monospace block on a tinted background.
 
-    Wrapped in a single-cell Table because a plain Paragraph can't carry a
-    background, and Preformatted doesn't wrap long lines.
+    Wrapped in a Table because a plain Paragraph can't carry a background, and
+    Preformatted doesn't wrap long lines.
+
+    The lines are split across MANY ROWS rather than sitting in one big cell.
+    reportlab can only break a table between rows: a single cell is atomic, so
+    if it doesn't fit the remaining frame it doesn't fit anywhere, and the
+    build dies with LayoutError instead of flowing onto the next page. A 200
+    line traceback is roughly 1700 points against a 700 point frame, so one
+    cell was never going to survive. Chunking caps each row's height at about
+    a quarter page and lets the block flow across as many pages as it needs.
     """
     wrapped = []
     for line in (text or "").splitlines():
@@ -105,16 +133,28 @@ def _code_block(text: str, styles) -> Table:
                                      subsequent_indent="    ",
                                      replace_whitespace=False,
                                      drop_whitespace=False) or [""])
-    body = Paragraph("<br/>".join(_escape(l) for l in wrapped), styles["code"])
-    table = Table([[body]], colWidths=[_USABLE], hAlign="LEFT")
-    table.setStyle(TableStyle([
+    if not wrapped:
+        wrapped = [""]
+
+    rows = [wrapped[i:i + _CODE_ROW_LINES]
+            for i in range(0, len(wrapped), _CODE_ROW_LINES)]
+    data = [[Paragraph("<br/>".join(_escape(l) for l in chunk), styles["code"])]
+            for chunk in rows]
+
+    table = Table(data, colWidths=[_USABLE], hAlign="LEFT", splitByRow=1)
+    style = [
         ("BACKGROUND", (0, 0), (-1, -1), _CODE_BG),
         ("BOX", (0, 0), (-1, -1), 0.4, _LINE),
         ("LEFTPADDING", (0, 0), (-1, -1), 5),
         ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]))
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        # Breathing room at the two ends only. Padding on every row would open
+        # visible gaps at the chunk seams and give away where they are.
+        ("TOPPADDING", (0, 0), (-1, 0), 4),
+        ("BOTTOMPADDING", (0, len(data) - 1), (-1, len(data) - 1), 4),
+    ]
+    table.setStyle(TableStyle(style))
     return table
 
 

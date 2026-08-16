@@ -470,6 +470,12 @@ def write_reports(contexts, out_dir: Path, *, stamp: str = "") -> dict:
 
     PDF needs reportlab. Without it you get report.html instead, which prints
     to a PDF from any browser, and a note saying so.
+
+    Markdown and JSON are written FIRST, on purpose. They're plain text dumps
+    that can't really fail, whereas the PDF runs a layout engine that can, and
+    when it did the exception propagated out of here and took the other two
+    formats with it: one bad flowable and you lost the entire run's results.
+    Cheap formats first, then the fragile one inside its own guard.
     """
     from datetime import datetime
 
@@ -480,6 +486,12 @@ def write_reports(contexts, out_dir: Path, *, stamp: str = "") -> dict:
 
     written: dict = {}
 
+    for name, text in (("report.md", render_markdown(report)),
+                       ("report.json", render_json(report))):
+        path = folder / name
+        path.write_text(text, encoding="utf-8")
+        written[path.suffix.lstrip(".")] = path
+
     try:
         from tests.test_helpers.report_pdf import render_pdf
         written["pdf"] = render_pdf(report, folder / "report.pdf")
@@ -489,11 +501,15 @@ def write_reports(contexts, out_dir: Path, *, stamp: str = "") -> dict:
         written["html"] = path
         written["_note"] = ("reportlab not installed, wrote HTML instead. "
                             "pip install reportlab for a PDF.")
-
-    for name, text in (("report.md", render_markdown(report)),
-                       ("report.json", render_json(report))):
-        path = folder / name
-        path.write_text(text, encoding="utf-8")
-        written[path.suffix.lstrip(".")] = path
+    except Exception as exc:                                    # noqa: BLE001
+        # Layout failures, font problems, a corrupt output path. None of them
+        # are worth losing the report over, so fall back to HTML and say what
+        # broke instead of raising.
+        path = folder / "report.html"
+        path.write_text(render_html(report), encoding="utf-8")
+        written["html"] = path
+        written["_note"] = (f"PDF failed ({type(exc).__name__}: {exc}). "
+                            f"Wrote HTML instead; report.md and report.json "
+                            f"are complete.")
 
     return written
