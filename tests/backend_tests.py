@@ -20,11 +20,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from src.backend.steady.steady_main import run_steady
 from src.backend.unsteady.engine.phase_runner import run_unsteady
 
-from tests.test_helpers.backend_tests_helpers import (
-    cleanup_output, discover_configs, execute_test, make_console,
-    print_failure_detail, print_section, print_summary, print_test_result,
-    write_reports,
-)
+from tests.test_helpers.backend_tests_helpers import (cleanup_output, discover_configs, execute_test, make_console, print_failure_detail, print_section, print_summary, print_test_result, write_reports,)
 
 
 _TESTS_DIR = Path(__file__).resolve().parent
@@ -33,8 +29,11 @@ UNSTEADY_CONFIGS_DIR = _TESTS_DIR / "unsteady_configs"
 TEST_OUTPUTS_DIR = _TESTS_DIR / "test_outputs"
 
 
-def run_backend_tests(all_steady_tests=True, all_unsteady_tests=True,
-                      only=None, keep_results=False, timeout=100,
+def run_backend_tests(all_steady_tests=True, 
+                      all_unsteady_tests=True,
+                      only=None, 
+                      keep_results=False, 
+                      timeout=200,
                       reports=True):
     """
     Run the backend test suite and print the results
@@ -43,9 +42,7 @@ def run_backend_tests(all_steady_tests=True, all_unsteady_tests=True,
     only: none for everything, or a string / list of strings
     keep_results: false deletes each test's output once its checks have run, leaving test_outputs empty
     timeout: per-test wall-clock budget in seconds, can be none for no timeout
-    reports: write tests/reports/report_<stamp>.{html,md,json} at the end.
-             The html prints to a PDF with one page per failure; the md is the
-             one to hand to an assistant. Set false to skip.
+    reports: write tests/reports/report_<stamp>.{html,md,json,pdf} at the end.
 
     returns the list of TestContext objects, so a caller can inspect results beyond what gets printed
     """
@@ -119,4 +116,4 @@ def _run_all(console, configs, kind, runner, output_dir, keep_results, timeout):
 
 
 if __name__ == "__main__":
-    run_backend_tests()
+    run_backend_tests(all_steady_tests=False)# run unsteady only

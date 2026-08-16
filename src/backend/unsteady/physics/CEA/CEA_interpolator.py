@@ -3,124 +3,158 @@ Bicubic interpolator for the CEA lookup table in src/backend/unsteady/static_dat
 Uses use a Bivariate Bicubic Spline via SciPy's RectBivariateSpline to quickly access CEA values while avoiding step function derivatives
 """
 
+from __future__ import annotations
 import json
-import sys
 from pathlib import Path
+from typing import NamedTuple
 import numpy as np
-import pandas as pd
 from scipy.interpolate import RectBivariateSpline
 
-# ensure project root is in the system path for clean internal imports
-project_root = Path(__file__).resolve().parents[5]
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
-from src.backend.unsteady.physics.CEA.NASA_CEA import runCEA
-
-# static database path
-_STATIC   = Path(__file__).resolve().parents[2] / "static_data"
+_STATIC = Path(__file__).resolve().parents[2] / "static_data"
 _CEA_FILE = _STATIC / "CEA_table.json"
 
 
-
-# load lookup table
-# uses the flat precomputed JSON records to reconstruct the 2D grid axes; fits independent continuous bivariate bicubic splines for each property
-def _initialize_spline_tables():
-    with open(_CEA_FILE, "r") as f:
-        table = json.load(f)
-    df = pd.DataFrame(table["records"])
-
-    # get sorted grid axes from the data strings
-    of_axis = np.sort(df["OF"].unique())
-    p_axis = np.sort(df["p_C"].unique())
-    # reshape colums into matrices for scipy
-    # OF -> rows, p_C -> columns
-    T_grid = df.pivot(index="OF", columns="p_C", values="T_C").to_numpy()
-    W_grid = df.pivot(index="OF", columns="p_C", values="W_C").to_numpy()
-    gamma_grid = df.pivot(index="OF", columns="p_C", values="gamma").to_numpy()
-    cstar_grid = df.pivot(index="OF", columns="p_C", values="cstar").to_numpy()
-    
-    # create & return spline structure
-    return {
-        "T_c": RectBivariateSpline(of_axis, p_axis, T_grid, kx=3, ky=3), # kx, ky = 3 forces a cubic fit, should create smooth derivatives
-        "W_c": RectBivariateSpline(of_axis, p_axis, W_grid, kx=3, ky=3),
-        "gamma": RectBivariateSpline(of_axis, p_axis, gamma_grid, kx=3, ky=3),
-        "cstar": RectBivariateSpline(of_axis, p_axis, cstar_grid, kx=3, ky=3),
-        "bounds": {
-            "OF_min": of_axis.min(), "OF_max": of_axis.max(),
-            "p_min": p_axis.min(), "p_max": p_axis.max()
-        }
-    }
-_SPLINES = _initialize_spline_tables()
-
-
-def CEA_interpolation_lookup(OF: float, p_C: float, splines=_SPLINES):
+class ChamberProperties(NamedTuple):
     """
-    Return interpolated combustion properties at (OF, p_C) and their partial derivatives
-    
-    Parameters
-    OF: float → O/F mass ratio
-    p_C: float → Chamber pressure [Pa]
-    
-    Returns tuple object: 
-    (
-    T_C → Chamber temperature
-    W_C → Molar mass
-    gamma → Heat capacity ratio
-    cstar → Ideal characteristic velocity
-    dT_dOF → Chamber temperature derivative w.r.t. OF
-    dT_dp → Chamber temperature derivative w.r.t. p_C
-    dW_dOF → Molar mass derivative w.r.t. OF
-    dW_dp → Molar mass derivative w.r.t. p_C
-    )
-    
-    All input & output units in SI
+    combustion products at one operating point, and how they vary
+    """
+    # do not change this order
+    T_c: float # chamber temperature, K
+    W_c: float # mean molar mass, kg/mol
+    gamma: float # ratio of specific heats
+    cstar: float # characteristic velocity, m/s
+    dT_dOF: float # K per unit O/F
+    dT_dp: float # K per Pa
+    dW_dOF: float # (kg/mol) per unit O/F
+    dW_dp: float # (kg/mol) per Pa
+
+# load CEA table
+def _load_table() -> dict:
+    if not _CEA_FILE.exists():
+        raise FileNotFoundError(f"CEA table not found at {_CEA_FILE}")
+
+    with open(_CEA_FILE, "r", encoding="utf-8") as f:
+        table = json.load(f)
+
+    if "OF_axis" not in table:
+        raise ValueError(f"{_CEA_FILE} is likely in the old flat-records format")
+
+    of_axis = np.asarray(table["OF_axis"], dtype=float)
+    p_axis = np.asarray(table["p_C_axis"], dtype=float)
+
+    splines = {
+        name: RectBivariateSpline(of_axis, p_axis, np.asarray(table[name], dtype=float), kx=3, ky=3) for name in ("T_C", "W_C", "gamma", "cstar")
+    }
+    splines["bounds"] = {
+        "OF_min": float(of_axis.min()), "OF_max": float(of_axis.max()),
+        "p_min": float(p_axis.min()), "p_max": float(p_axis.max()),
+    }
+    splines["meta"] = table.get("meta", {})
+    return splines
+
+
+_SPLINES = _load_table()
+_BOUNDS = _SPLINES["bounds"]
+
+
+# envelope log
+# module level because the RHS is called from deep inside scipy with no route to pass state back out
+_EXCURSIONS: dict[str, dict] = {}
+
+def reset_envelope_log() -> None:
+    """
+    Cleans up CEA env between sims
+    """
+    _EXCURSIONS.clear()
+
+
+def envelope_excursions() -> dict:
+    """
+    What this run pushed past the table edge, biggest overshoot first
+    Keyed "<axis> <direction>"
+    Empty dict means every query landed inside the table
+    """
+    return {k: dict(v) for k, v in sorted(_EXCURSIONS.items(), key=lambda kv: -kv[1]["overshoot"])}
+
+
+def _record(axis: str, requested: float, clamped: float, limit: str) -> None:
+    key = f"{axis} {limit}"
+    entry = _EXCURSIONS.get(key)
+    overshoot = abs(requested - clamped)
+
+    if entry is None:
+        _EXCURSIONS[key] = {
+            "axis": axis, "limit": limit, "table_edge": clamped,
+            "worst_requested": requested, "overshoot": overshoot, "count": 1,
+        }
+        return
+
+    entry["count"] += 1
+    if overshoot > entry["overshoot"]:
+        entry["worst_requested"] = requested
+        entry["overshoot"] = overshoot
+
+
+
+
+
+
+
+def CEA_interpolation_lookup(OF: float, p_C: float) -> ChamberProperties:
+    """
+    Chamber properties and their local derivatives
+
+    OF: mixture ratio
+    p_C: chamber pressure in Pa
+
+    Queries outside the table are clamped to the nearest edge and recorded
     """
     
     OF = float(OF)
     p_C = float(p_C)
-    b = splines["bounds"]
-    
-    # run CEA if this entry is out of bounds
-    if (OF < b["OF_min"] or OF > b["OF_max"] or p_C < b["p_min"] or p_C > b["p_max"]):
-        T, W, gamma, cstar = runCEA(OF, p_C)
-        # compute local derivatives
-        d_OF, d_p = 0.05, 1000.0
-        T_op, W_op, *_ = runCEA(OF + d_OF, p_C)
-        T_om, W_om, *_ = runCEA(max(OF - d_OF, 0.5), p_C)
-        T_pp, W_pp, *_ = runCEA(OF, p_C + d_p)
-        T_pm, W_pm, *_ = runCEA(OF, max(p_C - d_p, 1.0))
-        # return all
-        return (float(T), float(W), 
-                float(gamma), float(cstar), 
-                float((T_op - T_om) / (2 * d_OF)), 
-                float((T_pp - T_pm) / (2 * d_p)), 
-                float((W_op - W_om) / (2 * d_OF)), 
-                float((W_pp - W_pm) / (2 * d_p)))
-    
-    # if the entry is within table bounds, interpolate
-    T_c   = splines["T_c"](OF, p_C)[0][0]
-    W_c   = splines["W_c"](OF, p_C)[0][0]
-    gamma = splines["gamma"](OF, p_C)[0][0]
-    cstar = splines["cstar"](OF, p_C)[0][0]
-    # get local derivatives (dx=1, dy=0 means first derivative with respect to X (O/F), etc)
-    dT_dOF = splines["T_c"](OF, p_C, dx=1, dy=0)[0][0]
-    dW_dOF = splines["W_c"](OF, p_C, dx=1, dy=0)[0][0]
-    dT_dp  = splines["T_c"](OF, p_C, dx=0, dy=1)[0][0]
-    dW_dp  = splines["W_c"](OF, p_C, dx=0, dy=1)[0][0]
-    
-    return (T_c, W_c, gamma, cstar, dT_dOF, dT_dp, dW_dOF, dW_dp)
+
+    OF_q = min(max(OF, _BOUNDS["OF_min"]), _BOUNDS["OF_max"])
+    p_q = min(max(p_C, _BOUNDS["p_min"]), _BOUNDS["p_max"])
+
+    if OF_q != OF:
+        _record("O/F", OF, OF_q, "below table minimum" if OF < OF_q else "above table maximum")
+    if p_q != p_C:
+        _record("chamber pressure", p_C, p_q, "below table minimum" if p_C < p_q else "above table maximum")
+
+    T_c = _SPLINES["T_C"](OF_q, p_q)[0][0]
+    W_c = _SPLINES["W_C"](OF_q, p_q)[0][0]
+    gamma = _SPLINES["gamma"](OF_q, p_q)[0][0]
+    cstar = _SPLINES["cstar"](OF_q, p_q)[0][0]
+
+    # derives a fitted surface
+    # dx=1 differentiates with respect to the first axis (O/F), dy=1 with respect to the second (p_C)
+    # at a clamped point these are the edge derivatives
+    dT_dOF = _SPLINES["T_C"](OF_q, p_q, dx=1, dy=0)[0][0]
+    dT_dp = _SPLINES["T_C"](OF_q, p_q, dx=0, dy=1)[0][0]
+    dW_dOF = _SPLINES["W_C"](OF_q, p_q, dx=1, dy=0)[0][0]
+    dW_dp = _SPLINES["W_C"](OF_q, p_q, dx=0, dy=1)[0][0]
+
+    return ChamberProperties(
+        float(T_c), float(W_c), float(gamma), float(cstar),
+        float(dT_dOF), float(dT_dp), float(dW_dOF), float(dW_dp))
 
 
+def get_CEA_table_bounds() -> tuple[float, float, float, float]:
+    """
+    (OF_min, OF_max, p_C_min, p_C_max), pressures in Pa.
 
-# helper function for warnings.py, retrieves the min/max OF/p_C input range. 
-def get_CEA_table_bounds():
-    with open(_CEA_FILE) as f:
-        table = json.load(f)
+    Used by warnings.py to bound its input checks against the same table the physics reads
+    """
+    return (_BOUNDS["OF_min"], _BOUNDS["OF_max"], _BOUNDS["p_min"], _BOUNDS["p_max"])
 
-    OF_MIN = table["OF_min"]
-    OF_MAX = table["OF_max"]
-    p_C_MIN = table["p_C_min"]
-    p_C_MAX = table["p_C_max"]
-    
-    return (OF_MIN, OF_MAX, p_C_MIN, p_C_MAX)
+
+def table_info() -> dict:
+    """
+    Returns identifying table info. 
+    """
+    return {
+        **dict(_SPLINES["meta"]),
+        "OF_min": _BOUNDS["OF_min"], "OF_max": _BOUNDS["OF_max"],
+        "p_C_min": _BOUNDS["p_min"], "p_C_max": _BOUNDS["p_max"],
+        "path": str(_CEA_FILE),
+    }

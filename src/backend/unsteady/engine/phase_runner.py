@@ -18,7 +18,7 @@ from src.backend.unsteady.engine.variable_initialization import initialize_state
 from src.backend.unsteady.engine.transitions import TRANSITION_REGISTRY
 
 from src.backend.unsteady.physics.N2O_properties.N2O_properties import get_N2O_property
-from src.backend.unsteady.physics.CEA.CEA_interpolator import CEA_interpolation_lookup
+from src.backend.unsteady.physics.CEA.CEA_interpolator import CEA_interpolation_lookup, envelope_excursions, reset_envelope_log
 from src.backend.unsteady.physics.atmosphere.atmosphere import get_atmosphere_properties
 from src.backend.unsteady.engine.warnings import (WARNINGS_REGISTRY, warn_initialization_limits, finalize_warnings)
 
@@ -119,6 +119,9 @@ def run_unsteady(rocket_inputs_filename: str, # should end in .jsonc
     # initialize History object & log the starting state
     history = History(rocket_inputs)
     history.log_timestep(t=0.0, state_dict=initial_state_dict, derived_dict=live_0, phase="phase_1")
+    
+    # NASA-CEA: the envelope log is module-level state in the interpolator, so it has to be cleared per run or excursions accumulate across simulations
+    reset_envelope_log()
     
     # initialize warnings dictionary & log starting state
     warnings_dict = {}
@@ -258,7 +261,18 @@ def run_unsteady(rocket_inputs_filename: str, # should end in .jsonc
     elif active_phase == "terminal_success_landed":
         print("\n[SUCCESS] Rocket landed")
 
-    print("\nSimulation complete. Exporting...")
+    # traverse the log of CEA clamped calls, and add them to the warning dict 
+    for key, excursion in envelope_excursions().items():
+        warnings_dict[f"cea_envelope_{key.replace(' ', '_').replace('/', '')}"] = {
+            "severity": "warning",
+            "message": (f"{excursion['axis']} went {excursion['limit']} {excursion['count']} times; worst was {excursion['worst_requested']:.4g} against a table edge of {excursion['table_edge']:.4g}. Values were held at the edge for those steps."),
+            "axis": excursion["axis"],
+            "worst_requested": excursion["worst_requested"],
+            "table_edge": excursion["table_edge"],
+            "occurrences": excursion["count"],
+        }
     finalized_warnings = finalize_warnings(warnings_dict) if rocket_inputs_metadata.get("warnings", True) else None # keep warnings by default if not specified
     
+    
+    print("\nSimulation complete. Exporting...")
     return history.export(rocket_inputs, finalized_warnings, rocket_inputs_metadata, output_dir_filepath)
