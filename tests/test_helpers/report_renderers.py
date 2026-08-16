@@ -1,23 +1,10 @@
-"""
-The three output formats. All read the same Report, so they can't disagree.
-
-Ordering is deliberate and identical in both readable formats: environment,
-summary, clusters, then one section per failure. Passing tests get a line in
-the summary and nothing else — the report exists for the failures.
-
-Within a failure the order is what you'd actually want to read: what went
-wrong, the numbers, what makes this config different from the baseline, what
-the physics received, then the log, then the full config last. Leading with a
-sixty-row config table buries the answer.
-"""
-
 from __future__ import annotations
 
 import html
 import json
 from pathlib import Path
 
-from tests import report_builder as rb
+from tests.test_helpers import report_builder as rb
 
 
 # =============================================================================
@@ -467,21 +454,46 @@ def _json_test(ctx) -> dict:
 # =============================================================================
 
 def write_reports(contexts, out_dir: Path, *, stamp: str = "") -> dict:
-    """Build all three files. Returns {format: path}."""
+    """Build one report folder. Returns {format: path}.
+
+    Everything for a run lands in its own timestamped directory:
+
+        reports/2026-08-15---21-56-47/
+            report.pdf      for reading and sending
+            report.md       for handing to an assistant
+            report.json     for machines
+
+    A folder per run rather than a suffix per file, so a run's outputs stay
+    together and old ones are one delete away. The extra dashes in the
+    timestamp separate the date from the time, which is otherwise a wall of
+    digits.
+
+    PDF needs reportlab. Without it you get report.html instead, which prints
+    to a PDF from any browser, and a note saying so.
+    """
     from datetime import datetime
 
     report = rb.build_report(contexts)
-    stamp = stamp or datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    stamp = stamp or datetime.now().strftime("%Y-%m-%d---%H-%M-%S")
+    folder = Path(out_dir) / stamp
+    folder.mkdir(parents=True, exist_ok=True)
 
-    written = {}
-    for suffix, text in (
-        ("html", render_html(report)),
-        ("md", render_markdown(report)),
-        ("json", render_json(report)),
-    ):
-        path = out_dir / f"report_{stamp}.{suffix}"
+    written: dict = {}
+
+    try:
+        from tests.test_helpers.report_pdf import render_pdf
+        written["pdf"] = render_pdf(report, folder / "report.pdf")
+    except ImportError:
+        path = folder / "report.html"
+        path.write_text(render_html(report), encoding="utf-8")
+        written["html"] = path
+        written["_note"] = ("reportlab not installed, wrote HTML instead. "
+                            "pip install reportlab for a PDF.")
+
+    for name, text in (("report.md", render_markdown(report)),
+                       ("report.json", render_json(report))):
+        path = folder / name
         path.write_text(text, encoding="utf-8")
-        written[suffix] = path
+        written[path.suffix.lstrip(".")] = path
+
     return written

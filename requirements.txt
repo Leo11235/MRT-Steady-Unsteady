@@ -16,6 +16,7 @@ rocketcea>=1.2,<2
 
 # used by the backend test suite
 rich>=13.7,<15
+reportlab>=4.0,<5
 
 # used by UI
 customtkinter>=5.2,<6

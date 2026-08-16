@@ -1,35 +1,3 @@
-"""
-Turns a batch of finished TestContexts into readable reports.
-
-Three files, one builder, so they can never disagree:
-
-    report_<stamp>.html   for a human. Print stylesheet, one page per failure.
-                          Open it, Ctrl+P, Save as PDF.
-    report_<stamp>.md     for handing to an assistant. Same content, ordered
-                          summary-first and trimmed to what's diagnostic.
-    report_<stamp>.json   for machines. Everything, unformatted. Ignore it
-                          until you want run-over-run diffing or CI.
-
-HTML rather than a real PDF because reportlab isn't a dependency and adding one
-for this isn't worth it. A browser's print-to-PDF honours the page breaks below
-and produces exactly the layout you'd get from a PDF library.
-
-WHY MARKDOWN AND NOT JSON FOR THE ASSISTANT COPY
-------------------------------------------------
-JSON costs more tokens for the same content and flattens the structure a reader
-uses to navigate. Headings, tables and fenced code survive better. Markdown is
-also readable by a person, so it doubles as the fallback when opening HTML is
-inconvenient.
-
-ANALYSIS LIVES HERE, NOT IN THE CHECKS
---------------------------------------
-The check functions in backend_tests_helpers return (name, passed, message) and
-that's fine for the console. Everything richer — actual vs expected with a
-percent error, the config diff against baseline, the convergence trace — is
-recomputed here from the context. That keeps the checks simple and means adding
-a new diagnostic never touches the code that decides pass or fail.
-"""
-
 from __future__ import annotations
 
 import html
@@ -45,7 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# tests/test_helpers/report_builder.py -> repo root
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 # Keep the assistant copy inside a single-shot context window. Failures-only
 # with these caps lands well under it for a dozen failures.
@@ -309,7 +278,7 @@ def config_diff(ctx) -> list[dict]:
     if baseline_path is None:
         return []
     try:
-        from tests.backend_tests_helpers import load_test_config
+        from tests.test_helpers.backend_tests_helpers import load_test_config
         base_config, _meta = load_test_config(baseline_path)
     except Exception:                           # noqa: BLE001
         return []

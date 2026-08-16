@@ -1,25 +1,3 @@
-"""
-WHAT A TEST IS
---------------
-A test is one .jsonc config under tests/steady_configs or tests/unsteady_configs
-Its metadata block carries two extra keys the simulator ignores but this module reads:
-
-    "expected_output": "success"   // what should happen
-    "checks": {                    // optional; assertions on the output
-        "files_exist": ["graphs.pdf"],
-        "value_between": {"performance.overall.apogee_m_agl": [4000, 9000]}
-    }
-
-a test passes when the run's actual outcome matches 'expected_output' AND every entry in 'checks' passes
-a config with no 'checks' block is a pure smoke test: it only has to reach the expected outcome.
-
-ADDING A CHECK
---------------
-write a function taking (ctx, argument) and returning (passed, message), then add it to the CHECKS dict at the bottom
-It's immediately usable from any config. For assertions too specific or too fiddly to express as data, write a
-'check_<something>(ctx)' function here and reference it from the config as {"custom_check": "check_<something>"}
-"""
-
 from __future__ import annotations
 
 import contextlib
@@ -688,19 +666,23 @@ def print_summary(console: Console, contexts: list[TestContext]) -> None:
 def write_reports(contexts, out_dir=None, *, stamp: str = "") -> dict:
     """Write html / md / json reports for a finished batch.
 
-    Returns {"html": Path, "md": Path, "json": Path}.
+    Everything lands in tests/reports/<YYYY-MM-DD---HH-MM-SS>/, one folder per
+    run. Returns {"pdf": Path, "md": Path, "json": Path}.
 
-      html   for a person. Print it (Ctrl+P) to get a PDF with one page per
-             failure. Not a real PDF because reportlab isn't a dependency and
-             a browser's print engine does the job.
+      pdf    for reading and sending. One page per failure.
       md     for handing to an assistant, and a fine fallback for a person.
              Markdown rather than JSON: fewer tokens for the same content and
              the structure survives.
       json   for machines. Run-over-run diffing, CI, that sort of thing.
+
+    The PDF needs reportlab. Without it you get report.html instead, which
+    prints to a PDF from any browser.
     """
     from pathlib import Path as _Path
-    from tests.report_renderers import write_reports as _write
+    from tests.test_helpers.report_renderers import write_reports as _write
 
     if out_dir is None:
-        out_dir = _Path(__file__).resolve().parent / "reports"
+        # tests/test_helpers/ -> tests/reports/. Reports are output, not
+        # helper code, so they stay beside the configs rather than in here.
+        out_dir = _Path(__file__).resolve().parents[1] / "reports"
     return _write(contexts, out_dir, stamp=stamp)

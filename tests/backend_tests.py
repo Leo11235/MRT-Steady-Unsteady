@@ -20,7 +20,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from src.backend.steady.steady_main import run_steady
 from src.backend.unsteady.engine.phase_runner import run_unsteady
 
-from tests.backend_tests_helpers import (
+from tests.test_helpers.backend_tests_helpers import (
     cleanup_output, discover_configs, execute_test, make_console,
     print_failure_detail, print_section, print_summary, print_test_result,
     write_reports,
@@ -70,12 +70,15 @@ def run_backend_tests(all_steady_tests=True, all_unsteady_tests=True,
     if reports:
         try:
             written = write_reports(contexts)
+            note = written.pop("_note", "")
             console.print()
             console.print("[bold]Reports[/bold]")
             for label, path in written.items():
                 console.print(f"  {label:5s} {path}")
-            console.print("[dim]  open the .html and print to PDF; "
-                          "hand the .md to an assistant[/dim]")
+            if note:
+                console.print(f"[yellow]  {note}[/yellow]")
+            console.print("[dim]  the .pdf is for reading, "
+                          "the .md is for handing to an assistant[/dim]")
         except Exception as exc:                # noqa: BLE001
             # A reporting failure must never mask the test results, which are
             # already on screen at this point.
@@ -116,4 +119,4 @@ def _run_all(console, configs, kind, runner, output_dir, keep_results, timeout):
 
 
 if __name__ == "__main__":
-    run_backend_tests(only="11_stress_long_burn.jsonc")
+    run_backend_tests()

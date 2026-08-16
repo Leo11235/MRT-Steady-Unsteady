@@ -122,11 +122,16 @@ user_data/
 ├── simulation_configs/{steady,unsteady}/
 └── simulation_results/{steady,unsteady}/
 tests/
-├── backend_tests.py                   # run_backend_tests()
-├── backend_tests_helpers.py           # the check registry
-├── steady_configs/  unsteady_configs/ # automated
-├── ui_configs/                        # manual, drives UI failure paths
-└── UI bug checklist.txt
+├── backend_tests.py                   # run_backend_tests(), the entry point
+├── steady_configs/  unsteady_configs/ # one .jsonc per automated test
+├── reports/                           # generated, one folder per run
+├── test_outputs/                      # generated scratch, cleared per run
+└── test_helpers/                      # everything that isn't a test or output
+    ├── backend_tests_helpers.py       # TestContext, the check registry
+    ├── report_builder.py              # analysis
+    ├── report_renderers.py            # markdown + json + html fallback
+    ├── report_pdf.py                  # the PDF
+    └── UI bug checklist.txt
 VERSION                                # one line, e.g. "1.5"
 ```
 
@@ -830,26 +835,49 @@ A test config is an ordinary config with a `metadata.expected_output` and a
 Supporting machinery: `run_with_timeout` (kills a hung run the same way the UI
 cancels one), `TestContext`, `classify_exception`, and rich console output.
 
+Only `backend_tests.py` and the config directories live at the top of `tests/`.
+Everything else is in `test_helpers/`, so the folder shows you what to run and
+what to edit without the machinery in the way. Generated output (`reports/`,
+`test_outputs/`) stays at the top level too, since it isn't helper code.
+
 Configs live in `tests/steady_configs/` and `tests/unsteady_configs/` and use
 `output_units: "SI"` so checks can compare against fixed numbers.
 
 ### 12.1b Reports
 
-Every run writes three files to `tests/reports/` (gitignored) unless you pass
+Every run writes a folder to `tests/reports/` (gitignored) unless you pass
 `reports=False`:
 
-| file | for | why |
-|---|---|---|
-| `report_<stamp>.html` | a person | print stylesheet, one page per failure. Ctrl+P, Save as PDF |
-| `report_<stamp>.md` | an assistant | fewer tokens than JSON for the same content, and the structure survives |
-| `report_<stamp>.json` | machines | run-over-run diffing, CI |
+```
+tests/reports/2026-08-15---21-56-47/
+├── report.pdf     for reading and sending
+├── report.md      for handing to an assistant
+└── report.json    for machines
+```
+
+One folder per run, so a run's outputs stay together and old ones are one
+delete away. The doubled dashes split the date from the time, which is
+otherwise a wall of digits.
 
 All three come from one `Report` object, so they can't disagree.
-`backend_tests_helpers.write_reports()` is the entry point; the analysis lives
-in `tests/report_builder.py` and the formatting in `tests/report_renderers.py`.
+`test_helpers/backend_tests_helpers.write_reports()` is the entry point; the
+analysis lives in `test_helpers/report_builder.py`, the Markdown and JSON in
+`test_helpers/report_renderers.py`, and the PDF in
+`test_helpers/report_pdf.py`.
 
-HTML rather than a real PDF because reportlab isn't a dependency and a
-browser's print engine honours the page breaks perfectly well.
+The PDF is built with reportlab's platypus rather than converted from HTML.
+The HTML-to-PDF converters that avoid a browser need system libraries that are
+painful on Windows or render tables unpredictably, and shipping HTML alone put
+a manual print step between running the tests and having something to send.
+reportlab is a pure-Python wheel and gives exact control over page breaks,
+which is the one thing this layout needs. It's an optional import: without it
+you get `report.html` and a note saying so.
+
+The PDF is built twice. reportlab's page callbacks fire at page *start*, before
+any flowable on that page is placed, so a footer tracking the current section
+live would lag by a page and name the previous failure on every failure's first
+page. The first pass collects a page-to-section map and is discarded; the
+second uses it.
 
 Both readable formats lead with the environment, then **failure clusters**,
 then the full pass/fail list, then a section per failure. Clustering is the

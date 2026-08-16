@@ -4,7 +4,7 @@ Parses .jsonc inputs, merges them with default settings, and validates them
 
 import json5, os
 from pathlib import Path
-from src.common.variable_conversions import to_SI
+from src.common.variable_conversions import to_SI, pair_to_SI
 
 # load .jsonc inputs file
 # takes a filepath str, returns a dict
@@ -54,16 +54,16 @@ def _validate_and_unpack_CVs(user_rocket_inputs: dict, schema: dict):
         
         for item in required_keys:
             if isinstance(item, list):
-                # handle 'one or the other' inputs
-                found = False
-                for sub_key in item:
-                    if _is_filled(cv_user_data.get(sub_key)):
-                        unpacked_args[sub_key] = cv_user_data[sub_key]
-                        found = True
-                        break # stop looking early if we find a valid option
-                
-                if not found:
+                # handle 'one or the other' inputs (only one should ever be present)
+                filled = [k for k in item if _is_filled(cv_user_data.get(k))]
+                if not filled:
                     raise KeyError(f"Missing input for {cv_name} ({selected_model} model). Exactly one of these must have a value: {item}")
+                if len(filled) > 1:
+                    raise ValueError(
+                        f"{cv_name} ({selected_model} model) has {filled} both filled in. Exactly one of {item} may have a value: each determines the other, so there is no way to tell which one you meant. Clear one of them.")
+
+                unpacked_args[filled[0]] = cv_user_data[filled[0]]
+                
             else:
                 # handle standard single required keys
                 if not _is_filled(cv_user_data.get(item)):
@@ -74,8 +74,27 @@ def _validate_and_unpack_CVs(user_rocket_inputs: dict, schema: dict):
             "model_name": selected_model,
             "kwargs": unpacked_args
         }
-        
+    
+    _validate_geometry(validated_cv_args)
+    
     return validated_cv_args
+
+# reject rocket geometry that cannot physically exist
+def _validate_geometry(validated_cv_args: dict) -> None:
+    def value_of(cv_name: str, key: str):
+        pair = validated_cv_args.get(cv_name, {}).get("kwargs", {}).get(key)
+        return None if pair is None else pair_to_SI(pair)
+
+    fuel_outer = value_of("CV4_chamber", "chamber_fuel_external_diameter")
+    fuel_inner = value_of("CV4_chamber", "chamber_fuel_internal_diameter")
+    rocket_outer = value_of("CV6_trajectory", "rocket_outer_diameter")
+
+    if fuel_inner is not None and fuel_outer is not None and fuel_inner >= fuel_outer:
+        raise ValueError(f"CV4_chamber fuel internal diameter ({fuel_inner} m) is at or above its external diameter ({fuel_outer} m). The port cannot be as wide as the grain.")
+
+    if fuel_outer is not None and rocket_outer is not None and fuel_outer > rocket_outer:
+        raise ValueError(f"CV4_chamber fuel external diameter ({fuel_outer} m) exceeds the rocket outer diameter ({rocket_outer} m). The grain does not fit inside the airframe.")
+
 
 # true if a config entry actually carries a value
 def _is_filled(value) -> bool:
