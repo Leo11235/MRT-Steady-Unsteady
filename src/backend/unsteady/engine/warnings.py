@@ -9,9 +9,9 @@ Warnings look for an log validity/runtime information. They do not affect the pr
 
 import math
 
-########################################
-# timestep warnings (run every timestep)
-########################################
+###############################
+# init warnings
+###############################
 # input range & sanity checks
 # checks whether a whole bunch of rocket input values are valid and within the model's validity range
 # !!! this function is used directly by the frontend. Do not change the inputs, and only add to warning_dict if it would be reasonable for the user to get a popup warning them about that input. 
@@ -124,7 +124,11 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
                     "message": f"Regression rate exponent ({n}) is unusually high. Recommended range is [0.3, 0.9]. ",
                     "chamber_regression_rate_exponent": n
                 }
-    
+
+
+########################################
+# timestep warnings (run every timestep)
+########################################
 
 # checks whether CEA is a good predictor for a given (OF, p_C) input to CEA
 def warn_CEA_outside_tested_range(t: float, warning_dict: dict, state_vector: dict, live: dict, rocket_inputs: dict):
@@ -171,7 +175,7 @@ def warn_CEA_outside_tested_range(t: float, warning_dict: dict, state_vector: di
         }
     
 # checks whether a given (OF, p_C) CEA input is outside the table bounds in static_data/CEA_table.json
-from src.backend.unsteady.physics.CEA.CEA_interpolator import get_CEA_table_bounds
+from src.backend.unsteady.physics.CEA.CEA_interpolator import get_CEA_table_bounds, envelope_excursions
 OF_MIN, OF_MAX, p_C_MIN, p_C_MAX = get_CEA_table_bounds()
 def warn_CEA_outside_table_bounds(t: float, warning_dict: dict, state_vector: dict, live: dict, rocket_inputs: dict):
     warn_key = "CEA_outside_table_bounds"
@@ -214,6 +218,10 @@ def warn_CEA_outside_table_bounds(t: float, warning_dict: dict, state_vector: di
             "max_p_C": p_C
         }
 
+from src.backend.unsteady.physics.N2O_properties.N2O_properties import N2O_excursions
+# N2O warnings implemented after and differently from CEA warnings. N2O_properties.py directly stores all the instances where we go outside table bounds, and a summary of all these instances is created once (see end of sim warnings section below)
+
+
 ##############################################################################################
 # transition-triggered warning (run only once per phase transition rather than every timestep)
 ##############################################################################################
@@ -233,6 +241,37 @@ def warn_engine_cutoff_thrust_floor(t: float, warning_dict: dict, state_vector: 
     }
 
 
+#########################################
+# end of sim warnings
+#########################################
+
+# CEA lookups that were held at the edge of the precomputed table
+def warn_CEA_envelope_excursions(warning_dict: dict):
+    for key, exc in envelope_excursions().items():
+        warning_dict[f"cea_envelope_{key.replace(' ', '_').replace('/', '')}"] = {
+            "severity": "warning",
+            "message": (f"{exc['axis']} went {exc['limit']} {exc['count']} times; worst was {exc['worst_requested']:.4g} against a table edge of {exc['table_edge']:.4g}. Values were held at the edge for those steps."),
+            "axis": exc["axis"],
+            "worst_requested": exc["worst_requested"],
+            "table_edge": exc["table_edge"],
+            "occurrences": exc["count"],
+        }
+
+# N2O lookups that fell outside the N2O table
+def warn_N2O_envelope_excursions(warning_dict: dict):
+    for key, exc in N2O_excursions().items():
+        if "minimum" in exc["limit"]:
+            note = "Below the N2O triple point no saturated liquid-vapour state exists; the tank had effectively finished blowing down."
+        else:
+            note = "Above the N2O critical point the liquid and vapour phases are not distinct."
+
+        warning_dict[f"n2o_table_{key.replace(' ', '_')}"] = {
+            "severity": "warning",
+            "message": (f"Tank temperature went {exc['limit']} {exc['count']} times; worst was {exc['worst_requested']:.5g} K against a table edge of {exc['table_edge']:.5g} K. Saturated properties were held at the edge for those steps. {note}"),
+            "worst_requested_K": exc["worst_requested"],
+            "table_edge_K": exc["table_edge"],
+            "occurrences": exc["count"],
+        }
 
 
 # tested every timestep

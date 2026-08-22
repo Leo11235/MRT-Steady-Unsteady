@@ -78,11 +78,30 @@ def initialize_N2O_properties_dict(N2O_data_filepath = _N2O_FILE):
     
     return N2O_properties_dict
 
+# initializes the dict when this file is imported
 N2O_properties_dict = initialize_N2O_properties_dict()
+# define min/max N2O ranges. below/above this, the program clamps the temperature to these values & records doing so as a warning to the user
+T_MIN_N2O = N2O_properties_dict["T"][0]
+T_MAX_N2O = N2O_properties_dict["T"][-1]
+
+# returns N2O table bounds
+def get_N2O_table_bounds() -> tuple[float, float]:
+    return (T_MIN_N2O, T_MAX_N2O)
+
+# records all the times the CC temp goes above/below the min/max
+_EXCURSIONS: dict[str, dict] = {}
+# clear excursion log across simulations, necessary when running back to back sims
+def reset_N2O_excursion_log() -> None:
+    _EXCURSIONS.clear()
+
+# records and sorts what the current run asked for outside the table, biggest overshoot first
+def N2O_excursions() -> dict:
+    return {k: dict(v) for k, v in sorted(_EXCURSIONS.items(), key=lambda kv: -kv[1]["overshoot"])}
+
 
 # returns property_name interpolated at tank_temp for any property_name in N2O_properties_dict
 def get_N2O_property(property_name, tank_temp, N2O_properties_dict=N2O_properties_dict):
-    _check_temperature_range(tank_temp)
+    tank_temp = _clamp_temperature(tank_temp)
     
     # some variables have functions rather than relying on the lookup table
     if property_name == 'p':
@@ -102,8 +121,8 @@ def get_N2O_property(property_name, tank_temp, N2O_properties_dict=N2O_propertie
     
     # for given tank_temp, find the two 'neighboring' points
     # eg if tank_temp = 196, low_index = 195 and high_index = 200
-    # _position --> position of item within the list
-    # _value --> value of item within that position
+        # _position --> position of item within the list
+        # _value --> value of item within that position
     bisect_val = bisect.bisect_left(T_list, tank_temp)
     low_index_position = bisect_val-1
     low_index_value = T_list[low_index_position]
@@ -127,13 +146,36 @@ def get_N2O_property(property_name, tank_temp, N2O_properties_dict=N2O_propertie
 
 # HELPERS
 # valid saturation-table range from Appendix A
-def _check_temperature_range(T: float) -> None:
-    T_MIN_N2O = 182.33
-    T_MAX_N2O = 309.52
-    if not (T_MIN_N2O <= T <= T_MAX_N2O):
-        raise ValueError(
-            f"N2O saturated-property lookup valid only for {T_MIN_N2O:.2f} K <= T <= {T_MAX_N2O:.2f} K. Input value: {T} K. ")
-        
+# clamp CC temp to the table edge and log it
+def _clamp_temperature(T: float) -> float:
+    if T < T_MIN_N2O:
+        _record(T, T_MIN_N2O, "below table minimum")
+        return T_MIN_N2O
+    if T > T_MAX_N2O:
+        _record(T, T_MAX_N2O, "above table maximum")
+        return T_MAX_N2O
+    return T
+
+# record a single instance of CC temperature clamping
+def _record(requested: float, clamped: float, limit: str) -> None:
+    entry = _EXCURSIONS.get(limit)
+    overshoot = abs(requested - clamped)
+
+    if entry is None:
+        _EXCURSIONS[limit] = {
+            "limit": limit, 
+            "table_edge": clamped,
+            "worst_requested": requested, 
+            "overshoot": overshoot, 
+            "count": 1,
+        }
+        return
+
+    entry["count"] += 1
+    if overshoot > entry["overshoot"]:
+        entry["worst_requested"] = requested
+        entry["overshoot"] = overshoot
+
 
 def _p_sat(T):
     # from literature

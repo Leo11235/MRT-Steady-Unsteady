@@ -16,35 +16,26 @@ from src.backend.unsteady.engine.config import load_unsteady_config
 from src.backend.unsteady.engine.registry import get_active_functions
 from src.backend.unsteady.engine.variable_initialization import initialize_state_vector, initialize_natural_constants_dict, compute_rocket_variables
 from src.backend.unsteady.engine.transitions import TRANSITION_REGISTRY
+from src.backend.unsteady.engine.warnings import WARNINGS_REGISTRY, warn_initialization_limits, finalize_warnings, warn_on_transition, warn_CEA_envelope_excursions, warn_N2O_envelope_excursions
 
-from src.backend.unsteady.physics.N2O_properties.N2O_properties import get_N2O_property
-from src.backend.unsteady.physics.CEA.CEA_interpolator import CEA_interpolation_lookup, envelope_excursions, reset_envelope_log
+from src.backend.unsteady.physics.N2O_properties.N2O_properties import get_N2O_property, reset_N2O_excursion_log
+from src.backend.unsteady.physics.CEA.CEA_interpolator import CEA_interpolation_lookup, reset_envelope_log
 from src.backend.unsteady.physics.atmosphere.atmosphere import get_atmosphere_properties
-from src.backend.unsteady.engine.warnings import WARNINGS_REGISTRY, warn_initialization_limits, finalize_warnings, warn_on_transition
 
 import src.backend.unsteady.engine.rhs as rhs
 
 
 class SolverStalledError(RuntimeError):
     """
-    Raised by _StallDetector when solve_ivp advances less than `min_dt_s` of sim time across `check_every` consecutive RHS evaluations.  
-    Typically means the operating point is physically unstable (near-zero injector Δp, chuffing regime) and LSODA has shrunk its step below any meaningful size.
+    Raised by _StallDetector when solve_ivp advances unsustainably slowly. Happens when LSODA has shrunk its step below any meaningful size.
     """
 
 class _StallDetector:
     """
-    Wraps a scipy RHS callable, counts evaluations, and raises
-    SolverStalledError when sim time isn't advancing.
-
-    Checks every `check_every` evals whether `t` moved forward by at
-    least `min_dt_s` since the previous check.  If not: bail.
-
-    Overhead is trivial — just an int increment on every eval plus a
-    subtraction once every `check_every`.
+    Wraps a scipy RHS callable, counts evaluations, and raises SolverStalledError when sim time isn't advancing. Checks every 'check_every' evals whether 't' moved forward by at least 'min_dt_s' since the previous check.
     """
 
-    def __init__(self, wrapped, check_every: int = 1000,
-                 min_dt_s: float = 1e-3) -> None:
+    def __init__(self, wrapped, check_every: int = 1000, min_dt_s: float = 1e-3) -> None:
         self._wrapped = wrapped
         self._check_every = check_every
         self._min_dt_s = min_dt_s
@@ -59,15 +50,9 @@ class _StallDetector:
                 dt = t - self._t_last_check
                 if dt < self._min_dt_s:
                     raise SolverStalledError(
-                        f"Solver stalled at t = {t:.6f} s: sim time advanced "
-                        f"only {dt*1000:.3f} ms across {self._check_every} "
-                        f"evaluations. This usually means the operating point "
-                        f"is physically unstable (chamber pressure very close "
-                        f"to tank pressure, so injector authority is near "
-                        f"zero). Try reducing the regression rate coefficient "
-                        f"or increasing the feed pressure loss."
+                        f"Solver stalled at t = {t:.6f} s: sim time advanced only {dt*1000:.3f} ms across {self._check_every} evaluations. This usually means the operating point is physically unstable (chamber pressure very close to tank pressure, so injector authority is near zero). Try reducing the regression rate coefficient or increasing the feed pressure loss."
                     )
-            self._t_last_check    = t
+            self._t_last_check = t
             self._eval_last_check = self._eval_count
         return self._wrapped(t, y, *args, **kwargs)
 
@@ -127,6 +112,8 @@ def run_unsteady(rocket_inputs_filename: str, # should end in .jsonc
     
     # NASA-CEA: the envelope log is module-level state in the interpolator, so it has to be cleared per run or excursions accumulate across simulations
     reset_envelope_log()
+    # N2O properties lookup: clear across simulations too
+    reset_N2O_excursion_log()
     
     # initialize warnings dictionary & log starting state
     warnings_dict = {}
@@ -270,16 +257,10 @@ def run_unsteady(rocket_inputs_filename: str, # should end in .jsonc
     elif active_phase == "terminal_success_landed":
         print("\n[SUCCESS] Rocket landed")
 
-    # traverse the log of CEA clamped calls, and add them to the warning dict 
-    for key, excursion in envelope_excursions().items():
-        warnings_dict[f"cea_envelope_{key.replace(' ', '_').replace('/', '')}"] = {
-            "severity": "warning",
-            "message": (f"{excursion['axis']} went {excursion['limit']} {excursion['count']} times; worst was {excursion['worst_requested']:.4g} against a table edge of {excursion['table_edge']:.4g}. Values were held at the edge for those steps."),
-            "axis": excursion["axis"],
-            "worst_requested": excursion["worst_requested"],
-            "table_edge": excursion["table_edge"],
-            "occurrences": excursion["count"],
-        }
+    # for CEA and N2O properties lookup, turn clamp logs into warnings.
+    warn_CEA_envelope_excursions(warnings_dict)
+    warn_N2O_envelope_excursions(warnings_dict)
+    
     finalized_warnings = finalize_warnings(warnings_dict) if rocket_inputs_metadata.get("warnings", True) else None # keep warnings by default if not specified
     
     
