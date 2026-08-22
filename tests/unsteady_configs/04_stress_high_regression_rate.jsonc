@@ -3,8 +3,8 @@
         "metadata": {
             "simulation_type": "unsteady_test",
             "simulation_name": "Stress high regression rate",
-            "simulation_description": "Aggressive regression coefficient with baseline geometry. Forked from 00_baseline: chamber_regression_rate_scaling_constant raised from 0.000132 to 0.005 (similar order to real fits for some paraffin blends with metallic additives). Much larger fuel mass flow at any given port area; O/F shifts fuel-rich fast and chamber pressure jumps. The integrator should handle the stiffer RHS without stalling. Expected: success.",
-            "expected_output": "success",
+            "simulation_description": "Regression scaling constant raised well past the recommended band, so the fuel grain burns through while liquid oxidiser is still flowing. That is a liquid quench, not a nominal burnout, and it was only reported as success because the abort path never wrote a terminal state. Expected: engine_abort with terminal_state 'liquid_quench'.",
+            "expected_output": "engine_abort",
             "warnings": true,
             "save_to_pdf": false,
             "save_to_png": false,

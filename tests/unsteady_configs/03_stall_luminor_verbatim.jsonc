@@ -3,8 +3,8 @@
         "metadata": {
             "simulation_type": "unsteady_test",
             "simulation_name": "Stall Luminor verbatim",
-            "simulation_description": "Regression guard for the known Luminor_test2 case. Ported verbatim from the old radius-based config style to the new [value, unit] pair style; every physical value is preserved. Original run: LSODA stalled at t~0.0088s with dp_C/dt oscillating between -36000 and +180 bar. This is a real Luminor motor geometry (~76 mm grain OD, ~64 mm port, 38 mm throat, aggressive regression coefficients from a fit to their hotfire data). It should complete cleanly. If it stalls, the integrator has a bug we need to fix, not the config.",
-            "expected_output": "success",
+            "simulation_description": "Regression guard for the known Luminor_test2 case, ported from the old radius-based config style. Originally a solver-stall regression test; the stall is fixed and the run now completes, but the regression scaling constant of 0.0304 is almost certainly in the Marxman convention (cm/s over g/cm2s) rather than SI, which implies roughly 4.8 m/s of regression and consumes the grain in 0.13 s. That burns the fuel through while liquid oxidiser is still flowing, which is a liquid quench. Expected: engine_abort until the constant is corrected.",
+            "expected_output": "engine_abort",
             "warnings": true,
             "save_to_pdf": false,
             "save_to_png": false,
