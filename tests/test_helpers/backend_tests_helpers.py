@@ -21,6 +21,7 @@ from rich.table import Table
 # tests declare which of these they expect
 EXPECTED_OUTPUTS = (
     "success", # ran to completion without raising
+    "engine_abort", # ran without raising, but ended in a terminal abort state
     "config_error", # the file is missing, malformed, or has a bad unit
     "validation_error", # parsed fine, but the schema/alternate-field rules rejected it
     "physics_error", # died inside the simulation itself
@@ -540,6 +541,13 @@ def execute_test(config_path: Path, kind: str, runner: Callable,
             # run claimed success but reading results impossible
             ctx.outcome = "physics_error"
             ctx.exception = read_exc
+        else:
+            # Not raising is not the same as working. A liquid quench or a phase
+            # timeout returns a perfectly readable file describing a motor that
+            # destroyed itself, and until metadata carried this there was no way
+            # for a config to assert that outcome or to notice it by accident.
+            if not ctx.result.get("metadata", {}).get("completed_nominally", True):
+                ctx.outcome = "engine_abort"
 
     ctx.check_results = run_checks(ctx)
     return ctx

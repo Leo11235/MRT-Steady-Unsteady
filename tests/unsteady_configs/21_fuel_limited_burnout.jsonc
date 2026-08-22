@@ -3,8 +3,8 @@
         "metadata": {
             "simulation_type": "unsteady_test",
             "simulation_name": "Fuel limited burnout",
-            "simulation_description": "Fuel exhausts before oxidizer. Forked from 00_baseline: tank_oxidizer_mass raised from 15.5 to 30 kg while chamber_fuel_mass dropped from 6 to 2 kg. The regression consumes the fuel wall before the tank empties, so the terminal phase-2 event is fuel burnout rather than liquid depletion. Guards the fuel-limited transition path and the r_f -> R_f handling. Expected: success with distinct event log versus the ox-limited baseline.",
-            "expected_output": "success",
+            "simulation_description": "Fuel exhausts before oxidizer. Forked from 00_baseline: tank_oxidizer_mass raised from 15.5 to 30 kg while chamber_fuel_mass dropped from 6 to 2 kg. The grain burns through while liquid oxidizer is still flowing, which is a liquid quench: the run should abort with terminal_state 'liquid_quench' rather than completing. Guards the fuel-limited abort path and the r_f -> R_f clamp.",
+            "expected_output": "engine_abort",
             "warnings": true,
             "save_to_pdf": false,
             "save_to_png": false,

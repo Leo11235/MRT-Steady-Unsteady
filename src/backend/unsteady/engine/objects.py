@@ -64,6 +64,12 @@ class History:
         
         # log warnings, phase transitions, etc
         self.events_log = []
+        
+        # how the run ended; filled in by phase_runner once it knows
+        # these values should get updated by the simulation before returning to user, otherwise raises an error
+        self.terminal_state = "unknown"
+        self.completed_nominally = False
+        self.terminal_reason = "Simulation did not report a terminal state."
     
     # for debugging purposes
     def print_self(self):
@@ -99,6 +105,13 @@ class History:
 
         else: 
             raise ValueError(f"Unrecognized event type: '{event_type}'.")
+    
+    # record how the run ended, from the TERMINAL_STATES entry in transitions.py
+    def set_terminal_state(self, terminal_info: dict, t: float):
+        self.terminal_state = terminal_info["code"]
+        self.completed_nominally = terminal_info["completed_nominally"]
+        self.terminal_reason = terminal_info["message"]
+        self.t_terminal = t
     
     # helper functions for performance calculations
     # extracts the maximum value from an array using a boolean mask, ignoring NaNs
@@ -253,13 +266,20 @@ class History:
         """
         Calculates administrative simulation metrics
         """
-        if not self.time_series["time"]:
-            return {}
-        total_simulation_time = self.time_series["time"][-1]        
-        return {
-            "total_timesteps": len(self.time_series["time"]),
-            "total_simulation_time": total_simulation_time, 
+        # initialize metadata dict
+        metadata = {
+            "terminal_state": self.terminal_state,
+            "completed_nominally": self.completed_nominally,
+            "terminal_reason": self.terminal_reason,
         }
+        
+        # if no timesteps recorded, return early
+        if not self.time_series["time"]:
+            return metadata
+        # otherwise, record timestep related info
+        metadata["total_timesteps"] = len(self.time_series["time"])
+        metadata["total_simulation_time"] = self.time_series["time"][-1]
+        return metadata
 
     def export(self, rocket_inputs: dict, 
                finalized_warnings: dict, 

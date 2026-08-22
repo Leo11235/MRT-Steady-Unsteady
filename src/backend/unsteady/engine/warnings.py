@@ -273,6 +273,25 @@ def warn_N2O_envelope_excursions(warning_dict: dict):
             "occurrences": exc["count"],
         }
 
+# report any abnormal ending for the user to see
+def warn_terminal_state(warning_dict: dict, terminal_info: dict, t: float):
+    if terminal_info["completed_nominally"]:
+        return
+
+    warning_dict[f"terminal_{terminal_info['code']}"] = {
+        "severity": terminal_info["severity"],
+        "message": f"Simulation ended at t={t:.3f} s. {terminal_info['message']}",
+        "terminal_state": terminal_info["code"],
+        "t_terminal": t,
+    }
+
+
+
+
+###############################################################################################
+# WARNING REGISTRIES
+# these keep track of all the warnings between each timestep/phase. if a new warning function is added in the file above, it must also be added in a registry in order for phase_runner to interact with it. 
+
 
 # tested every timestep
 WARNINGS_REGISTRY = {

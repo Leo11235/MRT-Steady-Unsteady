@@ -40,9 +40,6 @@ def transition_apogee_abort(state, rocket_inputs, current_time, live):
     # Aborts the simulation if apogee is reached while the engine is still supposed to be firing
     return state, "terminal_apogee_abort", {}
 
-def transition_liquid_quench_abort(state, rocket_inputs, current_time, live):
-    # TODO: Implement 002 error code and history logging for catastrophic liquid quench
-    return state, "terminal_002_liquid_quench", {}
 
 # ========================================================
 # ======================= PHASE 1 ========================
@@ -56,7 +53,7 @@ event_fuel_burnout_during_ignition.direction = -1
 def transition_fuel_burnout_during_ignition(state, rocket_inputs, current_time, live):
     state["r_f"] = rocket_inputs["chamber_fuel_external_radius"]
     state["T_C"] = live.get("T_c", 3000.0)
-    return state, "terminal_002_liquid_quench", _capture_burnout_metadata(current_time, live)
+    return state, "terminal_liquid_quench", _capture_burnout_metadata(current_time, live)
 
 def event_liquid_depleted_during_ignition(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
     state = StateVector.unpack(y)
@@ -89,7 +86,7 @@ event_fuel_burnout_during_liquid_blowdown.terminal = True
 event_fuel_burnout_during_liquid_blowdown.direction = -1
 def transition_fuel_burnout_during_liquid_blowdown(state, rocket_inputs, current_time, live):
     state["r_f"] = rocket_inputs["chamber_fuel_external_radius"]
-    return state, "terminal_002_liquid_quench", {}
+    return state, "terminal_liquid_quench", _capture_burnout_metadata(current_time, live)
 
 def event_oxidizer_depleted_during_liquid_blowdown(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
     state = StateVector.unpack(y)
@@ -261,7 +258,7 @@ TRANSITION_REGISTRY = {
                    event_liquid_depleted_during_ignition, 
                    event_ignition_pressure_reached, 
                    event_apogee_abort],
-        "handlers": [transition_liquid_quench_abort, 
+        "handlers": [transition_fuel_burnout_during_ignition, 
                      transition_liquid_depleted_during_ignition, 
                      transition_ignition_pressure_reached, 
                      transition_apogee_abort]
@@ -271,7 +268,7 @@ TRANSITION_REGISTRY = {
                    event_oxidizer_depleted_during_liquid_blowdown, 
                    event_liquid_depleted, 
                    event_apogee_abort],
-        "handlers": [transition_liquid_quench_abort, 
+        "handlers": [transition_fuel_burnout_during_liquid_blowdown, 
                      transition_oxidizer_depleted_during_liquid_blowdown, 
                      transition_liquid_depleted, 
                      transition_apogee_abort]
@@ -311,3 +308,61 @@ TRANSITION_REGISTRY = {
         "handlers": [transition_landing_reached]
     }
 }
+
+
+
+# ========================================================
+# ================== TERMINAL STATES =====================
+# ========================================================
+"""
+Records what each way of ending a run means. Kept here with transitions so that adding a new terminal state and describing it only require changing one file. 
+Each terminal state has: 
+    code: unique identifier for that state
+    completed_nominally: T/F whether the simulation ran normally or had to abort
+    severity: the warning severity, see warnings.py
+    message: a message describing the state
+    console: what gets printed to the console
+"""
+
+TERMINAL_STATES = {
+    "terminal_success_landed": {
+        "code": "success_landed",
+        "completed_nominally": True,
+        "severity": "advisory",
+        "message": "Rocket completed the full flight and landed.",
+        "console": "[SUCCESS] Rocket landed",
+    },
+    "terminal_liquid_quench": {
+        "code": "liquid_quench",
+        "completed_nominally": False,
+        "severity": "critical",
+        "message": "Fuel grain burned through while liquid oxidizer was still flowing. Raw oxidizer entering a chamber with no fuel left destroys the motor, so the simulation stops rather than guessing at a trajectory afterwards. Any performance figures in this file are computed from a truncated run.",
+        "console": "[ABORT] Catastrophic liquid quench detected. Execution stopped.",
+    },
+    "terminal_apogee_abort": {
+        "code": "apogee_abort",
+        "completed_nominally": False,
+        "severity": "critical",
+        "message": "Apogee was reached while the engine was still supposed to be firing. The vehicle went up and came back down mid-burn, which means the configuration is not flyable as written.",
+        "console": "[ABORT] Apogee reached during powered ascent. Execution stopped.",
+    },
+    "terminal_phase_timeout": {
+        "code": "phase_timeout",
+        "completed_nominally": False,
+        "severity": "critical",
+        "message": "A phase ran out its phase_max_times budget without any transition event firing, so the run stops partway through. The state at that moment is real, but nothing after it exists.",
+        "console": "[ABORT] A phase exceeded its time budget. Execution stopped.",
+    },
+}
+
+_UNKNOWN_TERMINAL = {
+    "code": "unknown",
+    "completed_nominally": False,
+    "severity": "critical",
+    "message": "The simulation ended in a terminal state with no entry in TERMINAL_STATES. This is a bug in the engine, not in the rocket configuration.",
+    "console": "[ABORT] Unrecognised terminal state. Execution stopped.",
+}
+
+# returns info corresponding to ending state or unknown state if not fonud
+def terminal_state_info(terminal_state: str) -> dict:
+    return TERMINAL_STATES.get(terminal_state, _UNKNOWN_TERMINAL)

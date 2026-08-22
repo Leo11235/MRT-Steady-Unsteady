@@ -55,10 +55,7 @@
             "return_partial_results_on_abort": true,
             "include_warning_summaries": true,
             "include_event_log": true,
-            "include_state_history": true,
-            "success_return_code": "001",
-            "partial_abort_return_code": "002",
-            "invalid_initialization_return_code": "003"
+            "include_state_history": true
         }
     }
 }
