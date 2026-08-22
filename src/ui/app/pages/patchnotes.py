@@ -24,44 +24,17 @@ from src.ui.app.version import VERSION
 PATCHNOTES: list[dict] = [
     {
         "version": "1.5",
-        "date":    "2026-08-15",
+        "date":    "2026-08-22",
         "notes": [
-            "Every input now carries its own unit. Pick the unit you have "
-            "the number in from the dropdown next to each field and the "
-            "program converts it; nothing has to be entered in SI any more.",
+            "Steady parametric studies graph from a dialog that lets you pick the axes and hold the other swept variables at a chosen value, in 2D or 3D.",
 
-            "Results pages have an SI / IMP / MRT toggle that reformats "
-            "every number on the page at once, graphs included.",
+            "Unsteady graphs are now chosen from a searchable list of all 28 figures and drawn inline on the results page.",
 
-            "Steady parametric studies graph from a dialog that lets you "
-            "pick the axes and hold the other swept variables at a chosen "
-            "value, in 2D or 3D.",
+            "Added an 'instant' valve model with an opening time of 0.",
 
-            "Unsteady graphs are now chosen from a searchable list of all "
-            "28 figures and drawn inline on the results page. They're the "
-            "same figures that go into graphs.pdf, so the two can't drift.",
+            "The loading screen can halt a stuck run and take you straight to a bug report with the terminal output already attached.",
 
-            "Added an 'instant' valve model, and removed the NHNE "
-            "injector model, which was never implemented.",
-
-            "Propellant chemistry and regression-law defaults now come "
-            "from a documented file instead of being blank.",
-
-            "The loading screen can halt a stuck run and take you straight "
-            "to a bug report with the terminal output already attached.",
-
-            "Backend test suite added under tests/, and the build files "
-            "moved into build_tools/.",
-
-            "Removed the incomplete French translation.",
-
-            "Fixed various bugs (launch angle being converted from degrees "
-            "twice, so trajectories ran nearly vertical; the main "
-            "parachute's area being computed from the drogue's diameter; "
-            "the 'one or the other' fields always picking the first option "
-            "regardless of which one you filled in; the phase-6 duration "
-            "setting being ignored and capped at 60 s; unit dropdowns "
-            "drifting by a rounding error each time you switched them)",
+            "Tweaked the unsteady backend code to make it more resilient against edge-case inputs.",
         ],
     },
     {
@@ -69,28 +42,25 @@ PATCHNOTES: list[dict] = [
         "date":    "2026-08-02",
         "notes": [
             "Improved bug reporting to collect more diagnostic information.",
+            
             "Added \"Show in folder\" button for simulation results.",
+            
             "Cleaned terminal screen printout in loading page.",
+            
             "Added steady parametric study graphing feature. You can now build 2D and 3D graphs from any parametric study.",
+            
             "Added parametric study input units for swept variables.",
+            
             "Error popup: long exception messages are now in a scrollable popup so Back/Report buttons always stay visible.",
             
-            "Fixed various bugs (unsteady crash at fuel burnout while "
-            "the tank still had liquid; sigmoid valve model rejecting "
-            "configs that omitted an input it didn't actually use; "
-            "division-by-zero crashes during the phase-1 ignition "
-            "transient, especially with slow-opening linear valves; "
-            "deleting a saved run left its PDF/PNG folder behind; "
-            "\"Show in folder\" button opening Documents instead of the "
-            "run's actual folder; steady mode keys not getting validated properly for hotfire and parametric study)",
+            "Fixed various bugs (unsteady crash at fuel burnout while the tank still had liquid; sigmoid valve model rejecting configs that omitted an input it didn't actually use; division-by-zero crashes during the phase-1 ignition transient, especially with slow-opening linear valves; deleting a saved run left its PDF/PNG folder behind; \"Show in folder\" button opening Documents instead of the run's actual folder; steady mode keys not getting validated properly for hotfire and parametric study)",
         ],
     },
     {
         "version": "1.3",
         "date":    "2026-07-27",
         "notes": [
-            "Inputs now use diameters instead of radii and areas across "
-            "the whole program.",
+            "Inputs now use diameters instead of radii and areas across the whole program.",
             
             "Every unsteady physics model dropdown now shows a short description of the model.",
             
@@ -101,41 +71,29 @@ PATCHNOTES: list[dict] = [
         "version": "1.2",
         "date":    "2026-07-24",
         "notes": [
-            "Fixed 'Simulation ran but produced no result file' error in "
-            "the installed .exe. In frozen builds, the backend was "
-            "writing results into the read-only install directory; the "
-            "UI now reconciles files back into the writable per-user "
-            "location automatically.",
+            "Fixed 'Simulation ran but produced no result file' error in the installed .exe. In frozen builds, the backend was writing results into the read-only install directory; the UI now reconciles files back into the writable per-user location automatically.",
             
             "Fixed missing rocketcea data-file error on first frozen run.",
-            "Fixed missing pypropep data-file error (steady sims complaining "
-            "about missing chamber temperature).",
             
-            "Bug reports now include the app version at the top of the "
-            "auto-filled body AND as a dedicated field in the email.",
-            "Version footer added to the home screen so you can always "
-            "see which build you're on.",
+            "Fixed missing pypropep data-file error (steady sims complaining about missing chamber temperature).",
+            
+            "Bug reports now include the app version at the top of the auto-filled body AND as a dedicated field in the email.",
+            
+            "Version footer added to the home screen so you can always see which build you're on.",
         ],
     },
     {
         "version": "1.1",
         "date":    "2026-07-22",
         "notes": [
-            "First installer-based release. App now installs from a "
-            "standard Windows setup .exe with an uninstaller entry in "
-            "Add/Remove Programs, upgrades cleanly over previous "
-            "versions, and preserves presets & past runs across "
-            "reinstalls.",
+            "First installer-based release. App now installs from a standard Windows setup .exe with an uninstaller entry in Add/Remove Programs, upgrades cleanly over previous versions, and preserves presets & past runs across reinstalls.",
         ],
     },
     {
         "version": "1.0",
         "date":    "2026-07-18",
         "notes": [
-            "Initial release. Steady-state and unsteady simulations, "
-            "browsable results page, "
-            "parametric sweeps, presets, saved-runs browser, integrated "
-            "bug reporting, keyboard shortcuts, (incomplete) French translation.",
+            "Initial release.",
         ],
     },
 ]

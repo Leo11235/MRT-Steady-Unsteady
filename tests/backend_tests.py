@@ -114,5 +114,4 @@ def _run_all(console, configs, kind, runner, output_dir, keep_results, timeout):
 
 
 if __name__ == "__main__":
-    run_backend_tests(all_steady_tests=False)# run unsteady only
-    #run_backend_tests(only=["03_stall_luminor_verbatim", "05_stress_small_throat", "07_stress_low_feed_pressure_loss", "23_slow_ignition"])
+    run_backend_tests()

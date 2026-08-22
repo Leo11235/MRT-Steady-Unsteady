@@ -137,7 +137,7 @@ _STEADY: tuple[FieldSpec, ...] = (
     FieldSpec("fuel_grain_density", "Fuel grain density", "density",
               "Bulk density of the solid fuel."),
     FieldSpec("regression_rate_scaling_coefficient", "Regression coefficient (a)", DIMENSIONLESS,
-              "The 'a' in r_dot = a*G^n, with G in kg/m2/s and r_dot in m/s. "
+              "The 'a' in r_dot = a*G^n, with G in kg/m2/s and r_dot in m/s.\nWARNING: though listed as dimensionless, a's units in SI are actually m^(1+2n) · kg^(-n) · s^(n-1), where n is the regression rate exponent. The default value is verified via research and changing it is not recommended."
               "Paraffin with N2O is around 0.000132."),
     FieldSpec("regression_rate_exponent", "Regression exponent (n)", DIMENSIONLESS,
               "The 'n' in r_dot = a*G^n. Paraffin with N2O is around 0.555."),
@@ -225,7 +225,7 @@ _UNSTEADY: tuple[FieldSpec, ...] = (
     FieldSpec("chamber_fuel_external_diameter", "Fuel external diameter", "length",
               "Outer diameter of the fuel grain, bounded by the case."),
     FieldSpec("chamber_regression_rate_scaling_constant", "Regression coefficient (a)", DIMENSIONLESS,
-              "The 'a' in r_dot = a*G^n. Paraffin with N2O is around 0.000132."),
+              "The 'a' in r_dot = a*G^n. Paraffin with N2O is around 0.000132.\nWARNING: though listed as dimensionless, a's units in SI are actually m^(1+2n) · kg^(-n) · s^(n-1), where n is the regression rate exponent. The default value is verified via research and changing it is not recommended."),
     FieldSpec("chamber_regression_rate_exponent", "Regression exponent (n)", DIMENSIONLESS,
               "The 'n' in r_dot = a*G^n. Paraffin with N2O is around 0.555."),
     FieldSpec("pre_chamber_diameter", "Pre-chamber diameter", "length",
