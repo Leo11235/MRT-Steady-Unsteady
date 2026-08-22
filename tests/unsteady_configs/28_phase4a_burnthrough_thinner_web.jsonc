@@ -6,7 +6,7 @@
         "metadata": {
             "simulation_type": "unsteady_test",
             "simulation_name": "Phase4a burnthrough thinner web",
-            "simulation_description": "PROBE, brackets 18 from the thin side. Same intent with less fuel, so between the two at least one should burn through during gaseous blowdown rather than during liquid. Expected: success reaching phase_4a.",
+            "simulation_description": "PROBE, retuned, brackets 18 from the thick side. Same intent with more fuel and more oxidiser, so between the two at least one should have web left at the end of liquid blowdown and lose it during gaseous. Expected: success reaching phase_4a.",
             "expected_output": "success",
             "warnings": true,
             "save_to_pdf": false,
@@ -60,7 +60,7 @@
                     "K"
                 ],
                 "tank_oxidizer_mass": [
-                    30.0,
+                    26.0,
                     "kg"
                 ],
                 "dip_tube_external_diameter": [
@@ -157,7 +157,7 @@
                     "m"
                 ],
                 "chamber_fuel_mass": [
-                    2.8,
+                    5.7,
                     "kg"
                 ],
                 "chamber_fuel_internal_diameter": [
@@ -221,5 +221,9 @@
             }
         }
     },
-    "simulation_settings_override": {}
+    "simulation_settings_override": {
+        "transition_events": {
+            "min_thrust_to_weight": 0.0
+        }
+    }
 }

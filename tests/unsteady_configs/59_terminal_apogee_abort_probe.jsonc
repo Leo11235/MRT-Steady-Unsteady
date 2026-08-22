@@ -6,7 +6,7 @@
         "metadata": {
             "simulation_type": "unsteady_test",
             "simulation_name": "Terminal apogee abort probe",
-            "simulation_description": "PROBE. Dry mass raised to 800 kg so thrust-to-weight at the pad is barely above one. The vehicle should creep upward and reach apogee while the engine is still firing, which is the event_apogee_abort path. That terminal state exists, prints, and has never once been triggered by a test. Expected: engine_abort with terminal_state 'apogee_abort'; if it simply flies, the mass needs raising further.",
+            "simulation_description": "PROBE, retuned. At 800 kg the vehicle still flew a nominal profile into coast, so apogee happened after burnout rather than during it. Peak thrust is about 9600 N, so 950 kg puts pad thrust-to-weight just above 1 and the rocket should still be climbing feebly when thrust decays below weight. event_apogee_abort exists, prints, and has never been triggered by any test. If this also flies, apogee_abort may be unreachable in practice the way phase_4c turned out to be.",
             "expected_output": "engine_abort",
             "warnings": true,
             "save_to_pdf": false,
@@ -151,7 +151,7 @@
             "CV6_trajectory": {
                 "model": "2dof",
                 "rocket_dry_mass": [
-                    800.0,
+                    950.0,
                     "kg"
                 ],
                 "rocket_drag_coefficient": [

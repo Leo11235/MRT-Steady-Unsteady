@@ -6,7 +6,7 @@
         "metadata": {
             "simulation_type": "unsteady_test",
             "simulation_name": "Phase4a burnthrough in gas blowdown",
-            "simulation_description": "PROBE. Fuel web sized to survive liquid blowdown and burn through during gaseous blowdown, which is the only route to phase_4a. Phases 4a and 4c currently have zero coverage across the whole suite: tank_gaseous_blowdown, injector_joel_gaseous_blowdown, chamber_residual_blowdown and nozzle_residual_blowdown have never been executed by a test. If this lands in phase_2 instead the fuel is too thin; if it never burns through it is too thick. Expected: success reaching phase_4a.",
+            "simulation_description": "PROBE, retuned. First attempt quenched in phase_2 because the web was too thin, so the grain is thicker and the oxidiser charge smaller. The thrust floor is disabled so gaseous blowdown runs long enough to consume the remaining web, which is the only route into phase_4a. Phases 4a and 4c still have zero coverage. Expected: success reaching phase_4a.",
             "expected_output": "success",
             "warnings": true,
             "save_to_pdf": false,
@@ -60,7 +60,7 @@
                     "K"
                 ],
                 "tank_oxidizer_mass": [
-                    26.0,
+                    22.0,
                     "kg"
                 ],
                 "dip_tube_external_diameter": [
@@ -157,7 +157,7 @@
                     "m"
                 ],
                 "chamber_fuel_mass": [
-                    3.2,
+                    4.2,
                     "kg"
                 ],
                 "chamber_fuel_internal_diameter": [
@@ -221,5 +221,9 @@
             }
         }
     },
-    "simulation_settings_override": {}
+    "simulation_settings_override": {
+        "transition_events": {
+            "min_thrust_to_weight": 0.0
+        }
+    }
 }

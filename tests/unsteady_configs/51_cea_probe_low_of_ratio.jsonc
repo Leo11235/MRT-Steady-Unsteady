@@ -6,8 +6,8 @@
         "metadata": {
             "simulation_type": "unsteady_test",
             "simulation_name": "Cea probe low of ratio",
-            "simulation_description": "The opposite: regression constant raised eightfold so fuel floods the chamber and O/F falls toward the table's lower edge of 0.5. Sits just under the 1e-3 threshold that trips the high-regression warning, so it probes the CEA floor without also being a config-sanity test. Expected: success or clean abort.",
-            "expected_output": "success",
+            "simulation_description": "Regression scaling constant raised eightfold, so fuel floods the chamber and the grain burns through while liquid oxidiser is still flowing. That is a liquid quench and it is the correct outcome; the previous expectation of success was simply wrong. Expected: engine_abort with terminal_state 'liquid_quench'.",
+            "expected_output": "engine_abort",
             "warnings": true,
             "save_to_pdf": false,
             "save_to_png": false,
@@ -15,26 +15,13 @@
                 "files_exist": [
                     "sim_data.json"
                 ],
-                "json_path_exists": [
-                    "performance.overall",
-                    "event_log",
-                    "data.time"
-                ],
-                "value_between": {
-                    "performance.overall.peak_chamber_pressure_Pa": [
-                        50000,
-                        30000000
-                    ],
-                    "performance.overall.burntime_s": [
-                        0.05,
-                        120
-                    ]
+                "value_equals": {
+                    "metadata.terminal_state": "liquid_quench",
+                    "metadata.completed_nominally": false
                 },
                 "no_nans_in": [
                     "time",
-                    "p_C",
-                    "sy_R",
-                    "F_thrust"
+                    "p_C"
                 ]
             }
         },

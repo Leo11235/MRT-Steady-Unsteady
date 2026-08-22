@@ -6,7 +6,7 @@
         "metadata": {
             "simulation_type": "unsteady_test",
             "simulation_name": "Injector feed loss near tank pressure",
-            "simulation_description": "Feed loss of 5 MPa against a tank that starts near 5.7 MPa. delta_p starts close to zero and reaches the dead zone early, so the injector should coast smoothly to no flow instead of stepping. If the quadratic blend ever regresses to a non-zero intercept this is the config that stalls. Expected: success or a clean abort, but never solver_stalled.",
+            "simulation_description": "Feed loss of 5 MPa against a 5.7 MPa tank, so injector delta_p sits on the floor for the whole burn and reaches the dead zone partway through. The previous run proved the point (it did not stall, which is exactly what the old quadratic blend would have done) and then ran out its 30 s phase_2 budget with most of the charge left. Smaller charge and a longer budget so it finishes. Expected: success, and never solver_stalled.",
             "expected_output": "success",
             "warnings": true,
             "save_to_pdf": false,
@@ -50,7 +50,7 @@
                     "K"
                 ],
                 "tank_oxidizer_mass": [
-                    15.5,
+                    6.0,
                     "kg"
                 ],
                 "dip_tube_external_diameter": [
@@ -211,5 +211,9 @@
             }
         }
     },
-    "simulation_settings_override": {}
+    "simulation_settings_override": {
+        "phase_max_times": {
+            "phase_2": 120.0
+        }
+    }
 }

@@ -6,7 +6,7 @@
         "metadata": {
             "simulation_type": "unsteady_test",
             "simulation_name": "Phase4c tank drained dry",
-            "simulation_description": "PROBE for phase_4c, the other untested shutdown path. Small oxidizer charge and the thrust floor switched off, so the tank empties completely (n_v -> 0) instead of the run being cut short while vapour remains. Exercises chamber_residual_blowdown and nozzle_residual_blowdown. Expected: success reaching phase_4c.",
+            "simulation_description": "PROBE, retuned. First attempt exited phase_3 on the chamber-near-ambient event with 6.9 mol of vapour still in the tank, so phase_4c never happened. A small throat holds chamber pressure up while a 3 kg charge drains, which is the ordering phase_4c is built for. Also depends on the oxidiser-depleted threshold being reachable at all. Expected: success reaching phase_4c.",
             "expected_output": "success",
             "warnings": true,
             "save_to_pdf": false,
@@ -60,7 +60,7 @@
                     "K"
                 ],
                 "tank_oxidizer_mass": [
-                    4.0,
+                    3.0,
                     "kg"
                 ],
                 "dip_tube_external_diameter": [
@@ -168,11 +168,11 @@
             "CV5_nozzle": {
                 "model": "1D_frozen",
                 "nozzle_throat_diameter": [
-                    0.032,
+                    0.018,
                     "m"
                 ],
                 "nozzle_exit_diameter": [
-                    0.09,
+                    0.05,
                     "m"
                 ]
             },

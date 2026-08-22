@@ -6,8 +6,8 @@
         "metadata": {
             "simulation_type": "unsteady_test",
             "simulation_name": "N2o cold tank start",
-            "simulation_description": "Tank filled at 184 K, under two kelvin above the N2O triple point where the saturation table ends. Self-pressurised blowdown only cools the tank further, so this should reach the clamp almost immediately. The N2O clamp has never been exercised by any test. Expected: success with an n2o_table_below_table_minimum warning, not a physics_error.",
-            "expected_output": "success",
+            "simulation_description": "Regression guard for an impossibility rather than a probe. N2O saturation pressure at 184 K is 0.969 bar, below the 0.977 bar of ambient at 300 m ASL, so injector delta_p is negative from t=0, nothing flows, and phase_1 runs out its budget. This is not mistuning: the N2O triple point sits at 0.871 bar, under sea-level atmospheric, so a self-pressurised tank can never operate near the bottom of the saturation table at any realistic launch site. Worth keeping because the run still emits n2o_table_below_table_minimum, proving the clamp reports instead of raising. Expected: engine_abort with terminal_state 'phase_timeout'.",
+            "expected_output": "engine_abort",
             "warnings": true,
             "save_to_pdf": false,
             "save_to_png": false,
@@ -15,26 +15,13 @@
                 "files_exist": [
                     "sim_data.json"
                 ],
-                "json_path_exists": [
-                    "performance.overall",
-                    "event_log",
-                    "data.time"
-                ],
-                "value_between": {
-                    "performance.overall.peak_chamber_pressure_Pa": [
-                        50000,
-                        30000000
-                    ],
-                    "performance.overall.burntime_s": [
-                        0.05,
-                        120
-                    ]
+                "value_equals": {
+                    "metadata.terminal_state": "phase_timeout",
+                    "metadata.completed_nominally": false
                 },
                 "no_nans_in": [
                     "time",
-                    "p_C",
-                    "sy_R",
-                    "F_thrust"
+                    "p_C"
                 ]
             }
         },

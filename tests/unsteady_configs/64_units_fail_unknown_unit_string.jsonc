@@ -6,7 +6,7 @@
         "metadata": {
             "simulation_type": "unsteady_test",
             "simulation_name": "Units fail unknown unit string",
-            "simulation_description": "A plausible-looking but unregistered unit ('inches' spelled out) on the throat diameter. to_SI should reject it inside config.py, which the harness classifies as a validation problem rather than a physics one. Expected: validation_error.",
+            "simulation_description": "A misspelled unit on the throat diameter. The previous version used 'inches', which is a registered alias for 'in' and therefore converted perfectly, so the run succeeded. 'inchs' is genuinely unregistered, so to_SI should reject it inside config.py, which the harness classifies as a validation problem rather than a physics one. Expected: validation_error.",
             "expected_output": "validation_error",
             "warnings": true,
             "save_to_pdf": false,
@@ -134,7 +134,7 @@
                 "model": "1D_frozen",
                 "nozzle_throat_diameter": [
                     1.26,
-                    "inches"
+                    "inchs"
                 ],
                 "nozzle_exit_diameter": [
                     0.09,

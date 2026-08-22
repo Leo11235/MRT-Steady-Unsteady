@@ -1,12 +1,12 @@
-// 56_n2o_cold_tank_no_thrust_floor
+// 56_n2o_floor_via_deep_blowdown
 // Group: N2O saturation table envelope
 // Forked from 00_baseline.jsonc. Only the fields named in the description differ.
 {
     "config": {
         "metadata": {
             "simulation_type": "unsteady_test",
-            "simulation_name": "N2o cold tank no thrust floor",
-            "simulation_description": "184 K tank with the thrust floor disabled, so nothing stops the run before the tank temperature falls off the bottom of the table. This is the config that actually proves clamping works, since the floor normally prevents anything from getting there. Expected: success with an n2o_table warning; a physics_error means the clamp regressed.",
+            "simulation_name": "N2o floor via deep blowdown",
+            "simulation_description": "Replaces the cold-start attempt, which could not work. A normal 298 K tank with a small charge, launched from 3000 m with the thrust floor disabled, so blowdown runs to exhaustion while ambient pressure keeps falling underneath it. That is the only way the tank can self-cool toward the triple point without the feed stalling first. Expected: success, possibly with an n2o_table warning; a physics_error means the clamp regressed.",
             "expected_output": "success",
             "warnings": true,
             "save_to_pdf": false,
@@ -46,11 +46,11 @@
                     "m"
                 ],
                 "tank_temperature": [
-                    184.0,
+                    298.15,
                     "K"
                 ],
                 "tank_oxidizer_mass": [
-                    8.0,
+                    6.0,
                     "kg"
                 ],
                 "dip_tube_external_diameter": [
@@ -205,7 +205,7 @@
                     "m"
                 ],
                 "launch_site_altitude_asl": [
-                    300.0,
+                    3000.0,
                     "m"
                 ]
             }

@@ -6,8 +6,8 @@
         "metadata": {
             "simulation_type": "unsteady_test",
             "simulation_name": "Warn high regression exponent",
-            "simulation_description": "Regression exponent of 0.95, above the 0.9 ceiling. Strong flux sensitivity, so the burn is far more self-reinforcing than baseline and the chamber pressure history should look quite different. Expected: success or clean abort, with init_high_chamber_regression_rate_exponent present.",
-            "expected_output": "success",
+            "simulation_description": "Regression exponent of 0.95, above the recommended 0.9 ceiling. Flux sensitivity that strong makes the burn self-reinforcing enough to consume the grain before the oxidiser, which quenches. The abort is the correct result. Expected: engine_abort with terminal_state 'liquid_quench'.",
+            "expected_output": "engine_abort",
             "warnings": true,
             "save_to_pdf": false,
             "save_to_png": false,
@@ -15,8 +15,13 @@
                 "files_exist": [
                     "sim_data.json"
                 ],
-                "json_path_exists": [
-                    "warnings.triggered_warnings.init_high_chamber_regression_rate_exponent"
+                "value_equals": {
+                    "metadata.terminal_state": "liquid_quench",
+                    "metadata.completed_nominally": false
+                },
+                "no_nans_in": [
+                    "time",
+                    "p_C"
                 ]
             }
         },

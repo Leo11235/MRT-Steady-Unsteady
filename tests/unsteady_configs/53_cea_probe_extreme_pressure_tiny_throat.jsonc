@@ -6,7 +6,7 @@
         "metadata": {
             "simulation_type": "unsteady_test",
             "simulation_name": "Cea probe extreme pressure tiny throat",
-            "simulation_description": "A 14 mm throat, well beyond 39, pushing chamber pressure hard against the 2500 psia table ceiling. If clamping works the run completes with a warning; if the old extrapolating spline ever comes back this is where it shows. Expected: success, with a cea_envelope warning.",
+            "simulation_description": "A 14 mm throat chokes the flow hard and stretches the burn well past the default 30 s phase_2 budget; the previous run was 82% done when the cap hit. Budget raised. Chamber pressure peaked near 38 bar rather than against the 172 bar CEA ceiling, because the injector limits flow long before the throat does, so this is a slow-burn test rather than a CEA ceiling probe. Expected: success.",
             "expected_output": "success",
             "warnings": true,
             "save_to_pdf": false,
@@ -211,5 +211,9 @@
             }
         }
     },
-    "simulation_settings_override": {}
+    "simulation_settings_override": {
+        "phase_max_times": {
+            "phase_2": 60.0
+        }
+    }
 }
