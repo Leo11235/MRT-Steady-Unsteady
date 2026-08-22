@@ -6,8 +6,8 @@
         "metadata": {
             "simulation_type": "unsteady_test",
             "simulation_name": "Units fail unknown unit string",
-            "simulation_description": "A misspelled unit on the throat diameter. The previous version used 'inches', which is a registered alias for 'in' and therefore converted perfectly, so the run succeeded. 'inchs' is genuinely unregistered, so to_SI should reject it inside config.py, which the harness classifies as a validation problem rather than a physics one. Expected: validation_error.",
-            "expected_output": "validation_error",
+            "simulation_description": "An unregistered unit string on the throat diameter. to_SI rejects it and the exception surfaces through config.py, but classify_exception has a branch above the validation check that maps anything raised inside variable_conversions.py to config_error, on the reasoning that a bad unit is a malformed file rather than a broken schema rule. That is the better label and the previous expectation of validation_error was simply wrong. Expected: config_error.",
+            "expected_output": "config_error",
             "warnings": true,
             "save_to_pdf": false,
             "save_to_png": false,

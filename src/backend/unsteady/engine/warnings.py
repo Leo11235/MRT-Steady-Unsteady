@@ -285,7 +285,26 @@ def warn_terminal_state(warning_dict: dict, terminal_info: dict, t: float):
         "t_terminal": t,
     }
 
+# checks whether peak TtW is above ~5 and whether the rocket climbed at least ~10m (~ for both because the values depend on what is written in default_simulation_settings.jsonc)
+def warn_launch_capability(warning_dict: dict, metrics: dict, min_TtW: float, min_gain_m: float):
+    TtW = metrics.get("peak_thrust_to_weight")
+    if TtW is not None and TtW < min_TtW:
+        warning_dict["low_peak_thrust_to_weight"] = {
+            "severity": "warning",
+            "message": f"Peak thrust-to-weight is {TtW:.2f}, below the recommended minimum of {min_TtW:.1f}. A rocket this marginal leaves the rail slowly and is unstable while it does.",
+            "peak_thrust_to_weight": TtW,
+            "peak_thrust_N": metrics.get("peak_thrust_N"),
+            "minimum": min_TtW,
+        }
 
+    gain = metrics.get("altitude_gain", 0.0)
+    if gain < min_gain_m:
+        warning_dict["failed_to_launch"] = {
+            "severity": "critical",
+            "message": f"The vehicle rose {gain:.2f} m above the pad, under the {min_gain_m:.0f} m needed to count as a launch. Every trajectory figure in this run describes a rocket that did not fly.",
+            "altitude_gain": gain,
+            "minimum": min_gain_m,
+        }
 
 
 ###############################################################################################
@@ -308,7 +327,7 @@ WARNINGS_REGISTRY = {
 
 # which transition events owe the user a warning when they fire, keyed by th event function's __name__
 TRANSITION_WARNINGS_REGISTRY = {
-    "event_thrust_below_floor_during_gaseous_blowdown": [warn_engine_cutoff_thrust_floor],
+    "event_thrust_below_floor": [warn_engine_cutoff_thrust_floor],
 }
 # run whatever warnings a just-fired transition event owes the user
 # phase runner calls this on every transition without checking anything, so which events are worth warning about stays a question this file answers and the runner never grows a chain of name comparisons

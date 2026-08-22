@@ -91,22 +91,24 @@ def transition_fuel_burnout_during_liquid_blowdown(state, rocket_inputs, current
     state["r_f"] = rocket_inputs["chamber_fuel_external_radius"]
     return state, "terminal_liquid_quench", _capture_burnout_metadata(current_time, live)
 
-def event_oxidizer_depleted_during_liquid_blowdown(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
-    state = StateVector.unpack(y)
-    return (state["n_v"] + state["n_l"]) - _get_eps_n_ox(rocket_inputs, constants)
-event_oxidizer_depleted_during_liquid_blowdown.terminal = True
-event_oxidizer_depleted_during_liquid_blowdown.direction = -1
-def transition_oxidizer_depleted_during_liquid_blowdown(state, rocket_inputs, current_time, live):
-    state["n_v"] = 0.0
-    state["n_l"] = 0.0
-    state["T_C"] = live.get("T_c", 3000.0)
-    return state, "phase_4c", _capture_burnout_metadata(current_time, live)
+# no longer used
+# tests n_v + n_l, but event_liquid_oxidizer_depleted fires first on a relative threshold
+# def event_oxidizer_depleted_during_liquid_blowdown(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
+#     state = StateVector.unpack(y)
+#     return (state["n_v"] + state["n_l"]) - _get_eps_n_ox(rocket_inputs, constants)
+# event_oxidizer_depleted_during_liquid_blowdown.terminal = True
+# event_oxidizer_depleted_during_liquid_blowdown.direction = -1
+# def transition_oxidizer_depleted_during_liquid_blowdown(state, rocket_inputs, current_time, live):
+#     state["n_v"] = 0.0
+#     state["n_l"] = 0.0
+#     state["T_C"] = live.get("T_c", 3000.0)
+#     return state, "phase_4c", _capture_burnout_metadata(current_time, live)
 
-def event_liquid_depleted(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
+def event_liquid_oxidizer_depleted(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
     state = StateVector.unpack(y)
     return state["n_l"] - _get_n_l_thresh(rocket_inputs, constants)
-event_liquid_depleted.terminal = True
-event_liquid_depleted.direction = -1
+event_liquid_oxidizer_depleted.terminal = True
+event_liquid_oxidizer_depleted.direction = -1
 def transition_liquid_depleted(state, rocket_inputs, current_time, live):
     state["n_v"] += state["n_l"]
     state["n_l"] = 0.0
@@ -116,6 +118,28 @@ def transition_liquid_depleted(state, rocket_inputs, current_time, live):
 # ========================================================
 # ======================= PHASE 3 ========================
 # ========================================================
+
+# also called in phase 2
+# rocket has very little thrust to weight ratio
+def event_thrust_below_floor(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
+    state = StateVector.unpack(y)
+    k = rocket_inputs.get("min_thrust_to_weight", 0.02)
+    nozzle_fn = cv_funcs.get("CV5_nozzle")
+    if k <= 0.0 or nozzle_fn is None:
+        return 1.0
+    # identical expression to the one in CV6_trajectory
+    W_o = constants["nitrous_oxide_molar_mass"]
+    m_total = (rocket_inputs["rocket_dry_mass"] + (state["n_l"] + state["n_v"]) * W_o + state["m_o"] + state["m_f"])
+    weight = m_total * constants["sea_level_gravity"]
+    live = dict(get_atmosphere_properties(state["sy_R"]))
+    return nozzle_fn(t, state, rocket_inputs, live, constants)["F_thrust"] - k * weight
+event_thrust_below_floor.terminal = True
+event_thrust_below_floor.direction = -1
+def transition_thrust_below_floor(state, rocket_inputs, current_time, live):
+    # n_l is deliberately left alone
+    state["T_C"] = live.get("T_c", 3000.0)
+    return state, "phase_5", _capture_burnout_metadata(current_time, live)  # engine is done, skip the purge
+
 
 # fuel cell burns out while tank still contains gas --> to go phase 4a
 def event_fuel_burnout_during_gaseous_blowdown(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
@@ -141,36 +165,17 @@ def transition_chamber_near_ambient_during_gaseous_blowdown(state, rocket_inputs
     state["T_C"] = live.get("T_c", 3000.0)
     return state, "phase_5", _capture_burnout_metadata(current_time, live) # bypass phase 4 if the feed stalls
 
+# no longer used
 # in case the tank gas runs out before chamber fuel but the combustion still hasn't stalled --> phase 4c
-def event_oxidizer_depleted_during_gaseous_blowdown(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
-    state = StateVector.unpack(y)
-    return state["n_v"] - _get_eps_n_ox(rocket_inputs, constants)
-event_oxidizer_depleted_during_gaseous_blowdown.terminal = True
-event_oxidizer_depleted_during_gaseous_blowdown.direction = -1
-def transition_oxidizer_depleted_during_gaseous_blowdown(state, rocket_inputs, current_time, live):
-    state["n_v"] = 0.0
-    state["T_C"] = live.get("T_c", 3000.0)
-    return state, "phase_4c", _capture_burnout_metadata(current_time, live)
-
-# rocket has very little thrust to weight ratio
-def event_thrust_below_floor_during_gaseous_blowdown(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
-    state = StateVector.unpack(y)
-    k = rocket_inputs.get("min_thrust_to_weight", 0.02)
-    nozzle_fn = cv_funcs.get("CV5_nozzle")
-    if k <= 0.0 or nozzle_fn is None:
-        return 1.0
-    # identical expression to the one in CV6_trajectory
-    W_o = constants["nitrous_oxide_molar_mass"]
-    m_total = (rocket_inputs["rocket_dry_mass"] + (state["n_l"] + state["n_v"]) * W_o + state["m_o"] + state["m_f"])
-    weight = m_total * constants["sea_level_gravity"]
-    live = dict(get_atmosphere_properties(state["sy_R"]))
-    return nozzle_fn(t, state, rocket_inputs, live, constants)["F_thrust"] - k * weight
-event_thrust_below_floor_during_gaseous_blowdown.terminal = True
-event_thrust_below_floor_during_gaseous_blowdown.direction = -1
-def transition_thrust_below_floor_during_gaseous_blowdown(state, rocket_inputs, current_time, live):
-    state["n_l"] = 0.0
-    state["T_C"] = live.get("T_c", 3000.0)
-    return state, "phase_5", _capture_burnout_metadata(current_time, live)  # engine is done, skip the purge
+# def event_oxidizer_depleted_during_gaseous_blowdown(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
+#     state = StateVector.unpack(y)
+#     return state["n_v"] - _get_eps_n_ox(rocket_inputs, constants)
+# event_oxidizer_depleted_during_gaseous_blowdown.terminal = True
+# event_oxidizer_depleted_during_gaseous_blowdown.direction = -1
+# def transition_oxidizer_depleted_during_gaseous_blowdown(state, rocket_inputs, current_time, live):
+#     state["n_v"] = 0.0
+#     state["T_C"] = live.get("T_c", 3000.0)
+#     return state, "phase_4c", _capture_burnout_metadata(current_time, live)
 
 # ========================================================
 # =================== PHASE 4a & 4c ======================
@@ -268,25 +273,27 @@ TRANSITION_REGISTRY = {
     },
     "phase_2": {
         "events": [event_fuel_burnout_during_liquid_blowdown, 
-                   event_oxidizer_depleted_during_liquid_blowdown, 
-                   event_liquid_depleted, 
-                   event_apogee_abort],
+                   #event_oxidizer_depleted_during_liquid_blowdown, 
+                   event_liquid_oxidizer_depleted, 
+                   event_apogee_abort, 
+                   event_thrust_below_floor],
         "handlers": [transition_fuel_burnout_during_liquid_blowdown, 
-                     transition_oxidizer_depleted_during_liquid_blowdown, 
+                     #transition_oxidizer_depleted_during_liquid_blowdown, 
                      transition_liquid_depleted, 
-                     transition_apogee_abort]
+                     transition_apogee_abort, 
+                     transition_thrust_below_floor]
     },
     "phase_3": {
         "events": [event_fuel_burnout_during_gaseous_blowdown, 
                    event_chamber_near_ambient_during_gaseous_blowdown, 
-                   event_oxidizer_depleted_during_gaseous_blowdown, 
+                   #event_oxidizer_depleted_during_gaseous_blowdown, 
                    event_apogee_abort, 
-                   event_thrust_below_floor_during_gaseous_blowdown],
+                   event_thrust_below_floor],
         "handlers": [transition_fuel_burnout_during_gaseous_blowdown, 
                      transition_chamber_near_ambient_during_gaseous_blowdown, 
-                     transition_oxidizer_depleted_during_gaseous_blowdown, 
+                     #transition_oxidizer_depleted_during_gaseous_blowdown, 
                      transition_apogee_abort, 
-                     transition_thrust_below_floor_during_gaseous_blowdown]
+                     transition_thrust_below_floor]
     },
     "phase_4a": {
         "events": [event_chamber_near_ambient_after_burnout, event_apogee_reached],
@@ -346,7 +353,7 @@ TERMINAL_STATES = {
         "code": "apogee_abort",
         "completed_nominally": False,
         "severity": "critical",
-        "message": "Apogee was reached while the engine was still supposed to be firing. The vehicle went up and came back down mid-burn, which means the configuration is not flyable as written.",
+        "message": "Apogee was reached while the engine was still supposed to be firing. The rocket went up and came back down mid-burn, which means the configuration is not flyable as written.",
         "console": "[ABORT] Apogee reached during powered ascent. Execution stopped.",
     },
     "terminal_phase_timeout": {
@@ -355,6 +362,13 @@ TERMINAL_STATES = {
         "severity": "critical",
         "message": "A phase ran out its phase_max_times budget without any transition event firing, so the run stops partway through. The state at that moment is real, but nothing after it exists.",
         "console": "[ABORT] A phase exceeded its time budget. Execution stopped.",
+    },
+    "terminal_failed_to_launch": {
+        "code": "failed_to_launch",
+        "completed_nominally": False,
+        "severity": "critical",
+        "message": "The rocket never cleared the pad. Thrust-to-weight was too low to lift it, so the trajectory, apogee and recovery figures describe a rocket that did not fly. Not detected by any event: never having left the ground is a property of the whole run rather than a moment in it.",
+        "console": "[ABORT] Rocket failed to leave the pad. Execution stopped.",
     },
 }
 

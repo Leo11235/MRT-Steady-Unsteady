@@ -6,7 +6,7 @@
         "metadata": {
             "simulation_type": "unsteady_test",
             "simulation_name": "Phase4a burnthrough thinner web",
-            "simulation_description": "PROBE, retuned, brackets 18 from the thick side. Same intent with more fuel and more oxidiser, so between the two at least one should have web left at the end of liquid blowdown and lose it during gaseous. Expected: success reaching phase_4a.",
+            "simulation_description": "Second route into phase_4a, at a larger scale than 18. Test 18 reaches 4a with 4.2 kg of fuel against 22 kg of oxidiser; fuel consumed scales roughly with the oxidiser charge, so 26 kg wants about 5.0 kg of grain to leave a comparable sliver of web at the end of liquid blowdown. The previous 5.7 kg was thick enough to survive the whole burn. Thrust floor stays disabled so gaseous blowdown runs long enough to finish the web. Expected: success reaching phase_4a.",
             "expected_output": "success",
             "warnings": true,
             "save_to_pdf": false,
@@ -157,7 +157,7 @@
                     "m"
                 ],
                 "chamber_fuel_mass": [
-                    5.7,
+                    5.0,
                     "kg"
                 ],
                 "chamber_fuel_internal_diameter": [

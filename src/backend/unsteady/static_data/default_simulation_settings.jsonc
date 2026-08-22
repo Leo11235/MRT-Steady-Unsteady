@@ -42,6 +42,10 @@
             },
             "multiple_transition_events_detected": {
                 "enabled": true
+            }, 
+            "launch_capability": {
+                "min_peak_thrust_to_weight": 5.0, // peak TtW ratio, below this the rocket is too slow to launch safely
+                "min_altitude_gain": 10.0 // altitude above launch pad, below this the rocket flight is treated as a failure
             }
         },
         "epsilons": {}, // define the 0-crossing thresholds for phase transitions

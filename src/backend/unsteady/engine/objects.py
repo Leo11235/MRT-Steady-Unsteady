@@ -134,6 +134,36 @@ class History:
         # np.trapezoid replaces the deprecated np.trapz in NumPy 2.0+
         return float(np.trapezoid(value_array[valid_indices], time_array[valid_indices]))
     
+    # peak TtW ratio and how far off the pad the rocket got
+    def launch_metrics(self) -> dict:
+        t = self.time_series["time"]
+        if not t:
+            return {
+                "peak_thrust_N": 0.0, 
+                "peak_thrust_to_weight": None, 
+                "altitude_gain_m": 0.0
+            }
+
+        ri = self.static_data
+        F = self.derived_series.get("F_thrust", [])
+        peak_thrust = max((v for v in F if v is not None and not math.isnan(v)), default=0.0)
+
+        ox_mass_initial = ri.get("tank_oxidizer_mass", 0.0)
+        r_f = self.time_series["r_f"]
+        fuel_mass_initial = ri.get("chamber_fuel_mass", math.pi * ri.get("chamber_fuel_density", 900.0) * ri.get("chamber_fuel_length", 0.0) * (ri.get("chamber_fuel_external_radius", 0.0) ** 2 - float(r_f[0]) ** 2)) if r_f else 0.0
+        initial_mass = ri.get("rocket_dry_mass", 0.0) + ox_mass_initial + fuel_mass_initial
+
+        sy_R = self.time_series["sy_R"]
+        launch_alt = ri.get("launch_site_altitude_asl", 0.0)
+
+        return {
+            "peak_thrust_N": peak_thrust,
+            "initial_mass_kg": initial_mass,
+            "peak_thrust_to_weight": (peak_thrust / (initial_mass * 9.80665)) if initial_mass > 0 else None,
+            "altitude_gain_m": (max(sy_R) - launch_alt) if sy_R else 0.0,
+        }
+    
+    
     def compute_performance(self) -> dict:
         """
         Computes overall and per-phase performance metrics from the logged time series
@@ -186,8 +216,7 @@ class History:
         total_impulse = self._integrate_time_series(t, F_thrust, burn_mask)
         peak_thrust = self._safe_max(F_thrust, burn_mask) or 0.0
         
-        initial_rocket_mass = ri.get("rocket_dry_mass", 0.0) + ox_mass_initial + fuel_mass_initial
-        pad_T_W = (peak_thrust / (initial_rocket_mass * 9.80665)) if initial_rocket_mass > 0 else None
+        pad_T_W = self.launch_metrics()["peak_thrust_to_weight"]
 
         n_ox_burnout = float(n_v[burnout_idx] + n_l[burnout_idx]) if burnout_idx >= 0 else n_ox_0
         ox_consumed = (n_ox_0 - n_ox_burnout) * W_o
@@ -260,7 +289,6 @@ class History:
             },
             "by_phase": by_phase
         }
-    
     
     def compute_metadata(self) -> dict:
         """
