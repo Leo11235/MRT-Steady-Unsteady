@@ -4,7 +4,8 @@
     "simulation_settings": {
         "transition_events": {
             "min_thrust_to_weight": 0.02, // ends phase 3 when the thrust being produced is too low to matter. Going below the current value (0.02) costs a few additional seconds of integration and buys very little. 
-            "k_amb": 1.05 // local ambient pressure * k_amb = chamber pressure floor at which phase 3 exits
+            "k_amb": 1.05, // local ambient pressure * k_amb = chamber pressure floor at which phase 3 exits
+            "ignition_delta_p": 500000.0 // how far above ambient the chamber has to climb before ignition is considered achieved and phase_1 hands over to phase_2
         },
         "phase_max_times": {
             "phase_1":  5.0,

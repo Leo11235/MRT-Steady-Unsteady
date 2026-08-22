@@ -13,8 +13,11 @@ def _get_n_l_thresh(rocket_inputs, constants):
     n_l0 = m_ox_0 / W_o
     return rocket_inputs.get("n_l_thresh_mol", 0.005 * n_l0)
 
-def _get_eps_n_ox(rocket_inputs):
-    return rocket_inputs.get("epsilons", {}).get("n_ox_mol", 1e-8)
+# threshold below which the tank is considered empty
+def _get_eps_n_ox(rocket_inputs, constants):
+    W_o = constants.get("nitrous_oxide_molar_mass", 0.044013)
+    n_ox_0 = rocket_inputs.get("tank_oxidizer_mass", 0.0) / W_o
+    return rocket_inputs.get("epsilons", {}).get("n_ox_mol", 0.005 * n_ox_0)
 
 def _capture_burnout_metadata(current_time, live):
     """Utility to freeze the thermodynamics at the moment of engine burnout/abort"""
@@ -68,7 +71,7 @@ def transition_liquid_depleted_during_ignition(state, rocket_inputs, current_tim
 def event_ignition_pressure_reached(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
     state = StateVector.unpack(y)
     p_amb = get_atmosphere_properties(state["sy_R"])["p_amb"]
-    return (p_amb + rocket_inputs.get("ignition_delta_p_pa", 500000.0)) - state["p_C"]
+    return (p_amb + rocket_inputs.get("ignition_delta_p", 500000.0)) - state["p_C"]
 event_ignition_pressure_reached.terminal = True
 event_ignition_pressure_reached.direction = -1
 def transition_ignition_pressure_reached(state, rocket_inputs, current_time, live):
@@ -90,7 +93,7 @@ def transition_fuel_burnout_during_liquid_blowdown(state, rocket_inputs, current
 
 def event_oxidizer_depleted_during_liquid_blowdown(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
     state = StateVector.unpack(y)
-    return (state["n_v"] + state["n_l"]) - _get_eps_n_ox(rocket_inputs)
+    return (state["n_v"] + state["n_l"]) - _get_eps_n_ox(rocket_inputs, constants)
 event_oxidizer_depleted_during_liquid_blowdown.terminal = True
 event_oxidizer_depleted_during_liquid_blowdown.direction = -1
 def transition_oxidizer_depleted_during_liquid_blowdown(state, rocket_inputs, current_time, live):
@@ -141,7 +144,7 @@ def transition_chamber_near_ambient_during_gaseous_blowdown(state, rocket_inputs
 # in case the tank gas runs out before chamber fuel but the combustion still hasn't stalled --> phase 4c
 def event_oxidizer_depleted_during_gaseous_blowdown(t, y, rocket_inputs, cv_funcs, constants, phase_metadata):
     state = StateVector.unpack(y)
-    return state["n_v"] - _get_eps_n_ox(rocket_inputs)
+    return state["n_v"] - _get_eps_n_ox(rocket_inputs, constants)
 event_oxidizer_depleted_during_gaseous_blowdown.terminal = True
 event_oxidizer_depleted_during_gaseous_blowdown.direction = -1
 def transition_oxidizer_depleted_during_gaseous_blowdown(state, rocket_inputs, current_time, live):
