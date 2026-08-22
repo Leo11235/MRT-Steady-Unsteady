@@ -457,7 +457,7 @@ def warnings_summary(ctx) -> list[dict]:
             continue
         rows.append({"severity": entry.get("severity", "advisory"),
                      "id": warning_id, "message": str(entry["message"])})
-    order = {"critical": 0, "warning": 1, "advisory": 2}
+    order = {"critical": 0, "caution": 1, "advisory": 2}
     rows.sort(key=lambda r: order.get(r["severity"], 3))
     return rows
 

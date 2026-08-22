@@ -1,7 +1,7 @@
 """
 Warnings look for an log validity/runtime information. They do not affect the program while it is running, but rather get returned to the user afterward. They can be global of phase/CV specific. 
     - Advisory (of note, not necessarily bad)
-    - Warning (potential problems with the input rocket config)
+    - Caution (potential problems with the input rocket config)
     - Critical (cause the simulation to fail or to be severely unphysical)
     
     - Debug (more about the simulation engine than physics)
@@ -38,14 +38,14 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
     
     if L_f < 0.2:
         warning_dict["init_short_fuel_grain"] = {
-            "severity": "warning",
+            "severity": "caution",
             "message": "Fuel grain length is dangerously short (< 0.2 m). 1D regression models lose accuracy at low L/D ratios.",
             "fuel_cell_length": L_f
         }
         
     if r_f is not None and r_f < 0.01:
         warning_dict["init_tight_fuel_port"] = {
-            "severity": "warning",
+            "severity": "caution",
             "message": f"Initial fuel port radius is extremely tight ({r_f*100} < 1 cm). High risk of choked port flow and flame blowout.",
             "inner_radius": r_f
         }
@@ -73,7 +73,7 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
         ullage = rocket_inputs["tank_ullage_fraction"]
         if ullage < 0.10:
             warning_dict["init_low_ullage"] = {
-                "severity": "warning",
+                "severity": "caution",
                 "message": "Tank ullage fraction is dangerously low (< 10%). Severe risk of hydraulic lock and catastrophic tank failure due to thermal expansion.",
                 "ullage_fraction": ullage
             }
@@ -99,13 +99,13 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
         a = rocket_inputs["chamber_regression_rate_scaling_constant"]
         if a < 0.5e-4:
             warning_dict["init_low_chamber_regression_rate_scaling_constant"] = {
-                    "severity": "warning",
+                    "severity": "caution",
                     "message": f"Regression rate constant ({a}) is unusually low. Recommended range is [0.5e-4, 1e-3]. ",
                     "chamber_regression_rate_scaling_constant": a
                 }
         elif a> 1e-3: 
             warning_dict["init_high_chamber_regression_rate_scaling_constant"] = {
-                    "severity": "warning",
+                    "severity": "caution",
                     "message": f"Regression rate constant ({a}) is unusually high. Recommended range is [0.5e-4, 1e-3]. ",
                     "chamber_regression_rate_scaling_constant": a
                 }
@@ -114,13 +114,13 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
         n = rocket_inputs["chamber_regression_rate_exponent"]
         if n < 0.3:
             warning_dict["init_low_chamber_regression_rate_exponent"] = {
-                    "severity": "warning",
+                    "severity": "caution",
                     "message": f"Regression rate exponent ({n}) is unusually low. Recommended range is [0.3, 0.9]. ",
                     "chamber_regression_rate_exponent": n
                 }
         elif n > 0.9:
             warning_dict["init_high_chamber_regression_rate_exponent"] = {
-                    "severity": "warning",
+                    "severity": "caution",
                     "message": f"Regression rate exponent ({n}) is unusually high. Recommended range is [0.3, 0.9]. ",
                     "chamber_regression_rate_exponent": n
                 }
@@ -249,7 +249,7 @@ def warn_engine_cutoff_thrust_floor(t: float, warning_dict: dict, state_vector: 
 def warn_CEA_envelope_excursions(warning_dict: dict):
     for key, exc in envelope_excursions().items():
         warning_dict[f"cea_envelope_{key.replace(' ', '_').replace('/', '')}"] = {
-            "severity": "warning",
+            "severity": "caution",
             "message": (f"{exc['axis']} went {exc['limit']} {exc['count']} times; worst was {exc['worst_requested']:.4g} against a table edge of {exc['table_edge']:.4g}. Values were held at the edge for those steps."),
             "axis": exc["axis"],
             "worst_requested": exc["worst_requested"],
@@ -266,7 +266,7 @@ def warn_N2O_envelope_excursions(warning_dict: dict):
             note = "Above the N2O critical point the liquid and vapour phases are not distinct."
 
         warning_dict[f"n2o_table_{key.replace(' ', '_')}"] = {
-            "severity": "warning",
+            "severity": "caution",
             "message": (f"Tank temperature went {exc['limit']} {exc['count']} times; worst was {exc['worst_requested']:.5g} K against a table edge of {exc['table_edge']:.5g} K. Saturated properties were held at the edge for those steps. {note}"),
             "worst_requested_K": exc["worst_requested"],
             "table_edge_K": exc["table_edge"],
@@ -290,7 +290,7 @@ def warn_launch_capability(warning_dict: dict, metrics: dict, min_TtW: float, mi
     TtW = metrics.get("peak_thrust_to_weight")
     if TtW is not None and TtW < min_TtW:
         warning_dict["low_peak_thrust_to_weight"] = {
-            "severity": "warning",
+            "severity": "caution",
             "message": f"Peak thrust-to-weight is {TtW:.2f}, below the recommended minimum of {min_TtW:.1f}. A rocket this marginal leaves the rail slowly and is unstable while it does.",
             "peak_thrust_to_weight": TtW,
             "peak_thrust_N": metrics.get("peak_thrust_N"),
@@ -337,7 +337,7 @@ def warn_on_transition(event_name: str, t: float, warning_dict: dict, state_vect
 
 # computes overall simulation health level
 def finalize_warnings(warning_dict: dict):
-    severity_rank = {"advisory": 1, "warning": 2, "critical": 3}
+    severity_rank = {"advisory": 1, "caution": 2, "critical": 3}
     max_severity_val = 0
     overall_level = "nominal"
 

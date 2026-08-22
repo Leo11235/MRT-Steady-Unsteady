@@ -250,13 +250,24 @@ def run_unsteady(rocket_inputs_filename: str, # should end in .jsonc
             active_phase = "terminal_phase_timeout"
 
     # TERMINAL STATE HANDLING
+    # note for anyone messing with this code in the future: the next ~20 lines should probably be handed off to another function, especially the parts individually calling warning checks/functions. but it works for now so idc
+    _launch_cfg = sim_settings.get("warnings", {}).get("launch_capability", {})
+    _min_twr = _launch_cfg.get("min_peak_thrust_to_weight", 5.0)
+    _min_gain = _launch_cfg.get("min_altitude_gain_m", 10.0)
+    launch_metrics = history.launch_metrics()
+    
+    if launch_metrics["altitude_gain"] < _min_gain:
+        active_phase = "terminal_failed_to_launch"
+    
     terminal_info = transitions.terminal_state_info(active_phase)
     history.set_terminal_state(terminal_info, current_time)
     print(f"\n{terminal_info['console']}")
+    
     if not terminal_info["completed_nominally"]:
         history.log_event(current_time, f"ABORT_{terminal_info['code'].upper()}", terminal_info["message"])
         warnings.warn_terminal_state(warnings_dict, terminal_info, current_time)
-
+    # check if the rocket actually made it off the ground
+    warnings.warn_launch_capability(warnings_dict, launch_metrics, _min_twr, _min_gain)
     # for CEA and N2O properties lookup, turn clamp logs into warnings.
     warnings.warn_CEA_envelope_excursions(warnings_dict)
     warnings.warn_N2O_envelope_excursions(warnings_dict)

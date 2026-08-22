@@ -11,7 +11,7 @@ the X counts as going back, because dismissing a warning should never be the
 same as agreeing with it.
 
 Warnings arrive as {id: {"severity": ..., "message": ...}}. Severity is
-"advisory", "warning" or "critical"; anything else renders as advisory.
+"advisory", "caution" or "critical"; anything else renders as advisory.
 """
 
 from __future__ import annotations
@@ -22,12 +22,12 @@ from src.ui.app import theme
 
 
 # Severity presentation, worst first.
-_SEVERITY_ORDER = ("critical", "warning", "advisory")
+_SEVERITY_ORDER = ("critical", "caution", "advisory")
 
 _SEVERITY_STYLE: dict[str, tuple[str, tuple]] = {
     # id: (heading shown on the group, colour)
     "critical": ("Critical", theme.ERROR),
-    "warning":  ("Warning", theme.WARNING_STRONG),
+    "caution":  ("Caution", theme.WARNING_STRONG),
     "advisory": ("Advisory", theme.WARNING),
 }
 

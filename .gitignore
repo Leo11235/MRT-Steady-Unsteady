@@ -18,5 +18,6 @@ tests/test_outputs/
 # generated test reports
 tests/reports/
 
-# my own notes
+# my own notes & debugging
 notes.txt
+main.py

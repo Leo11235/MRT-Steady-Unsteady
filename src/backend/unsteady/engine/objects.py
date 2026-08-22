@@ -160,7 +160,7 @@ class History:
             "peak_thrust_N": peak_thrust,
             "initial_mass_kg": initial_mass,
             "peak_thrust_to_weight": (peak_thrust / (initial_mass * 9.80665)) if initial_mass > 0 else None,
-            "altitude_gain_m": (max(sy_R) - launch_alt) if sy_R else 0.0,
+            "altitude_gain": (max(sy_R) - launch_alt) if sy_R else 0.0,
         }
     
     

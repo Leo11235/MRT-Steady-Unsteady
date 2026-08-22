@@ -422,7 +422,7 @@ def worst_severity(warnings: dict) -> str | None:
     Lets a caller decide how loudly to present the modal without knowing the
     severity ordering itself.
     """
-    order = ("advisory", "warning", "critical")
+    order = ("advisory", "caution", "critical")
     worst = None
     for entry in (warnings or {}).values():
         severity = (entry or {}).get("severity") if isinstance(entry, dict) else None

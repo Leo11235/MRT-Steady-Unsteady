@@ -840,13 +840,13 @@ def _draw_events_table(ax, event_log):
 _SEVERITY_COLORS = {
     "debug":    "#9aa5b1",
     "advisory": "#f4a261",
-    "regular":  "#e76f51",
+    "caution":  "#e76f51",
     "critical": "#b00020",
 }
 _LEVEL_COLORS = {
     "none":     "#2a9d8f",
     "advisory": "#f4a261",
-    "regular":  "#e76f51",
+    "caution":  "#e76f51",
     "critical": "#b00020",
 }
 

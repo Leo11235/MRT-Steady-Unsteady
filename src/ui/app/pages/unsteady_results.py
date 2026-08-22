@@ -27,10 +27,10 @@ from src.ui.app.widgets import figure_window
 from src.ui.app.widgets.graph_picker import show_graph_picker
 
 # Worst first, matching the preflight dialog.
-_SEVERITY_ORDER = ("critical", "warning", "advisory")
+_SEVERITY_ORDER = ("critical", "caution", "advisory")
 _SEVERITY_COLOR = {
     "critical": theme.ERROR,
-    "warning": theme.WARNING_STRONG,
+    "caution": theme.WARNING_STRONG,
     "advisory": theme.WARNING,
 }
 
