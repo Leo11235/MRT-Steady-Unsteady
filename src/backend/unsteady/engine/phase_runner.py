@@ -20,7 +20,7 @@ from src.backend.unsteady.engine.transitions import TRANSITION_REGISTRY
 from src.backend.unsteady.physics.N2O_properties.N2O_properties import get_N2O_property
 from src.backend.unsteady.physics.CEA.CEA_interpolator import CEA_interpolation_lookup, envelope_excursions, reset_envelope_log
 from src.backend.unsteady.physics.atmosphere.atmosphere import get_atmosphere_properties
-from src.backend.unsteady.engine.warnings import (WARNINGS_REGISTRY, warn_initialization_limits, finalize_warnings)
+from src.backend.unsteady.engine.warnings import WARNINGS_REGISTRY, warn_initialization_limits, finalize_warnings, warn_on_transition
 
 import src.backend.unsteady.engine.rhs as rhs
 
@@ -87,6 +87,11 @@ def run_unsteady(rocket_inputs_filename: str, # should end in .jsonc
     rocket_inputs = config["rocket_inputs"]
     sim_settings = config["simulation_settings"]
     rocket_inputs_metadata = config["metadata"]
+    
+    # add transition_events dict to rocket_inputs (transition_events contains guidelines on when to abort certain phases)
+    # this is not the cleanest way to implement, transition_events should probably be passed on its own into args=... on solve_ivp below; worth doing if this code is ever refactored. this is a safe implementation for now since nothing else (other than some code in transitions.py) reads these keys from rocket_inputs. 
+    rocket_inputs.update(sim_settings.get("transition_events", {}))
+    rocket_inputs["epsilons"] = sim_settings.get("epsilons", {})
     
     # this dict contains constants (gravity, universal gas constant, etc)
     constants_dict = initialize_natural_constants_dict()
@@ -244,6 +249,10 @@ def run_unsteady(rocket_inputs_filename: str, # should end in .jsonc
             
             event_name = active_events[triggered_idx].__name__
             history.log_event(current_time, "PHASE_TRANSITION", f"Event '{event_name}' triggered. Exiting {active_phase} to {next_phase}")
+            
+            # check for anything sus between phase transitions
+            warn_on_transition(event_name, current_time, warnings_dict, state_dict, final_live, rocket_inputs)
+            
             print(f"\n>>> [{event_name}] --> {active_phase.capitalize()} transitioned to {next_phase} at t={current_time:.3f} s")
             active_phase = next_phase
             

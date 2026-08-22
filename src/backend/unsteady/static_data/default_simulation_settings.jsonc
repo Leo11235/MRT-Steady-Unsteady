@@ -2,7 +2,10 @@
 
 {
     "simulation_settings": {
-        "transition_events": {},
+        "transition_events": {
+            "min_thrust_to_weight": 0.02, // ends phase 3 when the thrust being produced is too low to matter. Going below the current value (0.02) costs a few additional seconds of integration and buys very little. 
+            "k_amb": 1.05 // local ambient pressure * k_amb = chamber pressure floor at which phase 3 exits
+        },
         "phase_max_times": {
             "phase_1":  5.0,
             "phase_2":  30.0,

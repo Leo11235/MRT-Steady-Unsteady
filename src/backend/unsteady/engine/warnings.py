@@ -9,6 +9,9 @@ Warnings look for an log validity/runtime information. They do not affect the pr
 
 import math
 
+########################################
+# timestep warnings (run every timestep)
+########################################
 # input range & sanity checks
 # checks whether a whole bunch of rocket input values are valid and within the model's validity range
 # !!! this function is used directly by the frontend. Do not change the inputs, and only add to warning_dict if it would be reasonable for the user to get a popup warning them about that input. 
@@ -122,8 +125,6 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
                     "chamber_regression_rate_exponent": n
                 }
     
-    
-    
 
 # checks whether CEA is a good predictor for a given (OF, p_C) input to CEA
 def warn_CEA_outside_tested_range(t: float, warning_dict: dict, state_vector: dict, live: dict, rocket_inputs: dict):
@@ -213,6 +214,28 @@ def warn_CEA_outside_table_bounds(t: float, warning_dict: dict, state_vector: di
             "max_p_C": p_C
         }
 
+##############################################################################################
+# transition-triggered warning (run only once per phase transition rather than every timestep)
+##############################################################################################
+
+# phase 3 ended by the thrust floor rather than finishing on its own
+# vapor blowdown decays asymptotically, so there is always some thrust left. better to cut it off early and save 5s of compute time (during tests, this missed out on ~0.0003% of total impulse)
+def warn_engine_cutoff_thrust_floor(t: float, warning_dict: dict, state_vector: dict, live: dict, rocket_inputs: dict):
+    F = live.get("F_thrust", 0.0)
+    k = rocket_inputs.get("min_thrust_to_weight", 0.02)
+
+    warning_dict["engine_cutoff_thrust_floor"] = {
+        "severity": "advisory",
+        "message": (f"Engine cut off at t={t:.2f} s while still producing {F:.1f} N, because thrust had fallen below {k:.1%} of vehicle weight. The remaining decay tail was not integrated, so apogee is marginally conservative."),
+        "t_cutoff": t,
+        "F_thrust_at_cutoff": F,
+        "min_thrust_to_weight": k,
+    }
+
+
+
+
+# tested every timestep
 WARNINGS_REGISTRY = {
     "phase_1": [warn_CEA_outside_tested_range, warn_CEA_outside_table_bounds],
     "phase_2": [warn_CEA_outside_tested_range, warn_CEA_outside_table_bounds],
@@ -223,6 +246,17 @@ WARNINGS_REGISTRY = {
     "phase_6": [],
     "phase_7": []
 }
+
+
+# which transition events owe the user a warning when they fire, keyed by th event function's __name__
+TRANSITION_WARNINGS_REGISTRY = {
+    "event_thrust_below_floor_during_gaseous_blowdown": [warn_engine_cutoff_thrust_floor],
+}
+# run whatever warnings a just-fired transition event owes the user
+# phase runner calls this on every transition without checking anything, so which events are worth warning about stays a question this file answers and the runner never grows a chain of name comparisons
+def warn_on_transition(event_name: str, t: float, warning_dict: dict, state_vector: dict, live: dict, rocket_inputs: dict):
+    for func in TRANSITION_WARNINGS_REGISTRY.get(event_name, []):
+        func(t, warning_dict, state_vector, live, rocket_inputs)
 
 # computes overall simulation health level
 def finalize_warnings(warning_dict: dict):
