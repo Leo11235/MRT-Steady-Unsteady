@@ -1,0 +1,38 @@
+// 42_hotfire_low_regression_constant
+// Group: hotfire propellant and geometry
+// Forked from 02_hotfire_baseline.jsonc
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Hotfire low regression constant",
+        "simulation_description": "The other end of the band at 0.00006. Very little fuel, so O/F climbs and the burn stretches out. Together with 41 this brackets the analytic burn integral across the whole recommended range.",
+        "expected_output": "success",
+        "checks": {
+            "value_between": {
+                "rocket_parameters.thrust": [500, 20000],
+                "rocket_parameters.Isp": [100, 350],
+                "rocket_parameters.average_oxidizer_to_fuel_ratio": [1, 40],
+                "rocket_parameters.burntime": [1, 200]
+            },
+            "files_exist": ["Hotfire low regression constant.json"]
+        }
+    },
+    "simulation_settings": {
+        "simulation_type": "hotfire",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [6e-05, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+        "fuel_mass": [9, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

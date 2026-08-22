@@ -1,0 +1,30 @@
+// 54_fail_hotfire_neither_alt_filled
+// Group: input validation
+// Forked from 02_hotfire_baseline.jsonc
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Fail hotfire neither alt filled",
+        "simulation_description": "Both fuel_mass and initial_internal_fuel_diameter left null. Test 10 covers both being filled; this is the other half of the same rule and there is no reason to believe one direction implies the other. Expected: validation_error.",
+        "expected_output": "validation_error",
+        "checks": {}
+    },
+    "simulation_settings": {
+        "simulation_type": "hotfire",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+        "fuel_mass": [null, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

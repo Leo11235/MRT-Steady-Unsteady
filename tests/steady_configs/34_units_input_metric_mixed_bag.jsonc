@@ -1,0 +1,45 @@
+// 34_units_input_metric_mixed_bag
+// Group: input unit conversion
+// Forked from 00_fuel_mass_convergence_baseline.jsonc
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Units input metric mixed bag",
+        "simulation_description": "The same rocket again in a deliberately inconsistent metric mixture: centimetres, grams, bar, g/cm3, g/s and gradians. Nothing anyone would write on purpose, which is exactly why the loader should survive it. Results should match 00 and 33.",
+        "expected_output": "success",
+        "checks": {
+            "value_within": {
+                "rocket_parameters.reached_apogee": [13716, 100]
+            },
+            "value_between": {
+                "rocket_parameters.fuel_mass": [1, 10],
+                "rocket_parameters.thrust": [1000, 20000]
+            },
+            "files_exist": ["Units input metric mixed bag.json"]
+        }
+    },
+    "simulation_settings": {
+        "simulation_type": "fuel_mass_convergence",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3012.0, "g/s"],
+        "chamber_pressure": [34.47, "bar"],
+        "fuel_external_diameter": [15.24, "cm"],
+        "fuel_length": [60.96, "cm"],
+        "fuel_grain_density": [0.9, "g/cm3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+        "target_apogee": [1371600.0, "cm"],
+        "launch_site_altitude": [36400.0, "cm"],
+        "dry_mass": [88890.0, "g"],
+        "rocket_external_diameter": [20.574, "cm"],
+        "drag_coefficient": [0.641606, "."],
+        "launch_angle": [6.666666666667, "grad"],
+        "fuel_mass": [null, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

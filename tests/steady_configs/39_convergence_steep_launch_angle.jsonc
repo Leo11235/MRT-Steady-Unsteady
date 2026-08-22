@@ -1,0 +1,44 @@
+// 39_convergence_steep_launch_angle
+// Group: convergence settings and edges
+// Forked from 00_fuel_mass_convergence_baseline.jsonc
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Convergence steep launch angle",
+        "simulation_description": "Launch angle of 30 degrees, five times the baseline. Far enough over that a large part of the impulse goes sideways and the fuel mass has to rise noticeably to still make altitude.",
+        "expected_output": "success",
+        "checks": {
+            "value_within": {
+                "rocket_parameters.reached_apogee": [13716, 100]
+            },
+            "value_between": {
+                "rocket_parameters.fuel_mass": [1, 12]
+            },
+            "files_exist": ["Convergence steep launch angle.json"]
+        }
+    },
+    "simulation_settings": {
+        "simulation_type": "fuel_mass_convergence",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+        "target_apogee": [13716, "m"],
+        "launch_site_altitude": [364, "m"],
+        "dry_mass": [88.89, "kg"],
+        "rocket_external_diameter": [0.20574, "m"],
+        "drag_coefficient": [0.641606, "."],
+        "launch_angle": [30.0, "deg"],
+        "fuel_mass": [null, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

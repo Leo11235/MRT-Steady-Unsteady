@@ -1,0 +1,59 @@
+// 51_parametric_mixed_units_sweep
+// Group: parametric study
+// Forked from 01_parametric_baseline.jsonc
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Parametric mixed units sweep",
+        "simulation_description": "One sweep in bar, one in lb/s, one in inches. The bounds and the step of a single variable all convert together, and a step size converted with the wrong factor produces the right endpoints with the wrong number of points, which is why the list lengths are the assertion here.",
+        "expected_output": "success",
+        "checks": {
+            "list_length": {
+                "parametric_results.variable_ranges.chamber_pressure": 3,
+                "parametric_results.variable_ranges.oxidizer_mass_flow_rate": 3,
+                "parametric_results.variable_ranges.fuel_length": 3,
+                "parametric_results.combinations": 27
+            },
+            "files_exist": ["Parametric mixed units sweep.json"]
+        }
+    },
+    "simulation_settings": {
+        "simulation_type": "parametric_study",
+        "output_units": "SI",
+        "save_output_data": true,
+        "parametric_study_settings": {
+            "chamber_pressure": {
+                "low_end": [30, "bar"],
+                "high_end": [50, "bar"],
+                "step_size": [10, "bar"]
+            },
+            "oxidizer_mass_flow_rate": {
+                "low_end": [4, "lb/s"],
+                "high_end": [8, "lb/s"],
+                "step_size": [2, "lb/s"]
+            },
+            "fuel_length": {
+                "low_end": [20, "in"],
+                "high_end": [28, "in"],
+                "step_size": [4, "in"]
+            }
+        }
+    },
+    "rocket_inputs": {
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+        "target_apogee": [13716, "m"],
+        "launch_site_altitude": [364, "m"],
+        "dry_mass": [88.89, "kg"],
+        "rocket_external_diameter": [0.20574, "m"],
+        "drag_coefficient": [0.641606, "."],
+        "launch_angle": [6, "deg"],
+        "fuel_mass": [null, "kg"],
+        "initial_internal_fuel_diameter": [0.04, "m"]
+    }
+}

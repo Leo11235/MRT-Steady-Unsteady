@@ -1,0 +1,49 @@
+// 49_parametric_sweep_dry_mass
+// Group: parametric study
+// Forked from 01_parametric_baseline.jsonc
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Parametric sweep dry mass",
+        "simulation_description": "Sweeps dry_mass from 60 to 120 kg in 20 kg steps. A second kinematics variable, and one whose units are mass rather than dimensionless, so it also proves the sweep bounds convert rather than being passed through raw.",
+        "expected_output": "success",
+        "checks": {
+            "list_length": {
+                "parametric_results.combinations": 4,
+                "parametric_results.variable_ranges.dry_mass": 4
+            },
+            "files_exist": ["Parametric sweep dry mass.json"]
+        }
+    },
+    "simulation_settings": {
+        "simulation_type": "parametric_study",
+        "output_units": "SI",
+        "save_output_data": true,
+        "parametric_study_settings": {
+            "dry_mass": {
+                "low_end": [60, "kg"],
+                "high_end": [120, "kg"],
+                "step_size": [20, "kg"]
+            }
+        }
+    },
+    "rocket_inputs": {
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+        "target_apogee": [13716, "m"],
+        "launch_site_altitude": [364, "m"],
+        "dry_mass": [88.89, "kg"],
+        "rocket_external_diameter": [0.20574, "m"],
+        "drag_coefficient": [0.641606, "."],
+        "launch_angle": [6, "deg"],
+        "fuel_mass": [null, "kg"],
+        "initial_internal_fuel_diameter": [0.04, "m"],
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"]
+    }
+}

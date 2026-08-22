@@ -1,0 +1,36 @@
+// 55_fail_unknown_simulation_type
+// Group: input validation
+// Forked from 00_fuel_mass_convergence_baseline.jsonc
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Fail unknown simulation type",
+        "simulation_description": "simulation_type set to a value steady_main does not recognise. It raises ValueError from an explicit else branch, which is a config problem rather than a physics one. Nothing currently tests that branch even though it is the first thing a typo in a hand-written config would hit. Expected: validation_error.",
+        "expected_output": "validation_error",
+        "checks": {}
+    },
+    "simulation_settings": {
+        "simulation_type": "monte_carlo",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+        "target_apogee": [13716, "m"],
+        "launch_site_altitude": [364, "m"],
+        "dry_mass": [88.89, "kg"],
+        "rocket_external_diameter": [0.20574, "m"],
+        "drag_coefficient": [0.641606, "."],
+        "launch_angle": [6, "deg"],
+        "fuel_mass": [null, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

@@ -29,29 +29,34 @@ UNSTEADY_CONFIGS_DIR = _TESTS_DIR / "unsteady_configs"
 TEST_OUTPUTS_DIR = _TESTS_DIR / "test_outputs"
 
 
-def run_backend_tests(all_steady_tests=True, 
-                      all_unsteady_tests=True,
-                      only=None, 
-                      keep_results=False, 
+def run_backend_tests(steady_tests_only=False,
+                      unsteady_tests_only=False,
+                      only=None,
+                      keep_results=False,
                       timeout=200,
                       reports=True):
     """
     Run the backend test suite and print the results
 
-    all_steady_tests / all_unsteady_tests: whether to run each family at all
-    only: none for everything, or a string / list of strings
-    keep_results: false deletes each test's output once its checks have run, leaving test_outputs empty
-    timeout: per-test wall-clock budget in seconds, can be none for no timeout
-    reports: write tests/reports/report_<stamp>.{html,md,json,pdf} at the end.
+    args
+        steady_tests_only / unsteady_tests_only: restrict the run to one family
+        only: none for everything, or a string / list of strings
+        keep_results: false deletes each test's output once its checks have run, leaving test_outputs empty
+        timeout: per-test wall-clock budget in seconds, can be none for no timeout
+        reports: write tests/reports/report_<stamp>.{html,md,json,pdf} at the end.
 
     returns the list of TestContext objects, so a caller can inspect results beyond what gets printed
     """
+    if steady_tests_only and unsteady_tests_only:
+        raise ValueError("steady_tests_only and unsteady_tests_only are mutually exclusive. "
+                         "Leave both False to run everything.")
+
     console = make_console()
     contexts = []
 
-    if all_steady_tests:
+    if not unsteady_tests_only:
         contexts += _run_steady_tests(console, only, keep_results, timeout)
-    if all_unsteady_tests:
+    if not steady_tests_only:
         contexts += _run_unsteady_tests(console, only, keep_results, timeout)
 
     if not contexts:
@@ -74,36 +79,27 @@ def run_backend_tests(all_steady_tests=True,
                 console.print(f"  {label:5s} {path}")
             if note:
                 console.print(f"[yellow]  {note}[/yellow]")
-        except Exception as exc:                # noqa: BLE001
-            # A reporting failure must never mask the test results, which are
-            # already on screen at this point.
-            console.print(f"\n[yellow]Could not write reports: "
-                          f"{type(exc).__name__}: {exc}[/yellow]")
+        except Exception as exc: 
+            console.print(f"\n[yellow]Could not write reports: {type(exc).__name__}: {exc}[/yellow]")
 
     return contexts
 
-
+# run every steady config
 def _run_steady_tests(console, only, keep_results, timeout):
-    """run every steady config"""
     configs = discover_configs(STEADY_CONFIGS_DIR, only)
     print_section(console, "Steady", len(configs))
-    return _run_all(console, configs, "steady", run_steady,
-                    TEST_OUTPUTS_DIR / "steady", keep_results, timeout)
+    return _run_all(console, configs, "steady", run_steady, TEST_OUTPUTS_DIR / "steady", keep_results, timeout)
 
-
+# run every unsteady config
 def _run_unsteady_tests(console, only, keep_results, timeout):
-    """run every unsteady config"""
     configs = discover_configs(UNSTEADY_CONFIGS_DIR, only)
     print_section(console, "Unsteady", len(configs))
-    return _run_all(console, configs, "unsteady", run_unsteady,
-                    TEST_OUTPUTS_DIR / "unsteady", keep_results, timeout)
+    return _run_all(console, configs, "unsteady", run_unsteady, TEST_OUTPUTS_DIR / "unsteady", keep_results, timeout)
 
 
 def _run_all(console, configs, kind, runner, output_dir, keep_results, timeout):
     contexts = []
     for config_path in configs:
-        # A transient spinner, so a long unsteady run doesn't look like a hang.
-        # It clears itself once the test finishes and the result line prints.
         with console.status(f"[dim]running {config_path.stem}...[/dim]"):
             ctx = execute_test(config_path, kind, runner, output_dir, timeout)
         print_test_result(console, ctx)
@@ -114,4 +110,4 @@ def _run_all(console, configs, kind, runner, output_dir, keep_results, timeout):
 
 
 if __name__ == "__main__":
-    run_backend_tests()
+    run_backend_tests(steady_tests_only=True)

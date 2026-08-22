@@ -1,0 +1,48 @@
+// 52_parametric_two_point_sweep
+// Group: parametric study
+// Forked from 01_parametric_baseline.jsonc
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Parametric two point sweep",
+        "simulation_description": "The smallest sweep that is still a sweep: exactly two points on one variable. Test 24 covers a single point where low equals high; this is the adjacent case, and off-by-one errors in a range builder live between the two.",
+        "expected_output": "success",
+        "checks": {
+            "list_length": {
+                "parametric_results.combinations": 2,
+                "parametric_results.variable_ranges.chamber_pressure": 2
+            },
+            "files_exist": ["Parametric two point sweep.json"]
+        }
+    },
+    "simulation_settings": {
+        "simulation_type": "parametric_study",
+        "output_units": "SI",
+        "save_output_data": true,
+        "parametric_study_settings": {
+            "chamber_pressure": {
+                "low_end": [400, "psi"],
+                "high_end": [500, "psi"],
+                "step_size": [100, "psi"]
+            }
+        }
+    },
+    "rocket_inputs": {
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+        "target_apogee": [13716, "m"],
+        "launch_site_altitude": [364, "m"],
+        "dry_mass": [88.89, "kg"],
+        "rocket_external_diameter": [0.20574, "m"],
+        "drag_coefficient": [0.641606, "."],
+        "launch_angle": [6, "deg"],
+        "fuel_mass": [null, "kg"],
+        "initial_internal_fuel_diameter": [0.04, "m"],
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"]
+    }
+}

@@ -6,208 +6,80 @@
         "metadata": {
             "simulation_type": "unsteady_test",
             "simulation_name": "Injector feed loss near tank pressure",
-            "simulation_description": "Feed loss of 5 MPa against a 5.7 MPa tank, so injector delta_p sits on the floor for the whole burn and reaches the dead zone partway through. The previous run proved the point (it did not stall, which is exactly what the old quadratic blend would have done) and then ran out its 30 s phase_2 budget with most of the charge left. Smaller charge and a longer budget so it finishes. Expected: success, and never solver_stalled.",
-            "expected_output": "success",
+            "simulation_description": "Feed loss of 5 MPa against a 5.73 MPa tank leaves under 1.3 bar of injector delta_p for the whole run, so the injector spends the burn in its quadratic transition region and reaches the dead zone with 85 mol of liquid still in the tank. That is the state that used to hang the solver: nothing flows either way, the state parks on the delta_p = 0 kink, and before the thrust floor was registered on phase_2 there was no exit at all. It now exits cleanly. The trickle of oxidiser only lifts the chamber to about 6 bar, which is 285 N of thrust against 559 N of weight, so the vehicle also never leaves the pad and the launch guard correctly refuses to call it a flight. Guards three things at once: that a stalled feed terminates instead of stalling the integrator, that the phase_2 thrust floor fires, and that failed_to_launch overrides a terminal state that would otherwise read success_landed. Expected: engine_abort with terminal_state 'failed_to_launch', and never solver_stalled.",
+            "expected_output": "engine_abort",
             "warnings": true,
             "save_to_pdf": false,
             "save_to_png": false,
             "checks": {
-                "files_exist": [
-                    "sim_data.json"
-                ],
-                "json_path_exists": [
-                    "performance.overall",
-                    "event_log",
-                    "data.time"
-                ],
-                "value_between": {
-                    "performance.overall.peak_chamber_pressure_Pa": [
-                        50000,
-                        30000000
-                    ],
-                    "performance.overall.burntime_s": [
-                        0.05,
-                        120
-                    ]
+                "files_exist": ["sim_data.json"],
+                "value_equals": {
+                    "metadata.terminal_state": "failed_to_launch",
+                    "metadata.completed_nominally": false
                 },
-                "no_nans_in": [
-                    "time",
-                    "p_C",
-                    "sy_R",
-                    "F_thrust"
-                ]
+                "json_path_exists": ["warnings.triggered_warnings.failed_to_launch", "warnings.triggered_warnings.low_peak_thrust_to_weight", "warnings.triggered_warnings.engine_cutoff_thrust_floor"],
+                "value_between": {
+                    "performance.overall.pad_thrust_to_weight": [0.0, 1.0]
+                },
+                "no_nans_in": ["time", "p_C", "sy_R", "F_thrust"]
             }
         },
         "rocket_inputs": {
             "CV1_tank": {
                 "model": "saturated_equilibrium",
-                "tank_internal_diameter": [
-                    0.2,
-                    "m"
-                ],
-                "tank_temperature": [
-                    298.15,
-                    "K"
-                ],
-                "tank_oxidizer_mass": [
-                    6.0,
-                    "kg"
-                ],
-                "dip_tube_external_diameter": [
-                    0.012,
-                    "m"
-                ],
-                "dip_tube_internal_diameter": [
-                    0.008,
-                    "m"
-                ],
-                "dip_tube_length": [
-                    0.45,
-                    "m"
-                ],
-                "tank_ullage_fraction": [
-                    0.1,
-                    "."
-                ],
-                "tank_internal_length": [
-                    null,
-                    "m"
-                ]
+                "tank_internal_diameter": [0.2, "m"],
+                "tank_temperature": [298.15, "K"],
+                "tank_oxidizer_mass": [6.0, "kg"],
+                "dip_tube_external_diameter": [0.012, "m"],
+                "dip_tube_internal_diameter": [0.008, "m"],
+                "dip_tube_length": [0.45, "m"],
+                "tank_ullage_fraction": [0.1, "."],
+                "tank_internal_length": [null, "m"]
             },
             "CV2_valve": {
                 "model": "sigmoid",
-                "valve_time_constant": [
-                    0.1,
-                    "s"
-                ],
-                "sigmoid_half_time": [
-                    0.05,
-                    "s"
-                ],
-                "sigmoid_steepness": [
-                    10.0,
-                    "."
-                ]
+                "valve_time_constant": [0.1, "s"],
+                "sigmoid_half_time": [0.05, "s"],
+                "sigmoid_steepness": [10.0, "."]
             },
             "CV3_injector": {
                 "model": "SPI",
-                "injector_discharge_coefficient": [
-                    0.8,
-                    "."
-                ],
-                "injector_number_of_holes": [
-                    36,
-                    "."
-                ],
-                "injector_hole_diameter": [
-                    0.001514,
-                    "m"
-                ],
-                "feed_pressure_loss": [
-                    5000000.0,
-                    "Pa"
-                ]
+                "injector_discharge_coefficient": [0.8, "."],
+                "injector_number_of_holes": [36, "."],
+                "injector_hole_diameter": [0.001514, "m"],
+                "feed_pressure_loss": [5000000.0, "Pa"]
             },
             "CV4_chamber": {
                 "model": "0D_quasi_steady",
-                "chamber_fuel_length": [
-                    0.45,
-                    "m"
-                ],
-                "chamber_fuel_density": [
-                    900.0,
-                    "kg/m3"
-                ],
-                "chamber_fuel_external_diameter": [
-                    0.2,
-                    "m"
-                ],
-                "chamber_regression_rate_scaling_constant": [
-                    0.000132,
-                    "."
-                ],
-                "chamber_regression_rate_exponent": [
-                    0.555,
-                    "."
-                ],
-                "pre_chamber_diameter": [
-                    0.2,
-                    "m"
-                ],
-                "pre_chamber_length": [
-                    0.031831,
-                    "m"
-                ],
-                "post_chamber_diameter": [
-                    0.2,
-                    "m"
-                ],
-                "post_chamber_length": [
-                    0.0477465,
-                    "m"
-                ],
-                "chamber_fuel_mass": [
-                    6.0,
-                    "kg"
-                ],
-                "chamber_fuel_internal_diameter": [
-                    null,
-                    "m"
-                ]
+                "chamber_fuel_length": [0.45, "m"],
+                "chamber_fuel_density": [900.0, "kg/m3"],
+                "chamber_fuel_external_diameter": [0.2, "m"],
+                "chamber_regression_rate_scaling_constant": [0.000132, "."],
+                "chamber_regression_rate_exponent": [0.555, "."],
+                "pre_chamber_diameter": [0.2, "m"],
+                "pre_chamber_length": [0.031831, "m"],
+                "post_chamber_diameter": [0.2, "m"],
+                "post_chamber_length": [0.0477465, "m"],
+                "chamber_fuel_mass": [6.0, "kg"],
+                "chamber_fuel_internal_diameter": [null, "m"]
             },
             "CV5_nozzle": {
                 "model": "1D_frozen",
-                "nozzle_throat_diameter": [
-                    0.032,
-                    "m"
-                ],
-                "nozzle_exit_diameter": [
-                    0.09,
-                    "m"
-                ]
+                "nozzle_throat_diameter": [0.032, "m"],
+                "nozzle_exit_diameter": [0.09, "m"]
             },
             "CV6_trajectory": {
                 "model": "2dof",
-                "rocket_dry_mass": [
-                    45.0,
-                    "kg"
-                ],
-                "rocket_drag_coefficient": [
-                    0.64,
-                    "."
-                ],
-                "rocket_outer_diameter": [
-                    0.20186,
-                    "m"
-                ],
-                "rocket_launch_angle": [
-                    6.0,
-                    "deg"
-                ],
-                "drogue_parachute_drag_coefficient": [
-                    1.2,
-                    "."
-                ],
-                "drogue_parachute_diameter": [
-                    0.59711,
-                    "m"
-                ],
-                "main_parachute_deployment_altitude_agl": [
-                    450.0,
-                    "m"
-                ],
-                "main_parachute_drag_coefficient": [
-                    1.5,
-                    "."
-                ],
-                "main_parachute_diameter": [
-                    3.4999,
-                    "m"
-                ],
-                "launch_site_altitude_asl": [
-                    300.0,
-                    "m"
-                ]
+                "rocket_dry_mass": [45.0, "kg"],
+                "rocket_drag_coefficient": [0.64, "."],
+                "rocket_outer_diameter": [0.20186, "m"],
+                "rocket_launch_angle": [6.0, "deg"],
+                "drogue_parachute_drag_coefficient": [1.2, "."],
+                "drogue_parachute_diameter": [0.59711, "m"],
+                "main_parachute_deployment_altitude_agl": [450.0, "m"],
+                "main_parachute_drag_coefficient": [1.5, "."],
+                "main_parachute_diameter": [3.4999, "m"],
+                "launch_site_altitude_asl": [300.0, "m"]
             }
         }
     },

@@ -1,0 +1,43 @@
+// 31_units_output_defaults_to_mrt
+// Group: output unit systems
+// Forked from 00_fuel_mass_convergence_baseline.jsonc
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Units output defaults to mrt",
+        "simulation_description": "output_units omitted entirely, so the value comes from default_simulation_settings, which says MRT. Every existing config overrides it, meaning the default has never been exercised by a test even though it is what a user gets when they leave the field alone. reached_apogee should come out in feet, near 45000.",
+        "expected_output": "success",
+        "checks": {
+            "value_within": {
+                "rocket_parameters.reached_apogee": [45000, 328]
+            },
+            "value_between": {
+                "rocket_parameters.fuel_mass": [1, 10]
+            },
+            "files_exist": ["Units output defaults to mrt.json"]
+        }
+    },
+    "simulation_settings": {
+        "simulation_type": "fuel_mass_convergence",
+        "save_output_data": true
+    },
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+        "target_apogee": [13716, "m"],
+        "launch_site_altitude": [364, "m"],
+        "dry_mass": [88.89, "kg"],
+        "rocket_external_diameter": [0.20574, "m"],
+        "drag_coefficient": [0.641606, "."],
+        "launch_angle": [6, "deg"],
+        "fuel_mass": [null, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

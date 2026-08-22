@@ -1,0 +1,37 @@
+// 43_hotfire_dense_fuel
+// Group: hotfire propellant and geometry
+// Forked from 02_hotfire_baseline.jsonc
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Hotfire dense fuel",
+        "simulation_description": "Fuel density raised to 1200 kg/m3. For a fixed 9 kg charge the grain geometry has to change to hold it, so this exercises the mass-to-port-radius derivation at a density well away from paraffin's 900.",
+        "expected_output": "success",
+        "checks": {
+            "value_between": {
+                "rocket_parameters.fuel_mass": [8.9, 9.1],
+                "rocket_parameters.thrust": [1000, 20000],
+                "rocket_parameters.initial_internal_fuel_radius": [0.005, 0.076]
+            },
+            "files_exist": ["Hotfire dense fuel.json"]
+        }
+    },
+    "simulation_settings": {
+        "simulation_type": "hotfire",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [1200.0, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+        "fuel_mass": [9, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

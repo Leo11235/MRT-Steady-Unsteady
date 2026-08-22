@@ -1,0 +1,38 @@
+// 41_hotfire_high_regression_constant
+// Group: hotfire propellant and geometry
+// Forked from 02_hotfire_baseline.jsonc
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Hotfire high regression constant",
+        "simulation_description": "Regression scaling coefficient at 0.0009, near the top of the recommended band. More fuel per unit oxidiser flux, so O/F falls and burntime shortens. The steady solver folds a into an analytic burn integral rather than stepping it, so its sensitivity is worth pinning at both ends of the band.",
+        "expected_output": "success",
+        "checks": {
+            "value_between": {
+                "rocket_parameters.thrust": [1000, 20000],
+                "rocket_parameters.Isp": [100, 350],
+                "rocket_parameters.average_oxidizer_to_fuel_ratio": [0.2, 15],
+                "rocket_parameters.burntime": [0.5, 60]
+            },
+            "files_exist": ["Hotfire high regression constant.json"]
+        }
+    },
+    "simulation_settings": {
+        "simulation_type": "hotfire",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.0009, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+        "fuel_mass": [9, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

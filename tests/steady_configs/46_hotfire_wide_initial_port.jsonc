@@ -1,0 +1,39 @@
+// 46_hotfire_wide_initial_port
+// Group: hotfire propellant and geometry
+// Forked from 02_hotfire_baseline.jsonc
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Hotfire wide initial port",
+        "simulation_description": "The opposite: a 120 mm port in the same 152.4 mm grain leaves a 16 mm web. Very low flux, very little fuel, so O/F runs high and the burn is short. Brackets 45.",
+        "expected_output": "success",
+        "checks": {
+            "value_within": {
+                "rocket_parameters.initial_internal_fuel_radius": [0.06, 0.001]
+            },
+            "value_between": {
+                "rocket_parameters.thrust": [500, 20000],
+                "rocket_parameters.fuel_mass": [0.1, 10]
+            },
+            "files_exist": ["Hotfire wide initial port.json"]
+        }
+    },
+    "simulation_settings": {
+        "simulation_type": "hotfire",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+        "fuel_mass": [null, "kg"],
+        "initial_internal_fuel_diameter": [0.12, "m"]
+    }
+}

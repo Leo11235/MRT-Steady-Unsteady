@@ -1,0 +1,30 @@
+// 56_fail_impossible_grain_geometry
+// Group: input validation
+// Forked from 02_hotfire_baseline.jsonc
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Fail impossible grain geometry",
+        "simulation_description": "INTENTIONALLY RED until the steady loader validates grain geometry. Nine kilograms of 650 kg/m3 fuel needs 13.85 L, inside a grain envelope of pi*0.0762^2*0.6096 = 11.12 L. The port radius is therefore the square root of a negative number. _calculate_initial_radius uses ** 0.5 rather than math.sqrt, so instead of raising it returns a complex number, which flows into the O/F ratio, makes pyPROPEP throw, gets swallowed by a bare except that returns an error dict nobody reads, and finally surfaces three functions later as KeyError: 'chamber_temperature' inside the nozzle area calculation. The unsteady loader catches this exact class in config._validate_geometry with a readable message; steady has no equivalent. Expected: validation_error.",
+        "expected_output": "validation_error",
+        "checks": {}
+    },
+    "simulation_settings": {
+        "simulation_type": "hotfire",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [650.0, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+        "fuel_mass": [9.0, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

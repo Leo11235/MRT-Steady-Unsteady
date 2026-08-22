@@ -1,0 +1,45 @@
+// 36_convergence_loose_tolerance
+// Group: convergence settings and edges
+// Forked from 00_fuel_mass_convergence_baseline.jsonc
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Convergence loose tolerance",
+        "simulation_description": "The companion to 35, with tolerance opened to 500 m. Should stop early and land anywhere inside that band. Together the two bracket how much of the converged fuel mass is the search and how much is the tolerance.",
+        "expected_output": "success",
+        "checks": {
+            "value_within": {
+                "rocket_parameters.reached_apogee": [13716, 500]
+            },
+            "value_between": {
+                "rocket_parameters.fuel_mass": [1, 10]
+            },
+            "files_exist": ["Convergence loose tolerance.json"]
+        }
+    },
+    "simulation_settings": {
+        "simulation_type": "fuel_mass_convergence",
+        "output_units": "SI",
+        "save_output_data": true,
+        "tolerated_apogee_difference": 500.0
+    },
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+        "target_apogee": [13716, "m"],
+        "launch_site_altitude": [364, "m"],
+        "dry_mass": [88.89, "kg"],
+        "rocket_external_diameter": [0.20574, "m"],
+        "drag_coefficient": [0.641606, "."],
+        "launch_angle": [6, "deg"],
+        "fuel_mass": [null, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

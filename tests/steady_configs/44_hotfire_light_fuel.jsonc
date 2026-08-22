@@ -1,0 +1,40 @@
+// 44_hotfire_light_fuel
+// Group: hotfire propellant and geometry
+// Forked from 02_hotfire_baseline.jsonc
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Hotfire light fuel",
+        "simulation_description": "Fuel density dropped to 650 kg/m3, the mirror of 43. A light fuel needs more volume per kilogram, so the charge is 5.5 kg rather than 9: at 650 kg/m3 nine kilograms would need 13.85 L inside a grain envelope that only holds 11.12 L, which is geometrically impossible and is what the first version of this config asked for. The resulting port is tighter than 43's despite carrying less mass. Expected: success.",
+        "expected_output": "success",
+        "checks": {
+            "files_exist": ["Hotfire light fuel.json"],
+            "value_within": {
+                "rocket_parameters.initial_internal_fuel_radius": [0.0373, 0.001]
+            },
+            "value_between": {
+                "rocket_parameters.fuel_mass": [5.4, 5.6],
+                "rocket_parameters.thrust": [1000, 20000],
+                "rocket_parameters.Isp": [100, 350]
+            }
+        }
+    },
+    "simulation_settings": {
+        "simulation_type": "hotfire",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [650.0, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+        "fuel_mass": [5.5, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

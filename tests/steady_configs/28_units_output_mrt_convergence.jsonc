@@ -1,0 +1,48 @@
+// 28_units_output_mrt_convergence
+// Group: output unit systems
+// Forked from 00_fuel_mass_convergence_baseline.jsonc
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Units output mrt convergence",
+        "simulation_description": "Convergence with output_units MRT. Every one of the 28 existing steady configs sets SI, so convert_rocket_parameters_SI_to_MRT and its siblings have never run, even though MRT is what default_simulation_settings actually defaults to. The conversion is selective: reached_apogee becomes feet and nozzle radii become inches, while fuel_mass stays in kg and thrust stays in newtons. Asserting both halves means a change that over-converts fails just as loudly as one that under-converts. 13716 m is exactly 45000 ft.",
+        "expected_output": "success",
+        "checks": {
+            "json_path_exists": ["rocket_parameters.reached_apogee", "rocket_parameters.nozzle_throat_radius"],
+            "value_within": {
+                "rocket_parameters.reached_apogee": [45000, 328]
+            },
+            "value_between": {
+                "rocket_parameters.fuel_mass": [1, 10],
+                "rocket_parameters.thrust": [1000, 20000],
+                "rocket_parameters.Isp": [100, 350],
+                "rocket_parameters.nozzle_throat_radius": [0.2, 4.0]
+            },
+            "files_exist": ["Units output mrt convergence.json"]
+        }
+    },
+    "simulation_settings": {
+        "simulation_type": "fuel_mass_convergence",
+        "output_units": "MRT",
+        "save_output_data": true
+    },
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+        "target_apogee": [13716, "m"],
+        "launch_site_altitude": [364, "m"],
+        "dry_mass": [88.89, "kg"],
+        "rocket_external_diameter": [0.20574, "m"],
+        "drag_coefficient": [0.641606, "."],
+        "launch_angle": [6, "deg"],
+        "fuel_mass": [null, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

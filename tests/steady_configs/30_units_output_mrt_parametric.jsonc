@@ -1,0 +1,53 @@
+// 30_units_output_mrt_parametric
+// Group: output unit systems
+// Forked from 01_parametric_baseline.jsonc
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Units output mrt parametric",
+        "simulation_description": "Parametric study with output_units MRT, which is the only path that reaches convert_param_results_dict_SI_to_MRT. That function walks a list of result dicts rather than a single one, so it fails differently from the others: a wrong loop leaves some points converted and some not.",
+        "expected_output": "success",
+        "checks": {
+            "json_path_exists": ["parametric_results.combinations"],
+            "list_length": {
+                "parametric_results.combinations": 15,
+                "parametric_results.rocket_parameters": 15
+            },
+            "files_exist": ["Units output mrt parametric.json"]
+        }
+    },
+    "simulation_settings": {
+        "simulation_type": "parametric_study",
+        "output_units": "MRT",
+        "save_output_data": true,
+        "parametric_study_settings": {
+            "oxidizer_mass_flow_rate": {
+                "low_end": [1, "kg/s"],
+                "high_end": [5, "kg/s"],
+                "step_size": [1, "kg/s"]
+            },
+            "chamber_pressure": {
+                "low_end": [400, "psi"],
+                "high_end": [600, "psi"],
+                "step_size": [100, "psi"]
+            }
+        }
+    },
+    "rocket_inputs": {
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+        "target_apogee": [13716, "m"],
+        "launch_site_altitude": [364, "m"],
+        "dry_mass": [88.89, "kg"],
+        "rocket_external_diameter": [0.20574, "m"],
+        "drag_coefficient": [0.641606, "."],
+        "launch_angle": [6, "deg"],
+        "fuel_mass": [null, "kg"],
+        "initial_internal_fuel_diameter": [0.04, "m"]
+    }
+}

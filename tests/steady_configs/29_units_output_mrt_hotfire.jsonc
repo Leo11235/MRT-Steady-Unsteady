@@ -1,0 +1,40 @@
+// 29_units_output_mrt_hotfire
+// Group: output unit systems
+// Forked from 02_hotfire_baseline.jsonc
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Units output mrt hotfire",
+        "simulation_description": "Hotfire with output_units MRT. Test 02 pins initial_internal_fuel_radius at 0.02418 m in SI; the same geometry read in inches is 0.9520. Small enough that a wrong conversion factor cannot hide inside a wide band.",
+        "expected_output": "success",
+        "checks": {
+            "value_within": {
+                "rocket_parameters.initial_internal_fuel_radius": [0.952, 0.02]
+            },
+            "value_between": {
+                "rocket_parameters.fuel_mass": [8.9, 9.1],
+                "rocket_parameters.thrust": [1000, 20000],
+                "rocket_parameters.chamber_temperature": [2000, 4000]
+            },
+            "files_exist": ["Units output mrt hotfire.json"]
+        }
+    },
+    "simulation_settings": {
+        "simulation_type": "hotfire",
+        "output_units": "MRT",
+        "save_output_data": true
+    },
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [3.012, "kg/s"],
+        "chamber_pressure": [3447000, "Pa"],
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+        "fuel_mass": [9, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}

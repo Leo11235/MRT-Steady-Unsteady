@@ -1,0 +1,46 @@
+// 33_units_input_imperial_equivalent
+// Group: input unit conversion
+// Forked from 00_fuel_mass_convergence_baseline.jsonc
+{
+    "metadata": {
+        "simulation_type": "steady_test",
+        "simulation_name": "Units input imperial equivalent",
+        "simulation_description": "The 00 baseline rocket to the last digit, written in inches, pounds, psi, feet and lb/s, with SI output so the numbers can be compared directly against 00. Any difference in reached_apogee or fuel_mass is a conversion factor error rather than physics. Steady configs have been effectively SI-only, so the loader's conversion path has only ever run on its identity case.",
+        "expected_output": "success",
+        "checks": {
+            "value_within": {
+                "rocket_parameters.reached_apogee": [13716, 100]
+            },
+            "value_between": {
+                "rocket_parameters.fuel_mass": [1, 10],
+                "rocket_parameters.thrust": [1000, 20000],
+                "rocket_parameters.Isp": [100, 350]
+            },
+            "files_exist": ["Units input imperial equivalent.json"]
+        }
+    },
+    "simulation_settings": {
+        "simulation_type": "fuel_mass_convergence",
+        "output_units": "SI",
+        "save_output_data": true
+    },
+    "rocket_inputs": {
+        "oxidizer_mass_flow_rate": [6.640323337009, "lb/s"],
+        "chamber_pressure": [499.945081956057, "psi"],
+        "fuel_external_diameter": [6.0, "in"],
+        "fuel_length": [24.0, "in"],
+        "fuel_grain_density": [56.18516451853, "lb/ft3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+        "target_apogee": [540000.0, "in"],
+        "launch_site_altitude": [14330.708661417324, "in"],
+        "dry_mass": [195.968904856138, "lb"],
+        "rocket_external_diameter": [8.1, "in"],
+        "drag_coefficient": [0.641606, "."],
+        "launch_angle": [6, "deg"],
+        "fuel_mass": [null, "kg"],
+        "initial_internal_fuel_diameter": [null, "m"]
+    }
+}
