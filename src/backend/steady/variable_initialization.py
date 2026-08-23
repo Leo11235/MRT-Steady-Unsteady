@@ -22,8 +22,7 @@ def load_steady_config(input_file_path):
     rocket_inputs = input_file['rocket_inputs']
     metadata = input_file.get('metadata', {})
     
-    # convert any UI-side diameter keys into the radius/area keys the rest of the steady physics expects 
-    # clean and standardize rocket inputs
+    # convert any UI-side diameter keys into the radius/area keys the rest of the steady physics expects clean and standardize rocket inputs
     rocket_inputs_cleaned = {}
     for key, val in rocket_inputs.items():
         # skip PROPEP str inputs
@@ -50,6 +49,8 @@ def load_steady_config(input_file_path):
         **default_simulation_settings,
         **simulation_settings_override
     }
+
+    _normalize_parametric_keys(simulation_settings)
 
     validate_simulation_inputs(rocket_inputs_cleaned, simulation_settings)
 
@@ -224,3 +225,27 @@ def _validate_geometry(rocket_inputs):
         solid_mass = pi * Lf * Re**2 * rho
         if Mf > solid_mass:
             raise ValueError(f"Fuel mass ({Mf:.4g} kg) exceeds a completely solid grain of these dimensions ({solid_mass:.4g} kg). At {rho:g} kg/m3 that mass needs {Mf / rho * 1000:.2f} L, and the grain envelope only holds {solid_mass / rho * 1000:.2f} L. Reduce the fuel mass, lengthen the grain, or widen it.")
+
+# rename parametrized variables to radii &  their bounds 
+def _normalize_parametric_keys(simulation_settings):
+    settings = simulation_settings.get("parametric_study_settings")
+    if not isinstance(settings, dict):
+        return
+
+    def halve(bound):
+        # normally a [value, unit] pair, but pair_to_SI accepts a bare SI number for older configs, so this has to as well
+        if isinstance(bound, (list, tuple)) and len(bound) == 2:
+            value, unit = bound
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return [_diameter_to_radius(value), unit]
+            return bound
+        if isinstance(bound, (int, float)) and not isinstance(bound, bool):
+            return _diameter_to_radius(bound)
+        return bound
+
+    # keys collected first: the loop reassigns while iterating
+    for key in [k for k in settings if "diameter" in k]:
+        before, after = key.split("diameter")
+        settings[f"{before}radius{after}"] = {name: halve(bound) for name, bound in settings.pop(key).items()}
+
+

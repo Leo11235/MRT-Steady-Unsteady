@@ -1,0 +1,88 @@
+{
+    "metadata": {
+        "simulation_type": "steady_test", // can be "steady", "unsteady", "steady_test", "unsteady_test"
+        "simulation_name": "Parametric baseline", // str, optional; blank falls back to a timestamp
+        "simulation_description": "Parametric study with all parametrizable variables activated, 2 points per variable. Expect 128 points.", // a brief description of the simulation, eg what is being tried for the rocket if it is a regular config or what is being tested+expected output if it is a test config
+        "expected_output": "success", // test configs only; see EXPECTED_OUTPUTS in backend_tests_helpers.py
+        "checks": { // all values SI, since output_units is SI
+            "files_exist": ["Parametric baseline.json"],
+            "json_path_exists": ["parametric_results.combinations", "parametric_results.variable_ranges"],
+            "list_length": {
+                "parametric_results.combinations": 128,
+                "parametric_results.rocket_parameters": 128,
+                "parametric_results.flight_data": 128,
+                "parametric_results.variable_ranges.oxidizer_mass_flow_rate": 2,
+                "parametric_results.variable_ranges.chamber_pressure": 2
+            }
+        }
+    },
+
+    "simulation_settings": {
+        "simulation_type": "parametric_study", // 'hotfire', 'fuel_mass_convergence', or 'parametric_study'
+        "output_units": "SI", // SI, IMP, or MRT (rocket team's own mishmash of SI and IMP)
+        "save_output_data": true, // whether to save simulation data
+
+        "parametric_study_settings": { // only include if simulation type is 'parametric_study'
+            // each bound is a [value, unit] pair; a sweep can be written in any
+            // unit of the right category, and every point converts to SI on load
+            "oxidizer_mass_flow_rate": {
+                "low_end":   [4, "kg/s"],
+                "high_end":  [5, "kg/s"],
+                "step_size": [1, "kg/s"]
+            },
+            "chamber_pressure": {
+                "low_end":   [400, "psi"],
+                "high_end":  [500, "psi"],
+                "step_size": [100, "psi"]
+            },
+            "fuel_length": {
+                "low_end":   [20, "in"],
+                "high_end":  [24, "in"],
+                "step_size": [4, "in"]
+            },
+            "fuel_external_diameter": {
+                "low_end":   [15, "cm"],
+                "high_end":  [20, "cm"],
+                "step_size": [5, "cm"]
+            },
+            "rocket_external_diameter": {
+                "low_end":   [15, "cm"],
+                "high_end":  [20, "cm"],
+                "step_size": [5, "cm"]
+            },
+            "drag_coefficient": {
+                "low_end":   [0.5, "."],
+                "high_end":  [0.7, "."],
+                "step_size": [0.2, "."]
+            },
+            "dry_mass": {
+                "low_end":   [80, "kg"],
+                "high_end":  [100, "kg"],
+                "step_size": [20, "kg"]
+            }
+        }
+    },
+
+    "rocket_inputs": {
+        // base requirements — needed for every simulation type
+        // (oxidizer_mass_flow_rate and chamber_pressure are swept above, so
+        //  they're filled in per point by the solver rather than set here)
+        "fuel_grain_density": [900, "kg/m3"],
+        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        //"oxidizer_molecule_code": 657,
+        "solid_fuel_type": "EICOSANE (PARAFFIN)",
+        //"fuel_molecule_code": 1029,
+
+        // kinematics requirements — needed for fuel_mass_convergence and parametric_study
+        "target_apogee": [13716, "m"],
+        "launch_site_altitude": [364, "m"],
+        "launch_angle": [6, "deg"],
+
+        // hotfire requirements — one of the following:
+        "fuel_mass": [null, "kg"],
+            // or:
+        "initial_internal_fuel_diameter": [0.04, "m"]
+    }
+}

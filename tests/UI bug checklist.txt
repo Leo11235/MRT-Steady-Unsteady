@@ -1,14 +1,16 @@
 UI BUG CHECKLIST
 last updated Aug. 2026
 
-- Work through this checklist before cutting a release to cover scenarios automated backend tests cannot cover.
-- The configs in tests/ui_configs/ exist to drive failure paths; each specifies what it should do at the top.
-- Launch command: 
+Work through this checklist before cutting a release to cover scenarios automated backend tests cannot cover.
+Launch command: 
     .venv\Scripts\activate
     python -m src.ui.main
-- Build command: 
+Build command: 
     build_tools\build.bat
+
+CONFIG TESTS
 - Run all the files in user_data\simulation_configs\ui_configs. Expected output is written in simulation description block. 
+- Move some of the configs from tests/(un)steady_configs into C:\Users\<user>\AppData\Roaming\MRT-Steady-Unsteady\user_data\simulation_configs (or Mac/Linux equivalent) and run them. Each config file contains the expected outcome in its description. 
 
 UNITS
 - Enter 32 in a length field set to mm, switch to in, switch back to mm. It reads 32, not 31.9999. Switch a dozen more times; still 32.
