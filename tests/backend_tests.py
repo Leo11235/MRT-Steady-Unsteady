@@ -1,8 +1,7 @@
 """
 Runs all backend tests in steady_configs and unsteady_configs
 
-Each config under tests/steady_configs and tests/unsteady_configs is one test. Its metadata carries 'expected_output' (what should happen) and an optional
-'checks' block (assertions on the output).  A test passes when both agree with reality. See backend_tests_helpers.py for how to add a new kind of check.
+Each config under tests/steady_configs and tests/unsteady_configs is one test. Its metadata carries 'expected_output' (what should happen) and an optional 'checks' block (assertions on the output). A test passes when both agree with reality. See backend_tests_helpers.py for how to add a new kind of check.
 
 Results are written to tests/test_outputs and deleted afterwards unless keep_results=True
 """
@@ -33,7 +32,7 @@ def run_backend_tests(steady_tests_only=False,
                       unsteady_tests_only=False,
                       only=None,
                       keep_results=False,
-                      timeout=200,
+                      timeout=100, # set to ~2000 for steady test 57 to pass (it is a long parametric test)
                       reports=True):
     """
     Run the backend test suite and print the results

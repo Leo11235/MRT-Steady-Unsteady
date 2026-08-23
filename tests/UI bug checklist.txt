@@ -68,7 +68,6 @@ BUG REPORT
 - Pull the nework cable and send -> friendly error plus a working "Copy report to clipboard" fallback.
 
 FROZEN BUILD
-- The exe launches with no console window, and the HOME SCREEN appears — not "Not built yet". That placeholder means build.spec stopped bundling the page modules.
 - First launch seeds %APPDATA%\MRT-Steady-Unsteady\ with the three example configs and default settings.
 - Version chip on Home matches the VERSION file, and the patch notes open.
 - A steady run completes: proves rocketcea and pypropep data got bundled.

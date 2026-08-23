@@ -291,9 +291,12 @@ def warn_terminal_state(warning_dict: dict, terminal_info: dict, t: float):
     }
 
 # checks whether peak TtW is above ~5 and whether the rocket climbed at least ~10m (~ for both because the values depend on what is written in default_simulation_settings.jsonc)
-def warn_launch_capability(warning_dict: dict, metrics: dict, min_TtW: float, min_gain_m: float):
+# only fires if the engine reached its operating point
+def warn_launch_capability(warning_dict: dict, metrics: dict, 
+                           min_TtW: float, min_gain_m: float, 
+                           report_launch_failure: bool = True):
     TtW = metrics.get("peak_thrust_to_weight")
-    if TtW is not None and TtW < min_TtW:
+    if TtW is not None and metrics.get("reached_operating_point", True) and TtW < min_TtW:
         warning_dict["low_peak_thrust_to_weight"] = {
             "severity": "caution",
             "message": f"Peak thrust-to-weight is {TtW:.2f}, below the recommended minimum of {min_TtW:.1f}. A rocket this marginal leaves the rail slowly and is unstable while it does.",
@@ -303,7 +306,7 @@ def warn_launch_capability(warning_dict: dict, metrics: dict, min_TtW: float, mi
         }
 
     gain = metrics.get("altitude_gain", 0.0)
-    if gain < min_gain_m:
+    if report_launch_failure and gain < min_gain_m:
         warning_dict["failed_to_launch"] = {
             "severity": "critical",
             "message": f"The vehicle rose {gain:.2f} m above the pad, under the {min_gain_m:.0f} m needed to count as a launch. Every trajectory figure in this run describes a rocket that did not fly.",

@@ -1,7 +1,7 @@
 {
     "metadata": {
         "simulation_type": "steady_test", // can be "steady", "unsteady", "steady_test", "unsteady_test"
-        "simulation_name": "Parametric baseline", // str, optional; blank falls back to a timestamp
+        "simulation_name": "Long parametric study (1500 points)", // str, optional; blank falls back to a timestamp
         "simulation_description": "Long parametric study, sweeping ox flow rate (10 points) against chamber pressure (15 points) against fuel length (10 points). Should produce 1500 converged combinations.", // a brief description of the simulation, eg what is being tried for the rocket if it is a regular config or what is being tested+expected output if it is a test config
         "expected_output": "success", // test configs only; see EXPECTED_OUTPUTS in backend_tests_helpers.py
         "checks": { // all values SI, since output_units is SI

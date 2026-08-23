@@ -15,7 +15,11 @@
                     "performance.overall.peak_chamber_pressure_Pa": [1000000, 15000000],
                     "performance.overall.burntime_s": [1, 30]
                 },
-                "no_nans_in": ["time", "p_C", "F_thrust"]
+                "no_nans_in": ["time", "p_C", "F_thrust"],
+                "value_equals": {
+                    "metadata.terminal_state": "liquid_quench",
+                    "metadata.completed_nominally": false
+                }
             }
         },
         "rocket_inputs": {
@@ -51,7 +55,7 @@
                 "chamber_regression_rate_scaling_constant": [0.005, "."],
                 "chamber_regression_rate_exponent": [0.555, "."],
                 "pre_chamber_diameter": [0.2, "m"],
-                "pre_chamber_length": [0.0318310, "m"],
+                "pre_chamber_length": [0.031831, "m"],
                 "post_chamber_diameter": [0.2, "m"],
                 "post_chamber_length": [0.0477465, "m"],
                 "chamber_fuel_mass": [6.0, "kg"],

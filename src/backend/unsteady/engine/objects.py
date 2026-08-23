@@ -141,7 +141,8 @@ class History:
             return {
                 "peak_thrust_N": 0.0, 
                 "peak_thrust_to_weight": None, 
-                "altitude_gain_m": 0.0
+                "altitude_gain": 0.0,
+                "reached_operating_point": False,
             }
 
         ri = self.static_data
@@ -156,11 +157,16 @@ class History:
         sy_R = self.time_series["sy_R"]
         launch_alt = ri.get("launch_site_altitude_asl", 0.0)
 
+        # anything past phase_1 means ignition succeeded and the engine reached its operating point
+        phases = self.time_series.get("phase", [])
+        reached_operating_point = any(p not in (None, "phase_1") for p in phases)
+
         return {
             "peak_thrust_N": peak_thrust,
             "initial_mass_kg": initial_mass,
-            "peak_thrust_to_weight": (peak_thrust / (initial_mass * 9.80665)) if initial_mass > 0 else None,
+            "peak_thrust_to_weight": (peak_thrust / (initial_mass * 9.80665)) if (initial_mass > 0 and peak_thrust > 1) else None,
             "altitude_gain": (max(sy_R) - launch_alt) if sy_R else 0.0,
+            "reached_operating_point": reached_operating_point,
         }
     
     
