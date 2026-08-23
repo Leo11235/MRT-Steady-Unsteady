@@ -21,22 +21,25 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
     
     
     ###### fuel grain
-    L_f = rocket_inputs["chamber_fuel_length"]
-    R_f = rocket_inputs["chamber_fuel_external_radius"]
-    
-    if "chamber_fuel_internal_radius" in rocket_inputs:
-        # if the user provided fuel internal radius, check inputs
-        r_f = rocket_inputs["chamber_fuel_internal_radius"]
-    else:
-        # if the user provided fuel mass instead, calculate the implied r_f, then check inputs
-        m_f_tot = rocket_inputs["chamber_fuel_mass"]
-        p_f = rocket_inputs["chamber_fuel_density"]
-        try: # triggers if inputs are gemoetrically valid
-            r_f = math.sqrt(R_f**2 - m_f_tot / (math.pi * p_f * L_f))
-        except ValueError: # triggers if inputs are physically impossible (ie inner diameter > outer diameter)
-            r_f = None
-    
-    if L_f < 0.2:
+    L_f = _number(rocket_inputs, "chamber_fuel_length")
+    R_f = _number(rocket_inputs, "chamber_fuel_external_radius")
+
+    # dummy value, we run some checks to ensure the fuel geometry makes physical sense
+    fuel_geometry_impossible = False
+
+    r_f = _number(rocket_inputs, "chamber_fuel_internal_radius")
+    if r_f is None:
+        # the user provided fuel mass instead, so calculate the implied r_f
+        m_f_tot = _number(rocket_inputs, "chamber_fuel_mass")
+        p_f = _number(rocket_inputs, "chamber_fuel_density")
+        if None not in (m_f_tot, p_f, L_f, R_f):
+            try: # triggers if inputs are gemoetrically valid
+                r_f = math.sqrt(R_f**2 - m_f_tot / (math.pi * p_f * L_f))
+            except ValueError: # triggers if inputs are physically impossible (ie inner diameter > outer diameter)
+                r_f = None
+                fuel_geometry_impossible = True
+
+    if L_f is not None and L_f < 0.2:
         warning_dict["init_short_fuel_grain"] = {
             "severity": "caution",
             "message": "Fuel grain length is dangerously short (< 0.2 m). 1D regression models lose accuracy at low L/D ratios.",
@@ -50,8 +53,9 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
             "inner_radius": r_f
         }
         
-    if r_f is None or r_f >= R_f:
-        warning_dict["init_inner_fuel_radius_exceeds_outer_fuel_radius"] = {
+    # two ways to get here: the fuel mass implied no real port radius, or a port radius was given that swallows the whole grain
+    if fuel_geometry_impossible or (r_f is not None and R_f is not None and r_f >= R_f):
+        warning_dict["init_fuel_cell_geometry_non_physical"] = {
             "severity": "critical", 
             "message": f"Inner fuel radius ({r_f}{" m" if r_f is not None else ""}) either impossible to calculate or is larger than outer fuel radius ({R_f} m). If initialized via fuel mass, ensure a real value can be calculated.", 
             "inner_radius": r_f, 
@@ -59,8 +63,8 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
         }
         
     ##### check if fuel grain radius is larger than rocket external radius
-    R_r = rocket_inputs["rocket_outer_radius"]
-    if R_f > R_r:
+    R_r = _number(rocket_inputs, "rocket_outer_radius")
+    if R_f is not None and R_r is not None and R_f > R_r:
         warning_dict["init_fuel_outer_radius_greater_than_rocket_outer_radius"] = {
             "severity": "critical", 
             "message": f"Outer fuel radius ({R_f} m) is larger than rocket outer radius ({R_r} m)", 
@@ -69,8 +73,8 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
         }
     
     ##### tank ullage
-    if "tank_ullage_fraction" in rocket_inputs:
-        ullage = rocket_inputs["tank_ullage_fraction"]
+    ullage = _number(rocket_inputs, "tank_ullage_fraction")
+    if ullage is not None:
         if ullage < 0.10:
             warning_dict["init_low_ullage"] = {
                 "severity": "caution",
@@ -89,14 +93,15 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
     accepted value ranges for Paraffin/N2O
         - fuel regression coefficient (a): [0.5e-4, 1e-3]
         - fuel regression exponent (n): [0.3, 0.9]
+    (exact values may change)
     
     sources
         - Karabeyoglu, Altman & Cantwell (2001), "Development and Testing of Paraffin-Based Hybrid Rocket Fuels"
         - Karabeyoglu et al. (2004), "Combustion of Liquefying Hybrid Propellants" (JPP Vol 20 No 6)
         - Sutton & Biblarz, Rocket Propulsion Elements, Chapter 15 (hybrids)
     """
-    if "chamber_regression_rate_scaling_constant" in rocket_inputs: 
-        a = rocket_inputs["chamber_regression_rate_scaling_constant"]
+    a = _number(rocket_inputs, "chamber_regression_rate_scaling_constant")
+    if a is not None:
         if a < 0.5e-4:
             warning_dict["init_low_chamber_regression_rate_scaling_constant"] = {
                     "severity": "caution",
@@ -110,8 +115,8 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
                     "chamber_regression_rate_scaling_constant": a
                 }
 
-    if "chamber_regression_rate_exponent" in rocket_inputs:
-        n = rocket_inputs["chamber_regression_rate_exponent"]
+    n = _number(rocket_inputs, "chamber_regression_rate_exponent")
+    if n is not None:
         if n < 0.3:
             warning_dict["init_low_chamber_regression_rate_exponent"] = {
                     "severity": "caution",
@@ -351,3 +356,17 @@ def finalize_warnings(warning_dict: dict):
         "overall_warning_level": overall_level,
         "triggered_warnings": warning_dict
     }
+    
+
+
+##############################################
+# HELPERS
+
+
+# returns the value at 'key', only if it is a usable number, otherwise none
+# exists because 'key in rocket_inputs' means two different things depending on who called warn_initialization_limits. 
+def _number(rocket_inputs: dict, key: str):
+    value = rocket_inputs.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return value

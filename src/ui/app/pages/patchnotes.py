@@ -30,6 +30,8 @@ PATCHNOTES: list[dict] = [
             "Tweaked the unsteady backend code to make it more resilient against edge-case inputs. It also now detects and aborts stalled simulations and has warning popups for unphysical inputs.",
             
             "Added a new setting, toggleable autosave of new rocket configurations when running simulations.",
+            
+            "In unsteady, critical warnings are now impossible to ignore or miss.",
         ],
     },
     {

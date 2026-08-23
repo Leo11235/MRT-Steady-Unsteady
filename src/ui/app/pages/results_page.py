@@ -289,10 +289,17 @@ class ResultsPage(ctk.CTkFrame):
         except Exception:                       # noqa: BLE001
             pass
 
-    def add_heading(self, parent, text: str) -> None:
-        ctk.CTkLabel(parent, text=text, anchor="w",
-                     font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold")).pack(
-            fill="x", pady=(theme.PAD_M, theme.PAD_XS))
+    def add_heading(self, parent, text: str, *, text_color=None) -> None:
+        """A section heading. `text_color` defaults to the theme's body colour.
+
+        The colour override exists for headings that carry a severity, where
+        the colour is the fastest part to read.
+        """
+        label = ctk.CTkLabel(parent, text=text, anchor="w",
+                             font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"))
+        if text_color is not None:
+            label.configure(text_color=text_color)
+        label.pack(fill="x", pady=(theme.PAD_M, theme.PAD_XS))
 
     def add_dict(self, parent, title: str, data: dict, *, child_title=None) -> None:
         """A heading and one row per entry, skipping nested structures.

@@ -54,8 +54,8 @@ TOP_BAR_HEIGHT = 52
 # tone is a slightly lighter version so the text stays readable on the dark
 # CTk background.  CustomTkinter accepts tuples of (light, dark).
 # -----------------------------------------------------------------------------
-MRT_RED        = "#981820"
-MRT_RED_BRIGHT = "#d4232f"
+MRT_RED        = "#9F1D22"
+MRT_RED_BRIGHT = "#9F1D22"
 MRT_RED_THEMED = (MRT_RED, MRT_RED_BRIGHT)
 MRT_RED_HOVER  = ("#7a131a", "#a01a26")
 

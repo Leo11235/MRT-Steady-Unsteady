@@ -34,6 +34,15 @@ _SEVERITY_COLOR = {
     "advisory": theme.WARNING,
 }
 
+# The overall level is a verdict on the run rather than a group label, so
+# advisory reads as "fine" here and gets the green the group heading doesn't.
+_LEVEL_COLOR = {
+    "critical": theme.ERROR,
+    "caution": theme.WARNING_STRONG,
+    "advisory": theme.SUCCESS,
+    "nominal": theme.SUCCESS,
+}
+
 
 class UnsteadyResultsPage(ResultsPage):
     TITLE = "Unsteady results"
@@ -72,7 +81,42 @@ class UnsteadyResultsPage(ResultsPage):
         self._render_events(self.results.get("event_log") or [])
         self._render_warnings(self.results.get("warnings"))
 
+    def _warning_entries(self) -> dict:
+        """The triggered warnings, whatever shape this file uses.
+
+        Two shapes in the wild: the current nested one under
+        'triggered_warnings', and a flat dict of entries from older runs.
+        Both panels need this, and they must agree, or the Overall tab could
+        announce a count the Warnings tab doesn't show.
+        """
+        warnings = self.results.get("warnings")
+        if not isinstance(warnings, dict) or not warnings:
+            return {}
+        triggered = warnings.get("triggered_warnings")
+        return triggered if isinstance(triggered, dict) else warnings
+
     def _render_overall(self, overall: dict) -> None:
+        # Before the early return below: a run with no performance block is
+        # exactly the kind that aborted, so its critical warnings are the most
+        # worth surfacing, not the least.
+        critical = [key for key, entry in self._warning_entries().items()
+                    if isinstance(entry, dict) and entry.get("severity") == "critical"]
+        if critical:
+            count = len(critical)
+            noun = "warning" if count == 1 else "warnings"
+            ctk.CTkLabel(
+                self._overall,
+                text=f"{count} critical simulation {noun} detected.",
+                anchor="w", text_color=theme.ERROR,
+                font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold")).pack(
+                fill="x", pady=(theme.PAD_M, 0))
+            ctk.CTkLabel(
+                self._overall,
+                text="Go to the warnings tab to see more details.",
+                anchor="w",
+                font=ctk.CTkFont(size=theme.SIZE_SMALL)).pack(
+                fill="x", pady=(0, theme.PAD_XS))
+
         if not overall:
             self.add_empty(self._overall, "No performance block in this file.")
             return
@@ -146,13 +190,11 @@ class UnsteadyResultsPage(ResultsPage):
             return
 
         level = warnings.get("overall_warning_level")
-        triggered = warnings.get("triggered_warnings")
-        # Two shapes in the wild: the newer nested one, and a flat dict of
-        # warning entries from older runs.
-        entries = triggered if isinstance(triggered, dict) else warnings
+        entries = self._warning_entries()
 
         if level:
-            self.add_heading(self._warnings, f"Overall level: {level}")
+            self.add_heading(self._warnings, f"Overall level: {level}",
+                             text_color=_LEVEL_COLOR.get(str(level).lower()))
 
         def severity_of(entry) -> str:
             value = entry.get("severity") if isinstance(entry, dict) else None
