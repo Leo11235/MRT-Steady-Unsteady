@@ -105,7 +105,7 @@ class _StreamToQueue:
 # Friendlier failures
 # =============================================================================
 #
-# Two backend exceptions are common enough, and cryptic enough on their own,
+# A few backend exceptions are common enough, and cryptic enough on their own,
 # to be worth translating before they reach the terminal.
 
 def _friendly_hint(exc: BaseException) -> str:
@@ -113,17 +113,39 @@ def _friendly_hint(exc: BaseException) -> str:
     name = type(exc).__name__
 
     if isinstance(exc, KeyError):
-        # The backend raises a bare KeyError naming the missing config key.
-        # Without this you get a one-word traceback and no idea what to fix.
+        # The backend raises a bare KeyError naming the missing key. Without
+        # this you get a one-word traceback and no idea what to fix.
         field = str(exc).strip("'\"")
+        known = False
         try:
             from src.ui.app import field_registry as registry
-            if registry.has(field):
+            known = registry.has(field)
+            if known:
                 field = f"{registry.label(field)}  ({field})"
         except Exception:                       # noqa: BLE001
             pass
-        return (f"[missing required input]  {field} was not set.\n"
-                f"Go back, fill it in, and run again.")
+
+        if known:
+            return (f"[missing required input]  {field} was not set.\n"
+                    f"Go back, fill it in, and run again.")
+
+        # Not a field on any form, so it is something the solver was supposed
+        # to compute and didn't. Telling the user to go and fill it in would
+        # send them looking for an input that does not exist. The usual cause
+        # is inputs that are individually valid but jointly impossible, so the
+        # step that produces this value failed and left nothing behind.
+        return (f"[internal value missing]  {field} is calculated by the solver, "
+                f"not entered by you, so there is nothing to fill in.\n"
+                f"This normally means an earlier step failed on inputs that are "
+                f"each plausible but cannot all be true at once — most often "
+                f"fuel mass, grain dimensions and density that describe a grain "
+                f"which cannot physically exist. Check those first.")
+
+    if isinstance(exc, ValueError):
+        # The loaders raise ValueError with a message written for a person, so
+        # the useful thing is to surface it rather than paraphrase it.
+        return (f"[invalid input]  {exc}\n"
+                f"Go back to the inputs page and correct it, then run again.")
 
     if name == "SolverStalledError":
         return ("[solver stalled]  The integrator stopped making progress, "

@@ -110,4 +110,4 @@ def _run_all(console, configs, kind, runner, output_dir, keep_results, timeout):
 
 
 if __name__ == "__main__":
-    run_backend_tests(steady_tests_only=True)
+    run_backend_tests()

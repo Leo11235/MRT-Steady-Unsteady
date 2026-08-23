@@ -53,7 +53,7 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
     if r_f is None or r_f >= R_f:
         warning_dict["init_inner_fuel_radius_exceeds_outer_fuel_radius"] = {
             "severity": "critical", 
-            "message": f"Inner fuel radius ({r_f}{" m" if r_f is not None else ""}) either impossible to calculate or is larger than outer fuel radius ({R_f} m)", 
+            "message": f"Inner fuel radius ({r_f}{" m" if r_f is not None else ""}) either impossible to calculate or is larger than outer fuel radius ({R_f} m). If initialized via fuel mass, ensure a real value can be calculated.", 
             "inner_radius": r_f, 
             "outer_radius": R_f
         }

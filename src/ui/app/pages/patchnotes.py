@@ -1,12 +1,5 @@
 """
-PatchnotesPage — scrollable list of release notes.
-
-Reachable by clicking the version chip on the main menu.  Content
-lives in the PATCHNOTES list below; each entry is a dict with a
-`version`, `date`, and `notes` (a list of short strings).
-
-To add a new release: prepend a new dict at the top of the list.
-Keep the newest release first so users see current changes first.
+PatchnotesPage
 """
 
 from __future__ import annotations
@@ -34,7 +27,9 @@ PATCHNOTES: list[dict] = [
 
             "The loading screen can halt a stuck run and take you straight to a bug report with the terminal output already attached.",
 
-            "Tweaked the unsteady backend code to make it more resilient against edge-case inputs.",
+            "Tweaked the unsteady backend code to make it more resilient against edge-case inputs. It also now detects and aborts stalled simulations and has warning popups for unphysical inputs.",
+            
+            "Added a new setting, toggleable autosave of new rocket configurations when running simulations.",
         ],
     },
     {
