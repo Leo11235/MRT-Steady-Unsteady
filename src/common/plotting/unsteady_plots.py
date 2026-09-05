@@ -48,37 +48,24 @@ from typing import Callable, Optional
 import warnings
 
 import numpy as np
-import matplotlib.pyplot as plt
+import matplotlib
+from matplotlib.axes import Axes
 from matplotlib.collections import LineCollection
 from matplotlib.figure import Figure
 from matplotlib.patches import Patch, Rectangle, FancyBboxPatch, Polygon
 from matplotlib.backends.backend_pdf import PdfPages
 
 
-# Ignore matplotlib warnings.  Note: we match by MESSAGE TEXT rather
-# than `module=` because Python's warnings machinery attributes the
-# source to the caller frame (this file), not to matplotlib itself,
-# so a `module=r".*matplotlib.*"` filter never fires.  The regex list
-# below covers the three noisy warnings matplotlib emits from our
-# non-main-thread figure creation flow.
-warnings.filterwarnings("ignore",
-    message=r".*Matplotlib GUI outside of the main thread.*",
-    category=UserWarning)
-warnings.filterwarnings("ignore",
-    message=r".*Tight layout not applied.*",
-    category=UserWarning)
-warnings.filterwarnings("ignore",
-    message=r".*More than 20 figures have been opened.*",
-    category=RuntimeWarning)
+# ignore matplotlib warnings
+warnings.filterwarnings("ignore", message=r".*Matplotlib GUI outside of the main thread.*", category=UserWarning)
+warnings.filterwarnings("ignore", message=r".*Tight layout not applied.*", category=UserWarning)
+warnings.filterwarnings("ignore", message=r".*More than 20 figures have been opened.*", category=RuntimeWarning)
 
 # =============================================================================
 # Phase metadata
 # =============================================================================
 
-PHASE_ORDER = [
-    "phase_1", "phase_2", "phase_3", "phase_4a", "phase_4c",
-    "phase_5", "phase_6", "phase_7",
-]
+PHASE_ORDER = ["phase_1", "phase_2", "phase_3", "phase_4a", "phase_4c", "phase_5", "phase_6", "phase_7",]
 
 PHASE_COLORS = {
     "phase_1":  "#e63946",
@@ -93,17 +80,17 @@ PHASE_COLORS = {
 
 # colon-separated (saves space in the per-phase table)
 PHASE_LABELS = {
-    "phase_1":  "1: Ignition",
-    "phase_2":  "2: Liquid blowdown",
-    "phase_3":  "3: Gaseous blowdown",
+    "phase_1": "1: Ignition",
+    "phase_2": "2: Liquid blowdown",
+    "phase_3": "3: Gaseous blowdown",
     "phase_4a": "4a: Vapor purge",
     "phase_4c": "4c: Dry blowdown",
-    "phase_5":  "5: Coast",
-    "phase_6":  "6: Drogue descent",
-    "phase_7":  "7: Main descent",
+    "phase_5": "5: Coast",
+    "phase_6": "6: Drogue descent",
+    "phase_7": "7: Main descent",
 }
 
-BURN_PHASES    = {"phase_1", "phase_2", "phase_3", "phase_4a", "phase_4c"}
+BURN_PHASES = {"phase_1", "phase_2", "phase_3", "phase_4a", "phase_4c"}
 DESCENT_PHASES = {"phase_5", "phase_6", "phase_7"}
 
 
@@ -115,8 +102,7 @@ DESCENT_PHASES = {"phase_5", "phase_6", "phase_7"}
 class PlotSpec:
     """One entry in the registry.
 
-    name     Stable identifier.  Used to select a plot, and as the PNG
-             filename, so renaming one breaks saved references — don't.
+    name     Stable identifier.  Used to select a plot, and as the PNG filename, so renaming one breaks saved references — don't.
     label    Human-readable, shown in the UI's graph picker.
     group    Which section of the picker it belongs under.
     builder  (sim_results) -> Figure, or None when the run lacks the data.
@@ -128,22 +114,20 @@ class PlotSpec:
 
 
 # Groups, in the order they appear on screen and in the PDF.
-GROUP_SUMMARY     = "Summary"
+GROUP_SUMMARY = "Summary"
 GROUP_TIME_SERIES = "Time series"
-GROUP_BURN        = "Burn"
-GROUP_RELATIONS   = "Relations"
+GROUP_BURN = "Burn"
+GROUP_RELATIONS = "Relations"
 GROUP_DIAGNOSTICS = "Diagnostics"
-GROUP_GEOMETRY    = "Geometry"
+GROUP_GEOMETRY = "Geometry"
 
 
 def _plot_registry() -> tuple[PlotSpec, ...]:
     """Built lazily at import-time bottom, once every builder is defined."""
     return (
         # ---- textual panels, always first ----
-        PlotSpec("performance_panel", "Performance summary", GROUP_SUMMARY,
-                 make_performance_panel),
-        PlotSpec("events_warnings_panel", "Events and warnings", GROUP_SUMMARY,
-                 make_events_warnings_panel),
+        PlotSpec("performance_panel", "Performance summary", GROUP_SUMMARY, make_performance_panel),
+        PlotSpec("events_warnings_panel", "Events and warnings", GROUP_SUMMARY, make_events_warnings_panel),
 
         # ---- headline time series ----
         PlotSpec("thrust_vs_time", "Thrust", GROUP_TIME_SERIES,
@@ -273,13 +257,11 @@ def unsteady_results(
     json_filename: str | None = None,
     json_filepath: str | Path | None = None,
     *,
-    display_graphs: bool = True,
     save_to_pdf: bool = False,
     save_to_png: bool = False,
     plots: list[str] | None = None,
     exclude: list[str] | None = None,
     output_dir: str | Path | None = None,
-    max_concurrent_figures: int = 10,
 ) -> Optional[Path]:
     """
     Render a finished unsteady run.
@@ -295,13 +277,6 @@ def unsteady_results(
         Directory holding that file.  When the engine calls this, it passes the
         run folder it just wrote into.  None falls back to
         <project_root>/user_data/simulation_results/unsteady/.
-
-    display_graphs
-        Open interactive matplotlib windows.  CLI ONLY.  This blocks until the
-        user closes every window, and needs a GUI backend on the main thread,
-        so the UI and the test suite must always pass False.  With Agg selected
-        (see the threading note in the module docstring) it would do nothing
-        anyway.
 
     save_to_pdf
         Write every selected figure into one multi-page `graphs.pdf` at the
@@ -325,11 +300,6 @@ def unsteady_results(
         json_filepath.  Only worth setting when you want artifacts somewhere
         other than alongside the JSON they came from.
 
-    max_concurrent_figures
-        How many windows to open at once when display_graphs is True.  Figures
-        are built and shown in batches of this size; each batch blocks until
-        closed before the next is built.  Ignored entirely when not displaying.
-
     Returns
     -------
     The output directory when anything was saved, otherwise None.
@@ -348,8 +318,8 @@ def unsteady_results(
     # 2. resolve the selection
     selected = _selected_specs(plots, exclude)
 
-    if not display_graphs and not (save_to_pdf or save_to_png):
-        print("unsteady_results: nothing to display and nothing to save — doing nothing.")
+    if not (save_to_pdf or save_to_png):
+        print("unsteady_results: nothing to save — doing nothing.")
         return None
     if not selected:
         print("unsteady_results: the plots/exclude arguments selected nothing.")
@@ -380,16 +350,20 @@ def unsteady_results(
         if save_to_png:
             _save_figures_to_png(figures, names, out_dir)
 
-        # Release them before the display step, so plt.show() below only sees
-        # the batch it's about to build rather than everything saved above.
-        for fig in figures:
-            plt.close(fig)
-        plt.close("all")
+        # Nothing to close. Figures are built with matplotlib's object API
+        # (Figure(), not plt.subplots()), so pyplot never learns about them and
+        # they are freed by refcount when `figures` goes out of scope.
+        #
+        # This used to call plt.close("all"), which reaches into pyplot's
+        # process-wide figure registry. Called from the solver's worker thread,
+        # that destroyed every figure in the program, including ones the UI was
+        # displaying on the main thread, which is what produced the
+        # "RuntimeError: main thread is not in main loop" crash reports.
 
-    # 4. display
-    if display_graphs:
-        _build_and_display_in_batches(selected, sim_results, max_concurrent_figures)
-
+    # No display step. This module builds figures and writes files; putting
+    # them on screen belongs to whoever is driving it, because only the caller
+    # knows whether it has a main thread with an event loop to draw on. The UI
+    # does that in src/ui/app/widgets/figure_window.py.
     return out_dir
 
 
@@ -544,8 +518,9 @@ def _shade_phase_bands(ax, t, phases, alpha=0.08):
 
 
 def _open_axes(title: str, window_title: str | None = None,
-               figsize=(11, 6)) -> tuple[Figure, plt.Axes]:
-    fig, ax = plt.subplots(figsize=figsize)
+               figsize=(11, 6)) -> tuple[Figure, Axes]:
+    fig = Figure(figsize=figsize)
+    ax = fig.subplots()
     fig.canvas.manager.set_window_title(window_title or title) if fig.canvas.manager else None
     fig.suptitle(title, fontsize=14, fontweight="bold")
     ax.grid(True, which="both", linestyle="--", alpha=0.5)
@@ -604,7 +579,7 @@ def make_performance_panel(sim_results: dict) -> Figure:
     rocket_inputs = sim_results.get("static", {}).get("rocket_inputs", {})
     meta = sim_results.get("metadata", {})
 
-    fig = plt.figure(figsize=(15, 10))
+    fig = Figure(figsize=(15, 10))
     if fig.canvas.manager:
         fig.canvas.manager.set_window_title("Performance + Inputs")
     fig.suptitle("Unsteady Simulation — Performance & Inputs", fontsize=15, fontweight="bold")
@@ -800,7 +775,7 @@ def make_events_warnings_panel(sim_results: dict) -> Figure:
     event_log = sim_results.get("event_log", [])
     warnings  = sim_results.get("warnings", {})
 
-    fig = plt.figure(figsize=(14, 9))
+    fig = Figure(figsize=(14, 9))
     if fig.canvas.manager:
         fig.canvas.manager.set_window_title("Events + Warnings")
     fig.suptitle("Event Log & Warnings", fontsize=15, fontweight="bold")
@@ -986,9 +961,8 @@ def make_kinematics_plot(sim_results: dict) -> Figure:
     v_mag = np.sqrt(vx**2 + vy**2)
     a_mag = np.sqrt(ax_R**2 + ay_R**2)
 
-    fig, axes = plt.subplots(3, 1, figsize=(11, 9), sharex=True)
-    if fig.canvas.manager:
-        fig.canvas.manager.set_window_title("Kinematics")
+    fig = Figure(figsize=(11, 9))
+    axes = fig.subplots(3, 1, sharex=True)
     fig.suptitle("Rocket kinematics", fontsize=14, fontweight="bold")
     for ax in axes:
         ax.grid(True, which="both", linestyle="--", alpha=0.5)
@@ -1256,7 +1230,7 @@ def make_flow_regime_plot(sim_results: dict) -> Optional[Figure]:
     ax.set_ylabel("Regime")
     unique = list(dict.fromkeys(regime))  # preserve order
     y_pos = {name: i for i, name in enumerate(unique)}
-    colors = plt.get_cmap("tab10")
+    colors = matplotlib.colormaps["tab10"]
     for i, name in enumerate(unique):
         mask = np.array([r == name for r in regime])
         ax.scatter(t[mask], np.full(mask.sum(), y_pos[name]),
@@ -1280,8 +1254,8 @@ def make_combustion_properties_plot(sim_results: dict) -> Optional[Figure]:
 
     t_full = _arr(data, "time"); phases_full = _phase_arr(data)
 
-    fig, axes = plt.subplots(len(available), 1, figsize=(11, 2.6 * len(available) + 1),
-                             sharex=True)
+    fig = Figure(figsize=(11, 2.6 * len(available) + 1))
+    axes = fig.subplots(len(available), 1, sharex=True)
     if len(available) == 1:
         axes = [axes]
     if fig.canvas.manager:
@@ -1318,8 +1292,8 @@ def make_ambient_atmosphere_plot(sim_results: dict) -> Optional[Figure]:
     if not burn_mask_full.any():
         return None
 
-    fig, axes = plt.subplots(len(available), 1, figsize=(11, 2.6 * len(available) + 1),
-                             sharex=True)
+    fig = Figure(figsize=(11, 2.6 * len(available) + 1))
+    axes = fig.subplots(len(available), 1, sharex=True)
     if len(available) == 1:
         axes = [axes]
     if fig.canvas.manager:
@@ -1411,7 +1385,7 @@ def make_trajectory_map(sim_results: dict) -> Figure:
     sx = _arr(data, "sx_R"); sy = _arr(data, "sy_R"); phases = _phase_arr(data)
     agl = sy - launch_alt
 
-    fig = plt.figure(figsize=(11, 7))
+    fig = Figure(figsize=(11, 7))
     if fig.canvas.manager:
         fig.canvas.manager.set_window_title("Trajectory map")
     fig.suptitle("Trajectory — altitude vs. downrange", fontsize=14, fontweight="bold")
@@ -1452,7 +1426,8 @@ def make_of_vs_radius_plot(sim_results: dict) -> Optional[Figure]:
         return None
     of = of_full[burn_mask]; r = r_full[burn_mask]; phases = phases_full[burn_mask]
 
-    fig, ax = plt.subplots(figsize=(11, 6))
+    fig = Figure(figsize=(11, 6))
+    ax = fig.subplots()
     if fig.canvas.manager:
         fig.canvas.manager.set_window_title("O/F vs. port radius")
     fig.suptitle("O/F ratio vs. fuel port radius (burn only)", fontsize=14, fontweight="bold")
@@ -1483,7 +1458,8 @@ def make_thrust_vs_pc_plot(sim_results: dict) -> Optional[Figure]:
         return None
     F = F[burn_mask]; pc = pc[burn_mask]; phases = phases_full[burn_mask]
 
-    fig, ax = plt.subplots(figsize=(11, 6))
+    fig = Figure(figsize=(11, 6))
+    ax = fig.subplots()
     if fig.canvas.manager:
         fig.canvas.manager.set_window_title("Thrust vs Pc")
     fig.suptitle("Thrust vs. chamber pressure (burn only)", fontsize=14, fontweight="bold")
@@ -1547,7 +1523,7 @@ def make_nan_map_plot(sim_results: dict) -> Optional[Figure]:
             t_local = t_full[:len(y)]
         bad.append((k, t_local, nan_mask))
 
-    fig = plt.figure(figsize=(11, max(2.5, 0.30 * (len(bad) + 1) + 1.5)))
+    fig = Figure(figsize=(11, max(2.5, 0.30 * (len(bad) + 1) + 1.5)))
     if fig.canvas.manager:
         fig.canvas.manager.set_window_title("NaN map")
     fig.suptitle(f"NaN map — variables with NaN values ({len(bad)})",
@@ -1724,7 +1700,8 @@ def make_rocket_cross_section(sim_results: dict) -> Optional[Figure]:
     x_nozzle_end  = x_post_end + L_nozzle
     total_L       = x_nozzle_end - x0
 
-    fig, ax = plt.subplots(figsize=(14, 5))
+    fig = Figure(figsize=(14, 5))
+    ax = fig.subplots()
     if fig.canvas.manager:
         fig.canvas.manager.set_window_title("Rocket cross-section")
     fig.suptitle("Rocket cross-section (axisymmetric side view, axial-to-radial NOT to scale)",
@@ -1821,7 +1798,8 @@ def make_nozzle_profile(sim_results: dict) -> Optional[Figure]:
     x = np.concatenate([x_conv, x_div])
     R = np.concatenate([R_conv, R_div])
 
-    fig, ax = plt.subplots(figsize=(11, 6))
+    fig = Figure(figsize=(11, 6))
+    ax = fig.subplots()
     if fig.canvas.manager:
         fig.canvas.manager.set_window_title("Nozzle profile")
     fig.suptitle(f"Nozzle profile  —  ε = Ae/At = {eps:.2f}",
@@ -1858,40 +1836,6 @@ def make_nozzle_profile(sim_results: dict) -> Optional[Figure]:
 # =============================================================================
 # Output writers
 # =============================================================================
-
-def _build_and_display_in_batches(specs: list[PlotSpec], sim_results: dict,
-                                  batch_size: int) -> None:
-    """Build and show figures `batch_size` at a time.
-
-    plt.show() blocks until the user closes every window in the current batch;
-    plt.close("all") then clears them before we build the next.  This is the
-    only reliable way to cap on-screen windows, because plt.show() displays
-    every figure pyplot currently manages — there is no "show a subset" API.
-
-    CLI only.  See the display_graphs note on unsteady_results().
-    """
-    batch_size = max(1, int(batch_size))
-    if not specs:
-        return
-
-    i = 0
-    batch_num = 0
-    while i < len(specs):
-        batch_num += 1
-        end = min(i + batch_size, len(specs))
-        print(f"Showing batch {batch_num}: items {i + 1}-{end} of {len(specs)}...")
-        for spec in specs[i:end]:
-            try:
-                fig = spec.builder(sim_results)
-                if fig is None:
-                    continue
-            except Exception as exc:
-                print(f"  ! skipped {spec.name}: {type(exc).__name__}: {exc}")
-                continue
-        plt.show()        # blocks until the user closes this batch's windows
-        plt.close("all")  # clean slate for the next batch
-        i = end
-
 
 def _save_figures_to_pdf(figures: list[Figure], names: list[str],
                          out_dir: Path) -> None:
@@ -1931,17 +1875,18 @@ PLOTS_BY_NAME: dict[str, PlotSpec] = {spec.name: spec for spec in PLOTS}
 # =============================================================================
 
 if __name__ == "__main__":
-    # Render the most recent run into on-screen windows.  Every argument is
-    # documented on unsteady_results() above.
+    # Render the most recent run to disk.  Every argument is documented on
+    # unsteady_results() above.
     #
-    #   unsteady_results()                                   most recent, on screen
+    #   unsteady_results()                                   most recent run
     #   unsteady_results("sim_data.json", "path/to/run")     a specific run
-    #   unsteady_results(..., display_graphs=False, save_to_pdf=True)   headless
     #   unsteady_results(..., plots=["thrust_vs_time"])      just one plot
     #   unsteady_results(..., exclude=["rocket_cross_section"])  all but one
+    #
+    # There is no on-screen option. Opening windows needs a main thread running
+    # an event loop, which this module cannot know it has; the UI owns that.
+    # Run with save_to_pdf and open graphs.pdf.
     unsteady_results(
-        display_graphs=True,
-        save_to_pdf=False,
+        save_to_pdf=True,
         save_to_png=False,
-        max_concurrent_figures=10,
     )

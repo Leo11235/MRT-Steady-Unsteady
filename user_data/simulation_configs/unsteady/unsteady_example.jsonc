@@ -11,8 +11,8 @@ Every physical input is a [value, unit] pair
             "simulation_description": "This example corresponds roughly to the parameters of Athos, MRT's first hybrid engine-powered rocket.", // a brief description of the simulation, eg what is being tried for the rocket if it is a regular config or what is being tested+expected output if it is a test config
             "expected_output": "", // test configs only; "success"/"error: errortype"/etc
             "warnings": true, // true or false; whether to include warnings in the final report
-            "save_to_pdf": true, // whether to save all output plots to a pdf file
-            "save_to_png": true // whether to save all output plots as a png
+            "save_to_pdf": false, // whether to save all output plots to a pdf file
+            "save_to_png": false // whether to save all output plots as a png
         },
         "rocket_inputs": {
             "CV1_tank": {

@@ -340,8 +340,7 @@ class SteadyResultsPage(ResultsPage):
             self._set_status("No graphs selected")
             return
 
-        self._set_status(f"Drawing {len(chosen)} graph"
-                         f"{'s' if len(chosen) != 1 else ''}…")
+        self._set_status(f"Rendering graphs…  0 of {len(chosen)}")
         self.update_idletasks()
 
         def build():
@@ -352,7 +351,8 @@ class SteadyResultsPage(ResultsPage):
                 except Exception as exc:        # noqa: BLE001
                     yield name, exc
 
-        self.report_render(*figure_window.show_figures(self, build()))
+        self.report_render(*figure_window.show_figures(
+            self, build(), on_progress=self.render_progress(len(chosen))))
 
     # ---- parametric: the axis builder --------------------------------
 
@@ -465,7 +465,10 @@ class SteadyResultsPage(ResultsPage):
                 except Exception as exc:        # noqa: BLE001
                     yield "3D surface", exc
 
-        self.report_render(*figure_window.show_figures(self, build()))
+        # one 2D and one 3D at most, whichever the user asked for
+        total = int(bool(spec_2d)) + int(bool(spec_3d))
+        self.report_render(*figure_window.show_figures(
+            self, build(), on_progress=self.render_progress(total)))
 
     def reset_to_defaults(self) -> None:
         # Leaving the page closes the graph windows; they hold figures, and a

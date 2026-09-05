@@ -37,6 +37,21 @@ class FigureWindow(ctk.CTkToplevel):
 
     def __init__(self, parent, figure, title: str) -> None:
         super().__init__(parent)
+
+        # Hide before anything is drawn, and stay hidden until reveal().
+        #
+        # This is what stopped the flashing. Building N windows in a loop used
+        # to show each one the instant it was constructed: an empty white frame
+        # appeared, then filled in when draw() finished, and CTkToplevel's own
+        # deferred withdraw/deiconify (it re-shows the window to apply the dark
+        # titlebar on Windows) reshuffled the whole stack every time another
+        # was added. Several seconds of windows blinking on and off.
+        #
+        # Calling withdraw() this early also tells customtkinter the window was
+        # deliberately hidden, so its titlebar routine leaves it alone instead
+        # of deiconifying it behind our back.
+        self.withdraw()
+
         self.title(title)
         self.geometry(f"{_DEFAULT_W}x{_DEFAULT_H}")
         self.minsize(480, 360)
@@ -47,6 +62,13 @@ class FigureWindow(ctk.CTkToplevel):
 
         self.protocol("WM_DELETE_WINDOW", self.close)
         _OPEN.append(self)
+
+    def reveal(self) -> None:
+        """Make the window visible. Safe to call more than once."""
+        try:
+            self.deiconify()
+        except Exception:                       # noqa: BLE001
+            pass
 
     def _build(self) -> None:
         from matplotlib.backends.backend_tkagg import (
@@ -75,26 +97,25 @@ class FigureWindow(ctk.CTkToplevel):
                 self._canvas.get_tk_widget().destroy()
         except Exception:                       # noqa: BLE001
             pass
-        try:
-            # The builders use pyplot, so pyplot holds a reference to every
-            # figure. Without this the app leaks a figure per window.
-            import matplotlib.pyplot as plt
-            plt.close(self._figure)
-        except Exception:                       # noqa: BLE001
-            pass
+        # No plt.close() here any more. The builders in src/common/plotting
+        # use matplotlib's object API, so pyplot never holds a reference and
+        # there is nothing global to release: dropping ours is enough.
+        self._figure = None
         if self in _OPEN:
             _OPEN.remove(self)
         self.destroy()
 
 
 def show_figure(parent, figure, title: str) -> FigureWindow:
-    """Open one figure in its own window."""
+    """Open one figure in its own window, fully drawn before it appears."""
     window = FigureWindow(parent, figure, title)
+    window.reveal()
     window.lift()
     return window
 
 
-def show_figures(parent, built: Iterable[tuple[str, object]]) -> tuple[int, int, int]:
+def show_figures(parent, built: Iterable[tuple[str, object]],
+                 *, on_progress=None) -> tuple[int, int, int]:
     """Open a window per figure.
 
     `built` yields (label, figure_or_None_or_Exception), the same shape the
@@ -103,20 +124,38 @@ def show_figures(parent, built: Iterable[tuple[str, object]]) -> tuple[int, int,
     one that raises costs only itself.
 
     Windows are cascaded so a batch of five doesn't land in one stack.
+
+    Two passes on purpose. Every window is built hidden first, then the whole
+    set is revealed together, so the screen stays untouched while the figures
+    render and they all arrive at once fully drawn.
+
+    `on_progress(done)` fires after each figure. The first pass is slow and,
+    because nothing appears while it runs, silent without it.
     """
     close_all()
 
     drawn = skipped = failed = 0
+    pending: list[FigureWindow] = []
+
     for index, (label, result) in enumerate(built):
+        if on_progress is not None:
+            try:
+                on_progress(index + 1)
+            except Exception:                   # noqa: BLE001
+                pass                            # a status line is never worth a crash
         if isinstance(result, BaseException):
             failed += 1
             continue
         if result is None:
             skipped += 1
             continue
-        window = show_figure(parent, result, label)
+        window = FigureWindow(parent, result, label)   # hidden until revealed
         _cascade(window, index)
+        pending.append(window)
         drawn += 1
+
+    for window in pending:
+        window.reveal()
 
     _raise_all()
     return (drawn, skipped, failed)

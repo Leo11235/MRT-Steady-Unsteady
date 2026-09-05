@@ -364,8 +364,6 @@ class History:
         print(f"\nSimulation data exported")
         
         # save as pdf/png if requested
-        # display_graphs is always False here: this runs inside the solver (and, from the UI, off the main thread), 
-        # so opening interactive windows would block or crash
         save_to_pdf = bool(rocket_inputs_metadata.get("save_to_pdf"))
         save_to_png = bool(rocket_inputs_metadata.get("save_to_png"))
         if save_to_pdf or save_to_png:
@@ -373,7 +371,6 @@ class History:
             unsteady_results(
                 json_filename=output_json_name,
                 json_filepath=output_dir,
-                display_graphs=False,
                 save_to_pdf=save_to_pdf,
                 save_to_png=save_to_png)
 

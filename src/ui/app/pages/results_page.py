@@ -325,6 +325,21 @@ class ResultsPage(ctk.CTkFrame):
 
     # ---- figures -----------------------------------------------------
 
+    def render_progress(self, total: int):
+        """A callback for figure_window.show_figures(on_progress=...).
+
+        Figures are built hidden and revealed together, so nothing appears on
+        screen until the last one is done. With ~27 plots that is several
+        silent seconds, which reads as a freeze. This keeps a counter moving.
+
+        update_idletasks() rather than update(): it repaints without processing
+        input, so the user cannot click something mid-build and re-enter this.
+        """
+        def progress(done: int) -> None:
+            self._set_status(f"Rendering graphs…  {done} of {total}")
+            self.update_idletasks()
+        return progress
+
     def report_render(self, drawn: int, skipped: int, failed: int) -> None:
         """Summarise a batch of graph windows in the status line."""
         parts = [f"{drawn} drawn"]

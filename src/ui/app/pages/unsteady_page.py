@@ -67,7 +67,9 @@ class UnsteadyPage(InputPage):
 
         self.sim_name_var = ctk.StringVar()
         self.warnings_var = ctk.BooleanVar(value=True)
-        self.save_pdf_var = ctk.BooleanVar(value=True)
+        # Off by default: rendering every graph adds ~30 s to a run, so it
+        # is opt-in rather than something you have to remember to switch off.
+        self.save_pdf_var = ctk.BooleanVar(value=False)
         self.save_png_var = ctk.BooleanVar(value=False)
 
         self.model_vars: dict[str, ctk.StringVar] = {}
@@ -117,7 +119,8 @@ class UnsteadyPage(InputPage):
                        "range, Mach outside the drag model's range.")
         self._checkbox(wrap, self.save_pdf_var, "Save graphs to PDF",
                        "Write every output plot into one multi-page PDF beside "
-                       "the results JSON.")
+                       "the results JSON. Off by default: rendering them all "
+                       "adds roughly half a minute to the run.")
         self._checkbox(wrap, self.save_png_var, "Save graphs as PNGs",
                        "Write each output plot as its own PNG in a graphs/ "
                        "folder beside the results JSON.")
@@ -271,7 +274,7 @@ class UnsteadyPage(InputPage):
         self.description.delete("0.0", "end")
         self.description.insert("0.0", str(metadata.get("simulation_description", "") or ""))
         self.warnings_var.set(bool(metadata.get("warnings", True)))
-        self.save_pdf_var.set(bool(metadata.get("save_to_pdf", True)))
+        self.save_pdf_var.set(bool(metadata.get("save_to_pdf", False)))
         self.save_png_var.set(bool(metadata.get("save_to_png", False)))
 
         # Models first, so the right fields are visible before they're filled.
@@ -311,7 +314,7 @@ class UnsteadyPage(InputPage):
         self.sim_name_var.set("")
         self.description.delete("0.0", "end")
         self.warnings_var.set(True)
-        self.save_pdf_var.set(True)
+        self.save_pdf_var.set(False)
         self.save_png_var.set(False)
         for cv, models in self._models.items():
             self.model_vars[cv].set(registry.model_label(models[0]))

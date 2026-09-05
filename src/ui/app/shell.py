@@ -242,6 +242,16 @@ class AppShell(ctk.CTk):
 
     def go(self, name: str) -> None:
         """Switch to a page by key."""
+        # Graph windows belong to the results page that opened them, so leaving
+        # it closes them wherever you're going. This used to happen only via
+        # reset_to_defaults, which only runs on the way home, so the common
+        # route of results -> inputs -> run left the previous run's windows on
+        # screen and alive during the next run.
+        if (self.current_page in ("steady_results", "unsteady_results")
+                and name != self.current_page):
+            from src.ui.app.widgets import figure_window
+            figure_window.close_all()
+
         # Going home discards in-progress edits, so ask first if anything is
         # dirty, then reset the pages that know how.
         if name == "main" and self.current_page not in (None, "main"):
@@ -305,6 +315,14 @@ class AppShell(ctk.CTk):
 
         loading = self._ensure_page("loading")
         self.go("loading")
+
+        # Belt and braces: nothing from a previous run should still be on
+        # screen while the next one computes. go() above already closes graph
+        # windows when you leave a results page, but a run can be started by
+        # other routes, and a stale window is exactly the state that produced
+        # the "main thread is not in main loop" reports.
+        from src.ui.app.widgets import figure_window
+        figure_window.close_all()
 
         # Collect on the MAIN thread before the worker starts.
         #

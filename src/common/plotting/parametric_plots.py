@@ -1,15 +1,8 @@
-"""Parametric-study visualisation.
+"""
+plot_parametric_2d(param_results, x_var, y_var, ...)
+plot_parametric_3d(param_results, x_var, y_var, z_var, ...)
 
-Two plot builders, both consuming the `parametric_results` block that
-`simulate_parametric_study` writes into the output JSON:
-
-    plot_parametric_2d(param_results, x_var, y_var, ...)
-    plot_parametric_3d(param_results, x_var, y_var, z_var, ...)
-
-Both build and return a Figure. They do NOT display it: the caller owns
-display, because matplotlib is pinned to Agg (see this package's __init__)
-so figures can be built off the main thread. The UI opens them in its own
-windows via widgets/figure_window.py.
+Both functions return a Figure object; they do not display it. That part is owned by the UI in widgets/figure_window.py.
 """
 
 from __future__ import annotations
@@ -19,7 +12,7 @@ from collections import defaultdict
 from typing import Iterable
 
 import numpy as np
-import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 
 
 def _combo_matches_holds(combo, swept: list[str], holds: dict) -> bool:
@@ -174,7 +167,7 @@ def plot_parametric_2d(
     x_transform=None,
     y_transform=None,
     hold_label_fn=None,
-) -> "plt.Figure":
+) -> "Figure":
     """One 2D plot of (y_var) vs (x_var).
 
     When more than one variable was swept AND the user didn't pin them
@@ -198,7 +191,8 @@ def plot_parametric_2d(
     fx = x_transform or (lambda v: v)
     fy = y_transform or (lambda v: v)
 
-    fig, ax = plt.subplots(figsize=(9, 6))
+    fig = Figure(figsize=(9, 6))
+    ax = fig.subplots()
     for other_vals, series in sorted(grouped.items()):
         xs = [fx(p[0]) for p in series]
         ys = [fy(p[1]) for p in series]
@@ -242,7 +236,7 @@ def plot_parametric_3d(
     y_transform=None,
     z_transform=None,
     hold_label_fn=None,
-) -> "plt.Figure":
+) -> "Figure":
     """One 3D surface of (z_var) over (x_var, y_var).  When more than two
     variables were swept, the extras are pinned at their first grid value
     and that pinning is called out in the title.
@@ -279,7 +273,7 @@ def plot_parametric_3d(
     ys_display = [fy(v) for v in ys]
     Z_display  = np.vectorize(fz)(Z)
 
-    fig = plt.figure(figsize=(10, 7))
+    fig = Figure(figsize=(10, 7))
     ax = fig.add_subplot(111, projection="3d")
 
     X, Y = np.meshgrid(xs_display, ys_display, indexing="ij")

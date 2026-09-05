@@ -1,21 +1,8 @@
-"""
-Plots for steady runs that produced a trajectory.
-
-Same shape as unsteady_plots: a registry of named builders taking the results
-dict and returning a Figure. Only fuel-mass convergence produces a flight_dict,
-so these apply to that alone — a hotfire has no trajectory and a parametric
-study has one per point, which is what parametric_plots covers.
-
-Builders return None when the run lacks the series they need, which is normal
-rather than an error.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 
 
@@ -52,8 +39,9 @@ def make_kinematics_plot(results: dict) -> Optional[Figure]:
     if not available:
         return None
 
-    figure, axes = plt.subplots(len(available), 1, figsize=(10, 8),
-                                sharex=True, num="Kinematics")
+    # object API: nothing lands in pyplot's global registry, so no thread can reach these figures except the one holding them
+    figure = Figure(figsize=(10, 8))
+    axes = figure.subplots(len(available), 1, sharex=True)
     if len(available) == 1:
         axes = [axes]
     for axis, (key, label) in zip(axes, available):
@@ -70,9 +58,9 @@ def make_thrust_plot(results: dict) -> Optional[Figure]:
     """Thrust against time over the burn."""
     if not _has_time(results) or not _series(results, "thrust"):
         return None
-    figure, axis = plt.subplots(figsize=(10, 5), num="Thrust")
-    axis.plot(_series(results, "time"), _series(results, "thrust"),
-              linewidth=_LINE, color="#e63946")
+    figure = Figure(figsize=(10, 5))
+    axis = figure.subplots()
+    axis.plot(_series(results, "time"), _series(results, "thrust"), linewidth=_LINE, color="#e63946")
     axis.set_xlabel("Time [s]")
     axis.set_ylabel("Thrust [N]")
     axis.set_title("Thrust vs. time")
@@ -82,10 +70,10 @@ def make_thrust_plot(results: dict) -> Optional[Figure]:
 
 
 def make_forces_plot(results: dict) -> Optional[Figure]:
-    """Thrust, drag, weight and the net of them, on one axis.
+    """
+    Thrust, drag, weight and the net of them, on one axis.
 
-    Overlaying them is the point: the crossover where drag and weight overtake
-    thrust is what sets the burnout condition.
+    Overlaying them is the point: the crossover where drag and weight overtake thrust is what sets the burnout condition.
     """
     if not _has_time(results):
         return None
@@ -94,15 +82,14 @@ def make_forces_plot(results: dict) -> Optional[Figure]:
               ("drag_force", "Drag", "#f4a261"),
               ("grav_force", "Weight", "#2a9d8f"),
               ("net_force", "Net", "#264653")]
-    available = [(k, label, colour) for k, label, colour in forces
-                 if _series(results, k)]
+    available = [(k, label, colour) for k, label, colour in forces if _series(results, k)]
     if not available:
         return None
 
-    figure, axis = plt.subplots(figsize=(10, 5), num="Forces")
+    figure = Figure(figsize=(10, 5))
+    axis = figure.subplots()
     for key, label, colour in available:
-        axis.plot(time, _series(results, key), linewidth=_LINE,
-                  label=label, color=colour)
+        axis.plot(time, _series(results, key), linewidth=_LINE, label=label, color=colour)
     axis.axhline(0, color="gray", linewidth=0.8)
     axis.set_xlabel("Time [s]")
     axis.set_ylabel("Force [N]")
@@ -114,8 +101,7 @@ def make_forces_plot(results: dict) -> Optional[Figure]:
 
 
 PLOTS: tuple[PlotSpec, ...] = (
-    PlotSpec("kinematics", "Kinematics (altitude, velocity, acceleration)",
-             GROUP_FLIGHT, make_kinematics_plot),
+    PlotSpec("kinematics", "Kinematics (altitude, velocity, acceleration)", GROUP_FLIGHT, make_kinematics_plot),
     PlotSpec("thrust", "Thrust vs. time", GROUP_FLIGHT, make_thrust_plot),
     PlotSpec("forces", "Forces vs. time", GROUP_FLIGHT, make_forces_plot),
 )

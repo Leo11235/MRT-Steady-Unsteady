@@ -245,8 +245,7 @@ class UnsteadyResultsPage(ResultsPage):
 
     def _render_graphs(self, names: list[str]) -> None:
         """Build each figure and open it in its own window."""
-        self._set_status(f"Drawing {len(names)} graph"
-                         f"{'s' if len(names) != 1 else ''}…")
+        self._set_status(f"Rendering graphs…  0 of {len(names)}")
         self.update_idletasks()
 
         from src.common.plotting import unsteady_plots
@@ -259,7 +258,8 @@ class UnsteadyResultsPage(ResultsPage):
                 except Exception as exc:        # noqa: BLE001
                     yield name, exc             # one bad plot costs only itself
 
-        self.report_render(*figure_window.show_figures(self, build()))
+        self.report_render(*figure_window.show_figures(
+            self, build(), on_progress=self.render_progress(len(names))))
 
     def reset_to_defaults(self) -> None:
         """Close the graph windows when leaving. Figures are expensive to hold
