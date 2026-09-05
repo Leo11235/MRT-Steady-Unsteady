@@ -61,8 +61,9 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
             "inner_radius": r_f, 
             "outer_radius": R_f
         }
-        
-    ##### check if fuel grain radius is larger than rocket external radius
+    
+    ##### airframe & fuel cell checks
+    # check if fuel grain radius is larger than rocket external radius
     R_r = _number(rocket_inputs, "rocket_outer_radius")
     if R_f is not None and R_r is not None and R_f > R_r:
         warning_dict["init_fuel_outer_radius_greater_than_rocket_outer_radius"] = {
@@ -71,7 +72,30 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
             "fuel_outer_radius": R_f, 
             "rocket_outer_radius": R_r
         }
-    
+    # conversely, check if airframe outer diameter is unrealistically larger than outer fuel diameter
+    if (R_f is not None and R_r is not None and R_r > R_f * 1.2): # airframe OD must be 20% or more larger than fuel OD to trigger this warning
+        excess = R_r / R_f - 1.0
+        warning_dict["init_airframe_much_wider_than_grain"] = {
+            "severity": "caution",
+            "message": f"Rocket outer diameter ({R_r * 2:.4f} m) is {excess * 100:.0f}% wider than the fuel grain ({R_f * 2:.4f} m).",
+            "fuel_outer_radius": R_f,
+            "rocket_outer_radius": R_r,
+            "excess_fraction": excess,
+        }
+    # and check that the rocket height is a few times larger than outer diameter
+    L_tank = _number(rocket_inputs, "tank_internal_length")
+    if L_tank is not None and R_r is not None:
+        # need to cheat a little to get this height object, since there is no 'height' input. 
+        height = L_tank + sum(v for v in (_number(rocket_inputs, "pre_chamber_length"), _number(rocket_inputs, "chamber_fuel_length"), _number(rocket_inputs, "post_chamber_length")) if v is not None)
+        if height > 0 and (R_r * 2.0) > height * 0.5:
+            warning_dict["init_airframe_too_wide_for_its_length"] = {
+                "severity": "caution",
+                "message": (f"Rocket outer diameter ({R_r * 2:.4f} m) is more than half the height of the components it has to contain ({height:.4f} m of tank and chamber). \nNothing that squats flies. -Sun Tzu"),
+                "rocket_outer_radius": R_r,
+                "stacked_component_height_m": height,
+                "diameter_to_height": (R_r * 2.0) / height,
+            }
+
     ##### tank ullage
     ullage = _number(rocket_inputs, "tank_ullage_fraction")
     if ullage is not None:

@@ -49,6 +49,7 @@ def initialize_state_vector(rocket_inputs: dict, constants_dict: dict, get_N2O_p
         V_l, n_l, n_v, V_V, L_dt = initialize_state_vector_using_tank_length(rocket_inputs, v_l, v_v, m_o_tot_0, W_o, d_T, D_dt, d_dt)
     elif "tank_ullage_fraction" in rocket_inputs:
         V_l, n_l, n_v, L_T, L_dt = initialize_state_vector_using_ullage(rocket_inputs, v_l, v_v, m_o_tot_0, W_o, d_T, D_dt, d_dt)
+        rocket_inputs["tank_internal_length"] = float(L_T)
     
     # INITIALIZE CV4: combustion chamber variables [r_f, m_o, m_f, p_C]
     L_f = rocket_inputs["chamber_fuel_length"]
