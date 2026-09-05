@@ -106,11 +106,16 @@ class PlotSpec:
     label    Human-readable, shown in the UI's graph picker.
     group    Which section of the picker it belongs under.
     builder  (sim_results) -> Figure, or None when the run lacks the data.
+    retired  True hides the plot everywhere the app builds a list: the picker,
+             the PDF, the PNGs, the default selection. The builder is left in
+             place and can still be called by explicit name, so the code stays
+             exercisable and un-retiring one is a one-word edit.
     """
     name: str
     label: str
     group: str
     builder: Callable[[dict], Optional["Figure"]]
+    retired: bool = False
 
 
 # Groups, in the order they appear on screen and in the PDF.
@@ -126,8 +131,8 @@ def _plot_registry() -> tuple[PlotSpec, ...]:
     """Built lazily at import-time bottom, once every builder is defined."""
     return (
         # ---- textual panels, always first ----
-        PlotSpec("performance_panel", "Performance summary", GROUP_SUMMARY, make_performance_panel),
-        PlotSpec("events_warnings_panel", "Events and warnings", GROUP_SUMMARY, make_events_warnings_panel),
+        PlotSpec("performance_panel", "Performance summary", GROUP_SUMMARY, make_performance_panel, retired=True),
+        PlotSpec("events_warnings_panel", "Events and warnings", GROUP_SUMMARY, make_events_warnings_panel, retired=True),
 
         # ---- headline time series ----
         PlotSpec("thrust_vs_time", "Thrust", GROUP_TIME_SERIES,
@@ -151,17 +156,17 @@ def _plot_registry() -> tuple[PlotSpec, ...]:
         PlotSpec("oxidizer_inventory_vs_time", "Oxidizer inventory", GROUP_BURN,
                  make_oxidizer_inventory_plot),
         PlotSpec("fuel_grain_state_vs_time", "Fuel grain state", GROUP_BURN,
-                 make_fuel_grain_state_plot),
+                 make_fuel_grain_state_plot, retired=True),
         PlotSpec("injector_pressure_drop_vs_time", "Injector pressure drop", GROUP_BURN,
                  make_injector_dp_plot),
         PlotSpec("nozzle_exit_conditions_vs_time", "Nozzle exit conditions", GROUP_BURN,
-                 make_nozzle_exit_plot),
+                 make_nozzle_exit_plot, retired=True),
         PlotSpec("nozzle_flow_regime_vs_time", "Nozzle flow regime", GROUP_BURN,
-                 make_flow_regime_plot),
+                 make_flow_regime_plot, retired=True),
         PlotSpec("combustion_properties_vs_time", "Combustion properties", GROUP_BURN,
-                 make_combustion_properties_plot),
+                 make_combustion_properties_plot, retired=True),
         PlotSpec("ambient_atmosphere_vs_time", "Ambient atmosphere", GROUP_BURN,
-                 make_ambient_atmosphere_plot),
+                 make_ambient_atmosphere_plot, retired=True),
         PlotSpec("isp_vs_time", "Isp", GROUP_BURN,
                  make_isp_plot),
         PlotSpec("rocket_total_mass_vs_time", "Rocket total mass", GROUP_BURN,
@@ -171,7 +176,7 @@ def _plot_registry() -> tuple[PlotSpec, ...]:
         PlotSpec("trajectory_map", "Trajectory map", GROUP_RELATIONS,
                  make_trajectory_map),
         PlotSpec("of_vs_port_radius", "O/F vs port radius", GROUP_RELATIONS,
-                 make_of_vs_radius_plot),
+                 make_of_vs_radius_plot, retired=True),
         PlotSpec("thrust_vs_chamber_pressure", "Thrust vs chamber pressure", GROUP_RELATIONS,
                  make_thrust_vs_pc_plot),
 
@@ -179,17 +184,17 @@ def _plot_registry() -> tuple[PlotSpec, ...]:
         PlotSpec("solver_step_size", "Solver step size", GROUP_DIAGNOSTICS,
                  make_solver_step_size_plot),
         PlotSpec("nan_map", "NaN map", GROUP_DIAGNOSTICS,
-                 make_nan_map_plot),
+                 make_nan_map_plot, retired=True),
         PlotSpec("mass_conservation_check", "Mass conservation check", GROUP_DIAGNOSTICS,
-                 make_mass_conservation_plot),
+                 make_mass_conservation_plot, retired=True),
         PlotSpec("thrust_with_event_markers", "Thrust with event markers", GROUP_DIAGNOSTICS,
-                 make_thrust_with_events_plot),
+                 make_thrust_with_events_plot, retired=True),
 
         # ---- sketches ----
         PlotSpec("rocket_cross_section", "Rocket cross-section", GROUP_GEOMETRY,
-                 make_rocket_cross_section),
+                 make_rocket_cross_section, retired=True),
         PlotSpec("nozzle_profile", "Nozzle profile", GROUP_GEOMETRY,
-                 make_nozzle_profile),
+                 make_nozzle_profile, retired=True),
     )
 
 
@@ -237,11 +242,13 @@ def _selected_specs(plots: "list[str] | None",
 
     Order always comes from the registry, never from the caller's list, so the
     PDF page order is stable no matter how the selection was written."""
+    # No selection means the active registry. An explicit list may name a
+    # retired plot: nothing offers them, but asking for one by name still works.
     chosen = list(PLOTS) if plots is None else [
-        spec for spec in PLOTS if spec.name in set(plots)
+        spec for spec in ALL_PLOTS if spec.name in set(plots)
     ]
     if plots is not None:
-        unknown = set(plots) - set(plot_names())
+        unknown = set(plots) - {spec.name for spec in ALL_PLOTS}
         if unknown:
             raise KeyError(f"Unknown plot name(s): {', '.join(sorted(unknown))}")
     if exclude:
@@ -1866,8 +1873,13 @@ def _save_figures_to_png(figures: list[Figure], names: list[str],
 #
 # Built here, at the bottom, because every builder above has to exist first.
 
-PLOTS: tuple[PlotSpec, ...] = _plot_registry()
-PLOTS_BY_NAME: dict[str, PlotSpec] = {spec.name: spec for spec in PLOTS}
+# ALL_PLOTS keeps the retired ones so build_figure() and label_of() can still
+# resolve them by name; PLOTS is what everything that builds a *list* sees, so
+# the picker, the PDF, the PNGs and the default selection all skip them without
+# any of those needing to know retirement exists.
+ALL_PLOTS: tuple[PlotSpec, ...] = _plot_registry()
+PLOTS: tuple[PlotSpec, ...] = tuple(spec for spec in ALL_PLOTS if not spec.retired)
+PLOTS_BY_NAME: dict[str, PlotSpec] = {spec.name: spec for spec in ALL_PLOTS}
 
 
 # =============================================================================
