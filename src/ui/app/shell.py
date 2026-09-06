@@ -55,6 +55,9 @@ class PageRef:
 class AppShell(ctk.CTk):
     """The root window. One instance per run."""
 
+    # Set while go() is mid-navigation. See _pump() for why it is needed.
+    _navigating = False
+
     PAGES: dict[str, PageRef] = {
         "main":             PageRef("src.ui.app.pages.main_menu", "MainMenuPage"),
         "steady":           PageRef("src.ui.app.pages.steady_page", "SteadyPage"),
@@ -240,8 +243,41 @@ class AppShell(ctk.CTk):
         self.pages[name] = page
         return page
 
+    def _pump(self) -> None:
+        """Service the OS message queue so Windows won't call the window hung.
+
+        Windows greys a top-level window out and appends "(Not responding)" to
+        its title when the owning thread has not pulled a message off its queue
+        for five seconds. That is a GAP timer, not a stopwatch, so this does not
+        have to run during the slow work. Called at the seams either side of it,
+        it splits one long stretch into several short ones and the clock never
+        gets there.
+
+        update(), not update_idletasks(): the latter flushes pending redraws but
+        never dispatches from the OS queue, so it does not reset the clock at all.
+        """
+        try:
+            self.update()
+        except Exception:                   # noqa: BLE001
+            pass                # window torn down mid-navigation
+
     def go(self, name: str) -> None:
-        """Switch to a page by key."""
+        """Switch to a page by key.
+
+        _pump() dispatches input as well as paint, so a second click queued
+        during a slow page build would re-enter this and build the page twice.
+        One flag is enough, since nothing in _go() yields to anything but the
+        event loop.
+        """
+        if self._navigating:
+            return
+        self._navigating = True
+        try:
+            self._go(name)
+        finally:
+            self._navigating = False
+
+    def _go(self, name: str) -> None:
         # Graph windows belong to the results page that opened them, so leaving
         # it closes them wherever you're going. This used to happen only via
         # reset_to_defaults, which only runs on the way home, so the common
@@ -264,6 +300,10 @@ class AppShell(ctk.CTk):
                     except Exception:           # noqa: BLE001
                         pass
 
+        # Seam 1: end the current stretch before a first-use page build, which
+        # constructs several hundred widgets on this thread.
+        self._pump()
+
         page = self._ensure_page(name)
         page.tkraise()
         self.current_page = name
@@ -274,6 +314,10 @@ class AppShell(ctk.CTk):
         self.page_title.configure(
             text="" if name == "main" else getattr(page, "TITLE", ""))
         self._refresh_top_bar()
+
+        # Seam 2: the build is done and on_show has not started. These are the
+        # two expensive halves of a transition, so they get counted separately.
+        self._pump()
 
         if hasattr(page, "on_show"):
             try:

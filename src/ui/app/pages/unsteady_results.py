@@ -148,7 +148,7 @@ class UnsteadyResultsPage(ResultsPage):
     @staticmethod
     def _phase_title(phase: str) -> str:
         try:
-            from src.common.plotting.unsteady_plots import PHASE_LABELS
+            from src.common.phases import PHASE_LABELS
             return PHASE_LABELS.get(phase, phase)
         except Exception:                       # noqa: BLE001
             return phase

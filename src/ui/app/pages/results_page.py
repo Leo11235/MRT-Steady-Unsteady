@@ -257,21 +257,33 @@ class ResultsPage(ctk.CTkFrame):
             self._set_status(f"No results file in {path.name}", error=True)
             return
 
-        try:
-            self.results = json.loads(json_path.read_text(encoding="utf-8"))
-            # Do this before anything renders: every row converts FROM this.
-            self.native_system = native_system_of(self.results)
-        except Exception as exc:                # noqa: BLE001
-            self._set_status(f"Could not read {json_path.name}: {exc}", error=True)
+        # Parsing a multi-megabyte results file and then building every row is
+        # one uninterrupted main-thread stretch, long enough on a big run for
+        # Windows to grey the window out. busy() pumps once on the way in and
+        # claims the page against a second click; the pump below splits the
+        # parse from the render so neither half is counted as one long freeze.
+        if not self.busy("Loading run…"):
             return
+        try:
+            try:
+                self.results = json.loads(json_path.read_text(encoding="utf-8"))
+                # Do this before anything renders: every row converts FROM this.
+                self.native_system = native_system_of(self.results)
+            except Exception as exc:            # noqa: BLE001
+                self._set_status(f"Could not read {json_path.name}: {exc}", error=True)
+                return
 
-        self.run_path = json_path
-        self._rows.clear()
-        self._dynamic_labels.clear()
-        self._refresh_panels()
-        self._apply_filter()
-        self._set_status(f"{backend_bridge.run_display_name(path)}  ·  "
-                         f"{json_path.stat().st_size // 1024} KB")
+            self.run_path = json_path
+            self._rows.clear()
+            self._dynamic_labels.clear()
+
+            self.pump("Rendering results…")
+            self._refresh_panels()
+            self._apply_filter()
+            self._set_status(f"{backend_bridge.run_display_name(path)}  ·  "
+                             f"{json_path.stat().st_size // 1024} KB")
+        finally:
+            self.done_busy()
 
     # ==================================================================
     # Rendering helpers

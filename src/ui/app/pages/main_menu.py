@@ -21,7 +21,7 @@ except ImportError:
     _HAS_PIL = False
 
 
-USER_MANUAL_URL = "https://github.com/Leo11235/MRT-Steady-Unsteady/blob/main/user_manual.md"
+USER_MANUAL_URL = "https://github.com/Leo11235/MRT-Steady-Unsteady/blob/main/docs/user_manual.md"
 
 _PRIMARY_W, _PRIMARY_H = 220, 90
 _SECONDARY_W, _SECONDARY_H = 220, 36
