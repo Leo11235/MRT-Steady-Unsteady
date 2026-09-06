@@ -153,6 +153,34 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
                     "message": f"Regression rate exponent ({n}) is unusually high. Recommended range is [0.3, 0.9]. ",
                     "chamber_regression_rate_exponent": n
                 }
+    
+    ##### c* efficiency
+    """
+    c* here refers to eta, as in eta_c* = c*_actual / c*_theoretical
+    c*_theoretical given by CEA in m/s, eta_c* dimensionless input, c*_actual in m/s & computed using the other two
+    """
+    
+    eta_cstar = _number(rocket_inputs, "chamber_cstar_efficiency")
+    if eta_cstar is not None:
+        if eta_cstar > 1.0:
+            warning_dict["init_cstar_efficiency_too_high"] = {
+                    "severity": "critical",
+                    "message": f"C* efficiency ({eta_cstar}) is above 1.0, so the chamber would deliver more than the theoretical maximum for this propellant. Chamber pressure, thrust and Isp will all be overpredicted.",
+                    "chamber_cstar_efficiency": eta_cstar
+                }
+        elif eta_cstar <= 0.0:
+            warning_dict["init_cstar_efficiency_non_positive"] = {
+                    "severity": "critical",
+                    "message": f"C* efficiency ({eta_cstar}) must be greater than zero. At or below zero the chamber can never build pressure.",
+                    "chamber_cstar_efficiency": eta_cstar
+                }
+        elif eta_cstar < 0.7:
+            warning_dict["init_low_cstar_efficiency"] = {
+                    "severity": "advisory",
+                    "message": f"C* efficiency ({eta_cstar}) is unusually low. Even poorly mixed hybrids rarely fall below 0.8. Recommended range is [0.85, 0.95].",
+                    "chamber_cstar_efficiency": eta_cstar
+                }
+    
 
 
 ########################################

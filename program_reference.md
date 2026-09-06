@@ -1105,3 +1105,65 @@ Line counts as of v1.5, data tables excluded.
 | `tests/steady_configs/` (3) | 173 |
 | `tests/unsteady_configs/` (3) | 270 |
 | `tests/ui_configs/` (9) | 660 |
+
+---
+
+## 16. Appendix: c* efficiency (added in 1.6)
+
+A short account of the `chamber_cstar_efficiency` input, written as it went in.
+Expand into a proper section later.
+
+### 16.1 Four things called "c*"
+
+| Name | Units | Typical | Where it comes from |
+|---|---|---|---|
+| c*_theoretical | m/s | ~1300 | Computed from CEA. Never an input. |
+| c*_actual | m/s | ~1170 | What the engine really delivers. Known only from a hotfire. Appears nowhere in the code. |
+| eta_c* | none | 0.90 | c*_actual / c*_theoretical. The only one of these that is an input. |
+| the `cstar` variable | m/s | ~1300 | c*_theoretical, straight from the CEA table. Feeds the c* graph and nothing else. |
+
+Characteristic velocity is defined by `c* = p_C * A_t / m_dot`: how much chamber
+pressure a given mass flow buys through a given throat. Efficiency is measured on
+a test stand rather than calculated. Record chamber pressure and mass flow, work
+out the actual c*, then divide by what CEA predicts at the same O/F and pressure.
+CEA models perfect combustion, so it has no way to know how well a particular
+injector mixes or how much heat the case absorbs.
+
+### 16.2 The program already had an implicit c*
+
+`CV5_nozzle.nozzle_joel_unsteady` gets throat mass flow from the compressible
+flow relation, not from c*. At a choked throat that expression rearranges to
+
+```
+c* = sqrt(R_u*T_c/(gamma*W_c)) * ((gamma+1)/2)^((gamma+1)/(2*(gamma-1)))
+```
+
+which is character for character the formula HRAP uses in `comb.m`. So a
+theoretical c* was always in the solver, spread across the
+`sqrt(gamma*W_c/(R_u*T_c))` factor and `term_mdot`, just never assembled into a
+variable. What was missing was HRAP's `cstar_eff` multiplier.
+
+### 16.3 Why the efficiency scales temperature
+
+There is no c* variable in the mass flow path to multiply, so eta is applied
+where c* is actually built, at chamber temperature. Because c* scales with the
+square root of T_c:
+
+```
+a factor eta on c*  ==  a factor eta**2 on T_c
+```
+
+That is one multiplication in `CV5_nozzle.py`, immediately after the CEA lookup.
+Everything downstream reads `T_c` and degrades together. Mass flow at a given
+pressure rises by 1/eta, so chamber pressure settles about eta lower. Exit
+velocity falls by eta, so thrust and Isp fall by eta.
+
+Multiplying the mass flow alone, the way HRAP does it, would not work here. HRAP
+gets thrust from `Cf * At * Pc`, so a pressure drop carries through to thrust on
+its own. This program gets thrust from `m_dot * v_e`, and mass flow is set by the
+injector rather than by chamber pressure, so degrading only the mass flow would
+lower chamber pressure while leaving thrust and Isp essentially untouched.
+
+Expect the observed drop to come out slightly under eta. Lower chamber pressure
+means a larger injector pressure differential, so oxidizer flow rises a little
+and O/F drifts up.

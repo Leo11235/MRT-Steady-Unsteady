@@ -52,6 +52,7 @@
                 "chamber_fuel_external_diameter": [0.2, "m"],
                 "chamber_regression_rate_scaling_constant": [0.000132, "."],
                 "chamber_regression_rate_exponent": [0.555, "."],
+                "chamber_cstar_efficiency": [1.0, "."],
                 "pre_chamber_diameter": [0.2, "m"],
                 "pre_chamber_length": [0.0318310, "m"],
                 "post_chamber_diameter": [0.2, "m"],

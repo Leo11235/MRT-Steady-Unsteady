@@ -16,6 +16,28 @@ from src.ui.app.version import VERSION
 
 PATCHNOTES: list[dict] = [
     {
+        "version": "1.6",
+        "date":    "2026-09-06",
+        "notes": [
+            "Added combustion chamber efficiency (c-star) to unsteady inputs. The user may now specify an efficiency fraction at which the combustion chamber operates. Defaults to 0.9, which is typical for a paraffin/N2O hybrid. Previous versions behaved as though it were 1.0, so chamber pressure, thrust and Isp will read slightly lower than before.",
+            
+            "Fixed bug where program crashed if attempting to run a simulation immediately after opening graphs. Graph creation should not also appear smoother, with less jittery behavior on the screen while they are loading.",
+            
+            "Moved graph creation to results page so unsteady runs produce results faster by default.",
+            
+            "Unsteady can now generate a report PDF which includes all inputs, outputs, physics warnings, graphs, and more.",
+            
+            "Some of the more unnecessary unsteady graphs no longer accessible from the UI.",
+            
+            "'Units' button in results page moved above other buttons to clarify that graphs and reports are generated in whichever unit is currently selected.",
+            
+            "Added new input guards to warn users if rocket outer diameter is more than 40% larger than outer fuel diameter, or if rocket outer diameter is more than 50% of rocket height."
+
+
+
+        ],
+    },
+    {
         "version": "1.5",
         "date":    "2026-08-22",
         "notes": [

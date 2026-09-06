@@ -35,12 +35,25 @@ def nozzle_joel_unsteady(t: float, state_vector: dict, rocket_inputs: dict, live
     else:
         OF = m_o / m_f
         T_c, W_c, gamma, cstar, dT_dOF, dT_dp, dW_dOF, dW_dp = CEA_interpolation_lookup(OF, p_C)
+        
+        # cstar (c*) is theoretical, in m/s. CEA returns this theoretical value, while only a fraction eta of it is really achieved in the chamber
+        eta_cstar = rocket_inputs["chamber_cstar_efficiency"] # only unpack eta if we really need it
+        
+        # c* scales with sqrt(T_c)
+        T_c *= eta_cstar**2
+        # the CEA derivatives arrive as separate numbers and do not follow T_c on their own; scaling them keeps dT/T, which CV4's pressure ODE uses, unchanged
+        dT_dOF *= eta_cstar**2
+        dT_dp *= eta_cstar**2
+        
+        # scale cstar to the real value
+        # kept as cstar even though it's a new variable to make return statements simpler
+        cstar *= eta_cstar
 
     # nothing leaves the nozzle unless the chamber is above ambient 
     if p_C <= p_amb:
         return {
-            "m_dot_n": 0.0, "F_thrust": 0.0, "p_e": p_amb,
-            "M_e": 0.0, "v_e": 0.0, "flow_regime": "sub_ambient",
+            "m_dot_n": 0.0, "F_thrust": 0.0, 
+            "p_e": p_amb, "M_e": 0.0, "v_e": 0.0, "flow_regime": "sub_ambient",
             "OF": OF, "T_c": T_c, "W_c": W_c, "gamma": gamma, "cstar": cstar,
             "dT_dOF": dT_dOF, "dW_dOF": dW_dOF, "dT_dp": dT_dp, "dW_dp": dW_dp
         }
@@ -125,8 +138,8 @@ def nozzle_joel_unsteady(t: float, state_vector: dict, rocket_inputs: dict, live
         m_dot_n, v_e, F_thrust = 0.0, 0.0, 0.0
 
     return {
-        "m_dot_n": m_dot_n, "F_thrust": max(F_thrust, 0.0), "p_e": p_e,
-        "v_e": v_e, "M_e": M_e, "flow_regime": flow_regime,
+        "m_dot_n": m_dot_n, "F_thrust": max(F_thrust, 0.0), 
+        "p_e": p_e, "v_e": v_e, "M_e": M_e, "flow_regime": flow_regime,
         "OF": OF, "T_c": T_c, "W_c": W_c, "gamma": gamma, "cstar": cstar,
         "dT_dOF": dT_dOF, "dW_dOF": dW_dOF, "dT_dp": dT_dp, "dW_dp": dW_dp
     }

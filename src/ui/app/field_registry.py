@@ -228,6 +228,8 @@ _UNSTEADY: tuple[FieldSpec, ...] = (
               "The 'a' in r_dot = a*G^n. Paraffin with N2O is around 0.000132.\nWARNING: though listed as dimensionless, a's units in SI are actually m^(1+2n) · kg^(-n) · s^(n-1), where n is the regression rate exponent. The default value is verified via research and changing it is not recommended."),
     FieldSpec("chamber_regression_rate_exponent", "Regression exponent (n)", DIMENSIONLESS,
               "The 'n' in r_dot = a*G^n. Paraffin with N2O is around 0.555."),
+    FieldSpec("chamber_cstar_efficiency", "C* efficiency", DIMENSIONLESS,
+              "Fraction of the theoretical characteristic velocity (c*) that the chamber actually delivers, from 0 to 1. 1.0 assumes perfect combustion. Paraffin/N2O hybrids typically run 0.85 to 0.95. Lowering it drops chamber pressure, thrust and Isp by roughly the same fraction."),
     FieldSpec("pre_chamber_diameter", "Pre-chamber diameter", "length",
               "Diameter of the empty volume upstream of the fuel grain."),
     FieldSpec("pre_chamber_length", "Pre-chamber length", "length",

@@ -46,6 +46,7 @@ _CHAMBER_ADVANCED = (
     "chamber_fuel_density",
     "chamber_regression_rate_scaling_constant",
     "chamber_regression_rate_exponent",
+    "chamber_cstar_efficiency",
 )
 
 ALTERNATES = backend_bridge.UNSTEADY_ALTERNATES
@@ -205,7 +206,7 @@ class UnsteadyPage(InputPage):
         if is_chamber:
             self.add_divider(wrap)
             self.add_advanced_header(
-                wrap, "Advanced (propellant chemistry & regression law)")
+                wrap, "Advanced (propellant & combustion parameters)")
             for key in _CHAMBER_ADVANCED:
                 self.add_advanced_field(wrap, f"{cv}.{key}")
 
