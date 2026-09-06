@@ -154,7 +154,7 @@ _STEADY: tuple[FieldSpec, ...] = (
     FieldSpec("launch_site_altitude", "Launch site altitude", "distance",
               "Launch-site elevation above sea level."),
     FieldSpec("dry_mass", "Dry mass", "mass",
-              "The mass of the rocket without any fuel."),
+              "The mass of the rocket without any propellant."),
     FieldSpec("rocket_external_diameter", "Rocket external diameter", "length",
               "Airframe outer diameter."),
     FieldSpec("drag_coefficient", "Drag coefficient", DIMENSIONLESS,
@@ -254,7 +254,7 @@ _UNSTEADY: tuple[FieldSpec, ...] = (
 
     # ---- CV6 trajectory ----
     FieldSpec("rocket_dry_mass", "Dry mass", "mass",
-              "The mass of the rocket without any fuel."),
+              "The mass of the rocket without any propellant."),
     FieldSpec("rocket_drag_coefficient", "Drag coefficient", DIMENSIONLESS,
               "Rocket drag coefficient. Slender rockets sit around 0.5 to 0.7."),
     FieldSpec("rocket_outer_diameter", "Outer diameter", "length",

@@ -15,8 +15,13 @@ def _calculate_forces(t, state_vector, rocket_inputs, live, constants, F_thrust=
     vy_R = state_vector["vy_R"]
     v_mag = np.sqrt(vx_R**2 + vy_R**2)
     
-    # mass
-    m_total = rocket_inputs["rocket_dry_mass"] + (state_vector["n_l"] + state_vector["n_v"]) * W_o + state_vector["m_o"] + state_vector["m_f"]
+    # calculate rocket mass
+    # fuel grain mass
+    r_f = state_vector["r_f"]
+    R_f = rocket_inputs["chamber_fuel_external_radius"]
+    m_grain = max(np.pi * rocket_inputs["chamber_fuel_density"] * rocket_inputs["chamber_fuel_length"] * (R_f**2 - r_f**2), 0.0)
+    # total mass
+    m_total = rocket_inputs["rocket_dry_mass"] + (state_vector["n_l"] + state_vector["n_v"]) * W_o + state_vector["m_o"] + state_vector["m_f"] + m_grain
     
     # drag
     rho_amb = live["rho_amb"]
