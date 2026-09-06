@@ -363,15 +363,24 @@ class History:
             
         print(f"\nSimulation data exported")
         
-        # save as pdf/png if requested
+        # optional outputs, both off by default because rendering every plot adds roughly half a minute to a run that is otherwise seconds long
         save_to_pdf = bool(rocket_inputs_metadata.get("save_to_pdf"))
         save_to_png = bool(rocket_inputs_metadata.get("save_to_png"))
-        if save_to_pdf or save_to_png:
-            print(f"\nCreating graphs...")
+
+        if save_to_png:
+            print(f"\nSaving graphs as PNGs...")
             unsteady_results(
                 json_filename=output_json_name,
                 json_filepath=output_dir,
-                save_to_pdf=save_to_pdf,
-                save_to_png=save_to_png)
+                save_to_pdf=False,
+                save_to_png=True
+            )
+
+        if save_to_pdf:
+            # outputs full run report PDF: inputs, performance, phases, events, warnings, graphs, etc
+            # independent of any other graphing stuff
+            print(f"\nGenerating PDF report...")
+            from src.common.unsteady_PDF_report import generate_report
+            generate_report(output_dir, sim_results)
 
         return file_path

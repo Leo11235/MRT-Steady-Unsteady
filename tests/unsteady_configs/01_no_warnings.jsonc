@@ -10,8 +10,7 @@
             "save_to_png": false, // whether to save all output plots as a png
             "checks": {
                 "files_exist": ["sim_data.json"],
-                // the actual assertion: warnings=false above must collapse the
-                // whole warnings block to the string "disabled"
+                // the actual assertion: warnings=false above must collapse the whole warnings block to the string "disabled"
                 "warnings_equal": "disabled",
                 // and turning warnings off must not change the physics
                 "value_between": {

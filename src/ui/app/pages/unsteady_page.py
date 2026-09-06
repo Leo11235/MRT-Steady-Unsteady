@@ -117,10 +117,12 @@ class UnsteadyPage(InputPage):
                        "results that look physically suspicious: tank "
                        "temperature near critical, O/F outside the trusted CEA "
                        "range, Mach outside the drag model's range.")
-        self._checkbox(wrap, self.save_pdf_var, "Save graphs to PDF",
-                       "Write every output plot into one multi-page PDF beside "
-                       "the results JSON. Off by default: rendering them all "
-                       "adds roughly half a minute to the run.")
+        self._checkbox(wrap, self.save_pdf_var, "Generate PDF report",
+                       "Write a full run report beside the results JSON: inputs, "
+                       "performance, phase breakdown, events, warnings, then every "
+                       "plot. Off by default: rendering the graphs adds roughly "
+                       "half a minute to the run. You can also generate it later "
+                       "from the results page.")
         self._checkbox(wrap, self.save_png_var, "Save graphs as PNGs",
                        "Write each output plot as its own PNG in a graphs/ "
                        "folder beside the results JSON.")

@@ -9,10 +9,13 @@ Six tabs:
     Events         the transition log
     Warnings       runtime range checks, worst first
 
-Graphs are not a tab. "Choose graphs…" in the sidebar opens each one in its own
-window, so you can put a figure beside the numbers it came from. The same
-builders draw those windows and the figures in `graphs.pdf`, so the two cannot
-drift.
+Graphs are not a tab. "Plot select graphs" in the sidebar opens the ones you
+pick in their own windows, so you can put a figure beside the numbers it came
+from. "Save graphs as PNGs" writes them all to graphs/ instead.
+
+"Generate PDF report" writes the full run report: inputs, performance, phases,
+events, warnings, then every plot. One registry builds all three outputs, so
+the windows, the PNGs and the report cannot drift apart.
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ import customtkinter as ctk
 
 from src.ui.app import theme
 from src.ui.app.pages.results_page import ResultsPage
+from src.ui.app.services import os_utils
 from src.ui.app.widgets import figure_window
 from src.ui.app.widgets.graph_picker import show_graph_picker
 
@@ -56,12 +60,18 @@ class UnsteadyResultsPage(ResultsPage):
         self._warnings = self.add_tab("Warnings")
         self._selected_plots: Optional[list[str]] = None
 
+    def _build_report_action(self, parent) -> None:
+        ctk.CTkButton(parent, text="Generate PDF report", width=200, height=36,
+                      command=self._on_generate_report).pack(pady=theme.PAD_XS)
+
     def _build_extra_actions(self, parent) -> None:
         ctk.CTkLabel(parent, text="Graphs", anchor="w",
                      font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold")).pack(
             fill="x", pady=(theme.PAD_L, theme.PAD_XS))
-        ctk.CTkButton(parent, text="Choose graphs…", width=200, height=36,
+        ctk.CTkButton(parent, text="Plot select graphs", width=200, height=36,
                       command=self._on_choose_graphs).pack(pady=theme.PAD_XS)
+        ctk.CTkButton(parent, text="Save graphs as PNGs", width=200, height=36,
+                      command=self._on_save_pngs).pack(pady=theme.PAD_XS)
 
     # ==================================================================
     # Panels
@@ -243,10 +253,89 @@ class UnsteadyResultsPage(ResultsPage):
 
         self._render_graphs(chosen)
 
+    def _on_generate_report(self) -> None:
+        """Build the run report, then show it in the file explorer.
+
+        Runs on the main thread and blocks: it renders every plot, which takes
+        a few seconds. The status line counts them so the freeze is explained
+        rather than mysterious.
+
+        The report is drawn in whatever unit system the sidebar has selected
+        right now, so what lands in the PDF matches what is on screen.
+        """
+        if not self.results or self.run_path is None:
+            self._set_status("No run open", error=True)
+            return
+
+        from src.common.unsteady_PDF_report import generate_report
+
+        if not self.busy("Generating PDF report…"):
+            return
+
+        def progress(done: int, total: int) -> None:
+            self.pump(f"Generating PDF report…  plot {done} of {total}")
+
+        try:
+            path = generate_report(self.run_path.parent, self.results,
+                                   on_progress=progress, on_stage=self.pump,
+                                   system=self.system)
+        except Exception as exc:                # noqa: BLE001
+            self._set_status(f"Could not write the report: "
+                             f"{type(exc).__name__}: {exc}", error=True)
+            return
+        finally:
+            self.done_busy()
+
+        self._set_status(f"Report written to {path.name}")
+        os_utils.reveal_in_file_explorer(path)
+
+    def _on_save_pngs(self) -> None:
+        """Write every plot as a PNG into graphs/, then open that folder."""
+        if not self.results or self.run_path is None:
+            self._set_status("No run open", error=True)
+            return
+
+        from src.common.plotting import unsteady_plots
+
+        specs = unsteady_plots.plot_specs()
+        if not self.busy(f"Saving graphs…  0 of {len(specs)}"):
+            return
+
+        try:
+            figures, names = [], []
+            for index, spec in enumerate(specs):
+                self.pump(f"Saving graphs…  {index + 1} of {len(specs)}")
+                try:
+                    figure = spec.builder(self.results)
+                except Exception:               # noqa: BLE001
+                    continue                    # one bad plot costs only itself
+                if figure is not None:
+                    figures.append(figure)
+                    names.append(spec.name)
+
+            if not figures:
+                self._set_status("No plots could be built from this run", error=True)
+                return
+
+            out_dir = self.run_path.parent
+            # Writing 15 PNGs is a second or two with no callback of its own.
+            self.pump(f"Writing {len(figures)} PNGs…")
+            try:
+                unsteady_plots._save_figures_to_png(figures, names, out_dir)
+            except Exception as exc:            # noqa: BLE001
+                self._set_status(f"Could not save the PNGs: "
+                                 f"{type(exc).__name__}: {exc}", error=True)
+                return
+        finally:
+            self.done_busy()
+
+        self._set_status(f"{len(figures)} graphs saved to graphs/")
+        os_utils.reveal_in_file_explorer(out_dir / "graphs")
+
     def _render_graphs(self, names: list[str]) -> None:
         """Build each figure and open it in its own window."""
-        self._set_status(f"Rendering graphs…  0 of {len(names)}")
-        self.update_idletasks()
+        if not self.busy(f"Rendering graphs…  0 of {len(names)}"):
+            return
 
         from src.common.plotting import unsteady_plots
 
@@ -258,8 +347,11 @@ class UnsteadyResultsPage(ResultsPage):
                 except Exception as exc:        # noqa: BLE001
                     yield name, exc             # one bad plot costs only itself
 
-        self.report_render(*figure_window.show_figures(
-            self, build(), on_progress=self.render_progress(len(names))))
+        try:
+            self.report_render(*figure_window.show_figures(
+                self, build(), on_progress=self.render_progress(len(names))))
+        finally:
+            self.done_busy()
 
     def reset_to_defaults(self) -> None:
         """Close the graph windows when leaving. Figures are expensive to hold

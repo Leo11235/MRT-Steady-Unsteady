@@ -340,8 +340,8 @@ class SteadyResultsPage(ResultsPage):
             self._set_status("No graphs selected")
             return
 
-        self._set_status(f"Rendering graphs…  0 of {len(chosen)}")
-        self.update_idletasks()
+        if not self.busy(f"Rendering graphs…  0 of {len(chosen)}"):
+            return
 
         def build():
             for name in chosen:
@@ -351,8 +351,11 @@ class SteadyResultsPage(ResultsPage):
                 except Exception as exc:        # noqa: BLE001
                     yield name, exc
 
-        self.report_render(*figure_window.show_figures(
-            self, build(), on_progress=self.render_progress(len(chosen))))
+        try:
+            self.report_render(*figure_window.show_figures(
+                self, build(), on_progress=self.render_progress(len(chosen))))
+        finally:
+            self.done_busy()
 
     # ---- parametric: the axis builder --------------------------------
 
@@ -409,9 +412,12 @@ class SteadyResultsPage(ResultsPage):
         if spec_2d is None and spec_3d is None:
             return
 
-        self._set_status("Drawing parametric graphs…")
-        self.update_idletasks()
-        self._render_parametric(sweep, spec_2d, spec_3d)
+        if not self.busy("Drawing parametric graphs…"):
+            return
+        try:
+            self._render_parametric(sweep, spec_2d, spec_3d)
+        finally:
+            self.done_busy()
 
     def _render_parametric(self, sweep: dict, spec_2d, spec_3d) -> None:
         from src.common.plotting import parametric_plots

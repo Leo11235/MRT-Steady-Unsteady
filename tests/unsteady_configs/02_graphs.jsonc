@@ -9,11 +9,7 @@
             "save_to_pdf": true, // whether to save all output plots to a pdf file
             "save_to_png": true, // whether to save all output plots as a png
             "checks": {
-                // the trailing slash on "graphs/" means the directory must exist
-                // AND be non-empty; an empty folder counts as a failure
-                "files_exist": ["sim_data.json", "graphs.pdf", "graphs/"],
-                // file existence alone would pass on a 0-byte PDF, so this also
-                // checks the files have real content in them
+                "files_exist": ["sim_data.json", "run_report.pdf", "graphs/"],
                 "custom_check": "check_graph_files_are_real"
             }
         },

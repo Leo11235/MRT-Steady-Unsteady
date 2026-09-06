@@ -4,12 +4,12 @@ ResultsPage — everything the two results views have in common.
 LAYOUT
 ------
     +----------------------------------------------------+-----------+
-    | search .............................................|  Actions  |
-    +----------------------------------------------------+  Copy     |
-    | [Tab] [Tab] [Tab]                                   |  Export   |
-    |                                                     |  Folder   |
-    |   scrollable rows                                   |  Graphs   |
-    |                                                     |  Units    |
+    | search .............................................|  Units    |
+    +----------------------------------------------------+  Actions  |
+    | [Tab] [Tab] [Tab]                                   |  Copy     |
+    |                                                     |  Export   |
+    |   scrollable rows                                   |  Folder   |
+    |                                                     |  Graphs   |
     +----------------------------------------------------+-----------+
     | status line                                                     |
     +-----------------------------------------------------------------+
@@ -20,9 +20,11 @@ of the app shouldn't feel like different programs.
 
 THE UNIT TOGGLE
 ---------------
-One control, top of the sidebar's Units group, switching the whole page between
+One control at the very top of the sidebar, above Actions, switching between
 SI, MRT and IMP. Rows re-label and re-convert in place rather than being
 rebuilt, which matters because a results page can hold several hundred of them.
+It sits above the buttons because it governs them: the same choice decides what
+the graphs and the generated PDF report are drawn in.
 
 The search box filters rows live across every tab at once, matching on label,
 raw JSON key and value, so you can find a number whether you know what it's
@@ -62,6 +64,9 @@ class ResultsPage(ctk.CTkFrame):
 
         self.run_path: Optional[Path] = None
         self.results: dict = {}
+        # True while a long main-thread job (graphs, PNGs, PDF) is pumping the
+        # event loop. See busy() / pump().
+        self._busy = False
         # Every KVRow on the page, so the unit toggle and the filter can reach
         # all of them without knowing which tab they live in.
         self._rows: list[KVRow] = []
@@ -123,35 +128,42 @@ class ResultsPage(ctk.CTkFrame):
                                padx=theme.PAD_M, pady=(0, theme.PAD_S))
 
     def _build_sidebar(self, parent) -> None:
+        # Units first, above Actions. It governs everything below it — the rows
+        # on screen, the graphs, and the generated report — so it reads wrong
+        # sitting underneath the buttons it controls.
+        self._build_units_group(parent)
+
         ctk.CTkLabel(parent, text="Actions", anchor="w",
                      font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold")).pack(
-            fill="x", pady=(0, theme.PAD_S))
+            fill="x", pady=(theme.PAD_L, theme.PAD_S))
 
         ctk.CTkButton(parent, text="Copy to clipboard", width=_ACTION_W, height=36,
                       command=self._on_copy).pack(pady=theme.PAD_XS)
         ctk.CTkButton(parent, text="Export as CSV…", width=_ACTION_W, height=36,
                       command=self._on_export_csv).pack(pady=theme.PAD_XS)
+        # Subclass hook, deliberately between CSV and Show in folder. Only the
+        # unsteady page has a report to generate, and the base class should not
+        # have to know which one that is.
+        self._build_report_action(parent)
         ctk.CTkButton(parent, text="Show in folder", width=_ACTION_W, height=36,
                       command=self._on_show_in_folder).pack(pady=theme.PAD_XS)
 
         self._build_extra_actions(parent)
 
+    def _build_units_group(self, parent) -> None:
         units_header = ctk.CTkFrame(parent, fg_color="transparent")
-        units_header.pack(fill="x", pady=(theme.PAD_L, theme.PAD_XS))
+        units_header.pack(fill="x", pady=(0, theme.PAD_XS))
         ctk.CTkLabel(units_header, text="Units", anchor="w",
-                     font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold")).pack(
+                     font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold")).pack(
             side="left")
         HelpIcon(units_header,
-                 "SI: metres, pascals, kilograms.\n"
-                 "IMP: feet, psi, pounds, Fahrenheit.\n"
-                 "MRT: the team's mix — feet and psi, but still kilograms "
-                 "and kelvin.\n\n"
-                 "Changes only what's displayed here, never the saved file. "
-                 "The file is written in whatever the run's Output units "
-                 "setting said.").pack(side="left", padx=(theme.PAD_XS, 0))
+                 "Select which unit to display values, create graphs, and "
+                 "generate the report in. \nSI: International system \nIMP: "
+                 "Imperial system \nMRT: A mix of SI and IMP catered to the "
+                 "McGill Rocket Team").pack(side="left", padx=(theme.PAD_XS, 0))
 
         # Three buttons that together span exactly the width of one action
-        # button above, gaps included — so the sidebar reads as one column
+        # button below, gaps included — so the sidebar reads as one column
         # rather than the units group bulging out of it.
         self._unit_buttons: dict[str, ctk.CTkButton] = {}
         gaps = theme.PAD_XS * (len(UNIT_SYSTEMS) - 1)
@@ -323,6 +335,49 @@ class ResultsPage(ctk.CTkFrame):
             else:
                 self.add_row(parent, key, value)
 
+    # ---- long blocking jobs ------------------------------------------
+
+    def busy(self, message: str) -> bool:
+        """Claim the page for a long main-thread job. False if one is running.
+
+        pump() lets the user click during a build, so every entry point that
+        pumps has to be re-entrant-safe. One flag, checked at the top of each
+        handler, is enough: the job never yields to anything but the event
+        loop, so there is no race to lose.
+        """
+        if getattr(self, "_busy", False):
+            return False
+        self._busy = True
+        self.pump(message)
+        return True
+
+    def done_busy(self) -> None:
+        self._busy = False
+
+    def pump(self, message: Optional[str] = None) -> None:
+        """Update the status line and service the event loop.
+
+        update() rather than update_idletasks(), and that is the whole point.
+        update_idletasks() flushes pending redraws but never dispatches from
+        the OS message queue, and on Windows a top-level window whose thread
+        has not pumped that queue for five seconds gets painted over with a
+        ghost copy and "(Not responding)" in the titlebar. Rendering fifteen
+        plots takes longer than five seconds, so the title always went grey
+        part-way through even though the status counter was visibly moving.
+
+        The cost is that update() also dispatches input, so a second click on
+        the button that started the job would re-enter it. busy() guards that.
+        Anything else the user manages to click can still tear this page down
+        underneath the job, hence the blanket except: a half-destroyed widget
+        raising out of a progress tick would lose the work that was nearly done.
+        """
+        try:
+            if message is not None:
+                self._set_status(message)
+            self.update()
+        except Exception:                       # noqa: BLE001
+            pass                # page torn down mid-job; nothing left to paint
+
     # ---- figures -----------------------------------------------------
 
     def render_progress(self, total: int):
@@ -331,13 +386,9 @@ class ResultsPage(ctk.CTkFrame):
         Figures are built hidden and revealed together, so nothing appears on
         screen until the last one is done. With ~27 plots that is several
         silent seconds, which reads as a freeze. This keeps a counter moving.
-
-        update_idletasks() rather than update(): it repaints without processing
-        input, so the user cannot click something mid-build and re-enter this.
         """
         def progress(done: int) -> None:
-            self._set_status(f"Rendering graphs…  {done} of {total}")
-            self.update_idletasks()
+            self.pump(f"Rendering graphs…  {done} of {total}")
         return progress
 
     def report_render(self, drawn: int, skipped: int, failed: int) -> None:
@@ -456,6 +507,9 @@ class ResultsPage(ctk.CTkFrame):
             self._set_status(f"Could not export: {exc}", error=True)
             return
         self._set_status(f"Exported {len(rows)} rows to {Path(chosen).name}")
+
+    def _build_report_action(self, parent) -> None:
+        """Report button slot. Nothing by default; unsteady fills it in."""
 
     def _on_show_in_folder(self) -> None:
         if self.run_path is None:

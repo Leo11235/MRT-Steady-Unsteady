@@ -428,23 +428,26 @@ _MIN_PLOT_BYTES = 2000 # a real plot is tens of KB; anything this small is a stu
 
 def check_graph_files_are_real(ctx: TestContext) -> tuple[bool, str]:
     """
-    graphs.pdf and graphs/*.png are rendered, not empty stubs
+    run_report.pdf and graphs/*.png are rendered, not empty stubs.
+
+    save_to_pdf used to write graphs.pdf, a bare stack of plots. It now writes
+    the full run report, so the filename moved with it.
     """
     if ctx.output_dir is None:
         return False, "the run produced no output directory"
 
     problems = []
 
-    pdf = ctx.output_dir / "graphs.pdf"
+    pdf = ctx.output_dir / "run_report.pdf"
     if not pdf.exists():
-        problems.append("graphs.pdf missing")
+        problems.append("run_report.pdf missing")
     else:
         size = pdf.stat().st_size
         header = pdf.read_bytes()[:len(_PDF_MAGIC)]
         if header != _PDF_MAGIC:
-            problems.append(f"graphs.pdf does not start with {_PDF_MAGIC!r}")
+            problems.append(f"run_report.pdf does not start with {_PDF_MAGIC!r}")
         elif size < _MIN_PLOT_BYTES:
-            problems.append(f"graphs.pdf is only {size} bytes")
+            problems.append(f"run_report.pdf is only {size} bytes")
 
     png_dir = ctx.output_dir / "graphs"
     if not png_dir.is_dir():
@@ -463,7 +466,7 @@ def check_graph_files_are_real(ctx: TestContext) -> tuple[bool, str]:
 
     if problems:
         return False, "; ".join(problems)
-    return True, "PDF and PNGs render with real content"
+    return True, "report PDF and PNGs render with real content"
 
 
 CHECKS: dict[str, Callable[..., tuple[bool, str]]] = {

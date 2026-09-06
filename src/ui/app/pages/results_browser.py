@@ -189,8 +189,8 @@ class ResultsBrowserPage(ctk.CTkFrame):
         layout = "folder" if run.is_dir() else "single file"
         extras = []
         if run.is_dir():
-            if (run / "graphs.pdf").exists():
-                extras.append("graphs.pdf")
+            if (run / "run_report.pdf").exists():
+                extras.append("PDF report")
             if (run / "graphs").is_dir():
                 extras.append(f"{len(list((run / 'graphs').glob('*.png')))} PNGs")
 

@@ -263,7 +263,7 @@ def warn_engine_cutoff_thrust_floor(t: float, warning_dict: dict, state_vector: 
 
     warning_dict["engine_cutoff_thrust_floor"] = {
         "severity": "advisory",
-        "message": (f"Engine cut off at t={t:.2f} s while still producing {F:.1f} N, because thrust had fallen below {k:.1%} of vehicle weight. The remaining decay tail was not integrated, so apogee is marginally conservative."),
+        "message": f"Engine cut off at t={t:.2f} s while still producing {F:.1f} N, because thrust had fallen below {k:.1%} of vehicle weight. The remaining decay tail was not integrated, so apogee is marginally conservative.",
         "t_cutoff": t,
         "F_thrust_at_cutoff": F,
         "min_thrust_to_weight": k,
@@ -314,11 +314,8 @@ def warn_terminal_state(warning_dict: dict, terminal_info: dict, t: float):
         "t_terminal": t,
     }
 
-# checks whether peak TtW is above ~5 and whether the rocket climbed at least ~10m (~ for both because the values depend on what is written in default_simulation_settings.jsonc)
-# only fires if the engine reached its operating point
-def warn_launch_capability(warning_dict: dict, metrics: dict, 
-                           min_TtW: float, min_gain_m: float, 
-                           report_launch_failure: bool = True):
+# checks whether peak TtW is above ~5 and whether the rocket climbed at least ~10m
+def warn_launch_capability(warning_dict: dict, metrics: dict, min_TtW: float, min_gain_m: float, report_launch_failure: bool = True):
     TtW = metrics.get("peak_thrust_to_weight")
     if TtW is not None and metrics.get("reached_operating_point", True) and TtW < min_TtW:
         warning_dict["low_peak_thrust_to_weight"] = {
