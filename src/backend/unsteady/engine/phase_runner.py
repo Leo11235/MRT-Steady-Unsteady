@@ -66,6 +66,9 @@ def run_unsteady(rocket_inputs_filename: str, # should end in .jsonc
     Takes a JSON file of rocket inputs, outputs another JSON with simulation performance
     """
     
+    # reset terminal printer outer
+    rhs.reset_console_table()
+
     # load rocket inputs and simulation settings
     rocket_inputs_full_filepath = Path(f"{rocket_inputs_filepath}") / f"{rocket_inputs_filename}"
     print(f"Loading rocket inputs from config\n")
@@ -185,6 +188,9 @@ def run_unsteady(rocket_inputs_filename: str, # should end in .jsonc
             check_every=_stall_check_every,
             min_dt_s=_stall_min_dt_s,
         )
+
+        # the console table's Phase column reads this out of phase_metadata
+        phase_metadata["active_phase"] = active_phase
 
         solution = solve_ivp(
             fun=active_rhs,

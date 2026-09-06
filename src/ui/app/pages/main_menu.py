@@ -2,7 +2,8 @@
 Main menu — the landing page.
 
 One centred stack: logo, hero text, the two simulators, then the secondary
-actions and a version chip that opens the patch notes.
+actions.  The version chip sits in the bottom-right corner rather than in the
+stack, and opens the patch notes.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from __future__ import annotations
 import customtkinter as ctk
 
 from src.ui.app import backend_bridge, theme
+from src.ui.app.services import os_utils
 from src.ui.app.version import VERSION
 
 try:
@@ -18,6 +20,8 @@ try:
 except ImportError:
     _HAS_PIL = False
 
+
+USER_MANUAL_URL = "https://github.com/Leo11235/MRT-Steady-Unsteady/blob/main/user_manual.md"
 
 _PRIMARY_W, _PRIMARY_H = 220, 90
 _SECONDARY_W, _SECONDARY_H = 220, 36
@@ -65,8 +69,10 @@ class MainMenuPage(ctk.CTkFrame):
             ).pack(side="left", padx=theme.PAD_M)
 
         # ---- everything else -------------------------------------------
+        # The stack sits half a button higher than it used to, which is the room
+        # the fourth button needed once the version chip left for the corner.
         secondary = ctk.CTkFrame(wrap, fg_color="transparent")
-        secondary.pack(pady=(theme.PAD_XL, 0))
+        secondary.pack(pady=(theme.PAD_XL - _SECONDARY_H // 2, 0))
 
         for label, target in (
             ("Browse saved results…", "results"),
@@ -79,17 +85,34 @@ class MainMenuPage(ctk.CTkFrame):
                 command=lambda t=target: self.on_navigate(t),
             ).pack(pady=theme.PAD_XS)
 
-        # Version chip. Quiet enough to ignore, obvious enough to find when
-        # someone asks which build you're on, and it opens the patch notes.
+        # Leaves the app for the manual on GitHub, so it is the one button here
+        # that doesn't navigate. Same size and colour as its neighbours.
         ctk.CTkButton(
-            secondary, text=f"v{VERSION}",
+            secondary, text="User manual",
+            width=_SECONDARY_W, height=_SECONDARY_H,
+            command=lambda: os_utils.open_url(USER_MANUAL_URL),
+        ).pack(pady=theme.PAD_XS)
+
+        self._add_version_chip()
+
+    def _add_version_chip(self) -> None:
+        """Version chip, pinned to the bottom-right corner.
+
+        Quiet enough to ignore, obvious enough to find when someone asks which
+        build you're on, and it opens the patch notes.  Placed on the page
+        rather than packed into the centred stack so it stays in the corner
+        whatever the stack does.
+        """
+        ctk.CTkButton(
+            self, text=f"v{VERSION}",
             width=80, height=24, corner_radius=12,
             fg_color="transparent", hover_color=theme.CARD_BG,
             text_color=theme.TEXT_MUTED,
             border_width=1, border_color=theme.TEXT_FAINT,
             font=ctk.CTkFont(size=theme.SIZE_SMALL),
             command=lambda: self.on_navigate("patchnotes"),
-        ).pack(pady=(theme.PAD_S, 0))
+        ).place(relx=1.0, rely=1.0, anchor="se",
+                x=-theme.PAD_L, y=-theme.PAD_M)
 
     # ------------------------------------------------------------------
 
