@@ -9,7 +9,7 @@
             "save_to_pdf": true, // whether to save all output plots to a pdf file
             "save_to_png": true, // whether to save all output plots as a png
             "checks": {
-                "files_exist": ["sim_data.json", "run_report.pdf", "graphs/"],
+                "files_exist": ["sim_data.json", "sim_report.pdf", "graphs/"],
                 "custom_check": "check_graph_files_are_real"
             }
         },

@@ -98,7 +98,7 @@ def chamber_joel_unsteady(t: float, state_vector: dict, rocket_inputs: dict, liv
     W_c_safe = max(W_c, 1e-3) 
 
     # chamber pressure derivative (dp_C/dt)
-    numerator = (dm_c_dt / m_c_safe) - (dV_c_dt / V_c) + dOF_dt * ((dT_dOF / T_c_safe) + (dW_dOF / W_c_safe))
+    numerator = (dm_c_dt / m_c_safe) - (dV_c_dt / V_c) + dOF_dt * ((dT_dOF / T_c_safe) - (dW_dOF / W_c_safe))
     
     # grid boundary safeguard
     thermal_slope_term = np.clip(dT_dp / T_c_safe, -0.15 / p_C, 0.15 / p_C)
