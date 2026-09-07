@@ -582,48 +582,40 @@ def rad_to_deg(value): return convert(value, "rad", "deg")
 
 
 
-# Output unit systems
-
-#
-# 'MRT' is the team's habitual mishmash: feet for altitude, inches for hardware,
-# psi for pressure, ft/s for speed, but kilograms and kelvin because nobody
-# actually wants slugs.  Each system maps a category to its display unit; any
-# category a system doesn't name falls back to SI.
-
+# Output unit systems override from SI default (display only)
 UNIT_SYSTEMS: dict[str, dict[str, str]] = {
     "SI": {
-        # Radians are the SI unit and what the physics uses, but nobody types a
-        # launch angle in radians. This is a display choice only; SI_UNITS still
-        # says "rad" and every conversion still goes through it.
+        # Radians are the SI unit and what the physics uses, but nobody types a launch angle in radians
         "angle": "deg",
-        # Hardware is measured in centimetres, not metres: a 0.1524 m grain
-        # diameter reads as 15.24 cm. "distance" keeps metres.
+        # Hardware is measured in centimetres, not metres
         "length": "cm",
+        # display pressures in kPa instead of Pa so it's easier to read
+        "pressure": "kPa",
     },
     "MRT": {
-        "angle":        "deg",
-        "length":       "in",   # hardware
-        "distance":     "ft",   # apogees, altitudes
-        "area":         "in2",
-        "pressure":     "psi",
-        "velocity":     "ft/s",
+        "angle": "deg",
+        "length": "in", # hardware
+        "distance": "ft", # apogees, altitudes
+        "area": "in2",
+        "pressure": "psi",
+        "velocity": "ft/s",
         "acceleration": "ft/s2",
     },
     "IMP": {
-        "angle":        "deg",
-        "length":       "in",   # hardware
-        "distance":     "ft",   # apogees, altitudes
-        "area":         "in2",
-        "volume":       "ft3",
-        "mass":         "lb",
-        "density":      "lb/ft3",
-        "pressure":     "psi",
-        "temperature":  "F",
-        "velocity":     "ft/s",
+        "angle": "deg",
+        "length": "in", # hardware
+        "distance": "ft", # apogees, altitudes
+        "area": "in2",
+        "volume": "ft3",
+        "mass": "lb",
+        "density": "lb/ft3",
+        "pressure": "psi",
+        "temperature": "F",
+        "velocity": "ft/s",
         "acceleration": "ft/s2",
-        "force":        "lbf",
-        "impulse":      "lbf*s",
-        "mass_flow":    "lb/s",
+        "force": "lbf",
+        "impulse": "lbf*s",
+        "mass_flow": "lb/s",
     },
 }
 
