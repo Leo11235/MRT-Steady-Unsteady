@@ -219,7 +219,7 @@ def _validate_geometry(rocket_inputs):
             raise ValueError(f"'{name}' must be greater than zero, got {value:g}.")
 
     if isinstance(Re, (int, float)) and isinstance(Ri, (int, float)) and Ri >= Re:
-        raise ValueError(f"Initial port diameter ({Ri * 2:.4g} m) is at least as wide as the fuel grain itself ({Re * 2:.4g} m), so there is no fuel to burn.")
+        raise ValueError(f"Initial internal fuel diameter ({Ri * 2:.4g} m) is at least as wide as the fuel grain itself ({Re * 2:.4g} m), so there is no fuel to burn.")
 
     if all(isinstance(v, (int, float)) for v in (Re, Lf, rho, Mf)):
         solid_mass = pi * Lf * Re**2 * rho

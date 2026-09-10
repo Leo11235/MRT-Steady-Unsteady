@@ -48,6 +48,7 @@ class walk every field without knowing how the page is organised.
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -341,7 +342,13 @@ class InputPage(ctk.CTkFrame):
         raise NotImplementedError
 
     def _default_run_name(self) -> str:
-        return f"{self.KIND}_run"
+        """File name to fall back on when the run has not been given a name.
+
+        A timestamp, not a constant. This used to return "steady_run", so every
+        unnamed run auto-saved over the previous unnamed run and the history was
+        one file deep.
+        """
+        return datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 
     # ==================================================================
     # Presets

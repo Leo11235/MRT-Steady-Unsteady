@@ -310,7 +310,7 @@ class UnsteadyPage(InputPage):
         return backend_bridge.preflight_unsteady(rocket_inputs)
 
     def _default_run_name(self) -> str:
-        return self.sim_name_var.get().strip() or "unsteady_run"
+        return self.sim_name_var.get().strip() or super()._default_run_name()
 
     def reset_to_defaults(self) -> None:
         super().reset_to_defaults()

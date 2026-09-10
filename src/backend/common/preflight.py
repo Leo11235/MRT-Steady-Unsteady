@@ -81,7 +81,7 @@ def preflight_steady(rocket_inputs: dict) -> dict:
         if port >= outer:
             warnings["steady_port_exceeds_grain"] = {
                 "severity": "critical",
-                "message": f"Initial port diameter ({port * 2:.4g} m) is at least as wide as the grain itself ({outer * 2:.4g} m), so there is no fuel to burn.",
+                "message": f"Initial internal fuel diameter ({port * 2:.4g} m) is at least as wide as the grain itself ({outer * 2:.4g} m), so there is no fuel to burn.",
             }
         elif port > 0.9 * outer:
             warnings["steady_thin_web"] = {

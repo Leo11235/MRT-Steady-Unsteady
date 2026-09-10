@@ -74,7 +74,7 @@ _COMPUTED_FIELDS: dict[str, tuple[str, str]] = {
     "nozzle_gas_exit_velocity":        ("Nozzle exit velocity", "m/s"),
     "average_fuel_mass_flow_rate":     ("Average fuel mass flow", "kg/s"),
     "total_propellant_mass_flow_rate": ("Total propellant flow", "kg/s"),
-    "initial_internal_fuel_radius":    ("Initial port radius", "m"),
+    "initial_internal_fuel_radius":    ("Initial internal fuel radius", "m"),
     # dimensionless, listed so they get a decent label rather than a raw key
     "average_oxidizer_to_fuel_ratio":  ("Average O/F ratio", "."),
     "thrust_to_weight_ratio":          ("Thrust-to-weight ratio", "."),

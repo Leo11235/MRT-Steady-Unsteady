@@ -61,7 +61,6 @@ class SteadyPage(InputPage):
     def _build_tabs(self) -> None:
         self.sim_name_var = ctk.StringVar()
         self.sim_type_var = ctk.StringVar(value=SIM_TYPES["fuel_mass_convergence"])
-        self.save_data_var = ctk.BooleanVar(value=True)
         self.output_units_var = ctk.StringVar(
             value=user_settings.get("default_program_units", "SI"))
 
@@ -141,11 +140,6 @@ class SteadyPage(InputPage):
                           command=lambda _v: self._refresh_visibility(),
                           dynamic_resizing=False, width=260).pack(side="left")
 
-        row = ctk.CTkFrame(wrap, fg_color="transparent")
-        row.pack(fill="x", pady=theme.PAD_XS)
-        ctk.CTkCheckBox(row, text="Save simulation data to JSON",
-                        variable=self.save_data_var).pack(side="left")
-
         ctk.CTkLabel(wrap, text="Description", anchor="w").pack(
             fill="x", pady=(theme.PAD_S, theme.PAD_XS))
         self.description = ctk.CTkTextbox(wrap, height=60, wrap="word")
@@ -188,7 +182,7 @@ class SteadyPage(InputPage):
         # Deliberately not packed; _refresh_visibility owns it.
         ctk.CTkLabel(
             self._hotfire_section,
-            text=("Fill in EITHER 'Initial port diameter' OR 'Fuel mass.' The "
+            text=("Fill in EITHER 'Initial internal fuel diameter' OR 'Fuel mass.' The "
                   "solver derives the other. Only used for hotfires."),
             anchor="w", justify="left", wraplength=820,
             text_color=theme.TEXT_MUTED,
@@ -278,7 +272,6 @@ class SteadyPage(InputPage):
         settings: dict = {
             "simulation_type": sim_type,
             "output_units": self.output_units_var.get(),
-            "save_output_data": bool(self.save_data_var.get()),
         }
         if sim_type == "parametric_study":
             settings["parametric_study_settings"] = self.parametric_list.to_dict()
@@ -322,7 +315,6 @@ class SteadyPage(InputPage):
         wire = settings.get("simulation_type", "fuel_mass_convergence")
         self.sim_type_var.set(SIM_TYPES.get(wire, SIM_TYPES["fuel_mass_convergence"]))
         self.output_units_var.set(settings.get("output_units", "SI"))
-        self.save_data_var.set(bool(settings.get("save_output_data", True)))
 
         self.sim_name_var.set(str(metadata.get("simulation_name", "") or ""))
         self.description.delete("0.0", "end")
@@ -351,14 +343,13 @@ class SteadyPage(InputPage):
         return backend_bridge.preflight_steady(config.get("rocket_inputs") or {})
 
     def _default_run_name(self) -> str:
-        return self.sim_name_var.get().strip() or "steady_run"
+        return self.sim_name_var.get().strip() or super()._default_run_name()
 
     def reset_to_defaults(self) -> None:
         super().reset_to_defaults()
         self.sim_name_var.set("")
         self.description.delete("0.0", "end")
         self.sim_type_var.set(SIM_TYPES["fuel_mass_convergence"])
-        self.save_data_var.set(True)
         self.parametric_list.clear()
         self._refresh_visibility()
         self._clean_snapshot = self.to_config()

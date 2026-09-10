@@ -182,6 +182,17 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
                 }
     
 
+    ###### recovery
+    # 1000 ft min. main chute deploy altitude
+    MAIN_DEPLOY_FLOOR = 304.8 # m
+    main_deploy_agl = _number(rocket_inputs, "main_parachute_deployment_altitude_agl")
+    if main_deploy_agl is not None and main_deploy_agl < MAIN_DEPLOY_FLOOR:
+        warning_dict["init_low_main_parachute_deployment"] = {
+                "severity": "caution",
+                "message": f"Main parachute deploys at {main_deploy_agl} m above ground, below the 304.8 m (1000 ft) minimum. The canopy may not fully inflate and slow the rocket before touchdown.",
+                "main_parachute_deployment_altitude_agl": main_deploy_agl
+            }
+
 
 ########################################
 # timestep warnings (run every timestep)

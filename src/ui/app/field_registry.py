@@ -164,9 +164,9 @@ _STEADY: tuple[FieldSpec, ...] = (
 
     # hotfire alternates: fill exactly one
     FieldSpec("fuel_mass", "Fuel mass", "mass",
-              "Total solid fuel loaded. Fill this OR the initial port "
+              "Total solid fuel loaded. Fill this OR the initial internal fuel "
               "diameter, not both."),
-    FieldSpec("initial_internal_fuel_diameter", "Initial port diameter", "length",
+    FieldSpec("initial_internal_fuel_diameter", "Initial internal fuel diameter", "length",
               "Initial fuel port diameter. Fill this OR the fuel mass, not "
               "both."),
 )

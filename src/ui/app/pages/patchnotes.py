@@ -19,7 +19,7 @@ PATCHNOTES: list[dict] = [
         "version": "1.6",
         "date":    "2026-09-06",
         "notes": [
-            "Added combustion chamber efficiency (c-star) to unsteady inputs. The user may now specify an efficiency fraction at which the combustion chamber operates. Defaults to 0.9, which is typical for a paraffin/N2O hybrid. Previous versions behaved as though it were 1.0, so chamber pressure, thrust and Isp will read slightly lower than before.",
+            "Added combustion chamber efficiency (c-star; c*) to unsteady inputs. The user may now specify an efficiency fraction at which the combustion chamber operates. Defaults to 0.9, which is typical for a paraffin/N2O hybrid. Previous versions behaved as though it were 1.0, so chamber pressure, thrust and Isp will read slightly lower than before.",
             
             "Fixed bug where program crashed if attempting to run a simulation immediately after opening graphs. Graph creation should not also appear smoother, with less jittery behavior on the screen while they are loading.",
             
@@ -33,7 +33,7 @@ PATCHNOTES: list[dict] = [
             
             "When using SI units, pressures display in kPa rather than Pa."
             
-            "Added new input guards to warn users if rocket outer diameter is more than 40% larger than outer fuel diameter, or if rocket outer diameter is more than 50% of rocket height."
+            "Added new warnings (rocket outer diameter is more than 40% larger than outer fuel diameter, or if rocket outer diameter is more than 50% of rocket height; main chute deployment is under 1000 ft AGL)."
             
             "Upgraded unsteady terminal printout, better for debugging & more intuitive.",
 
