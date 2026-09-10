@@ -63,6 +63,7 @@ class LabeledField(ctk.CTkFrame):
         label_width: int = _LABEL_WIDTH,
         on_change: Optional[Callable[[str], None]] = None,
         show_help: bool = True,
+        exponent_provider: Optional[Callable[[], Optional[float]]] = None,
     ) -> None:
         super().__init__(master, fg_color="transparent")
 
@@ -73,6 +74,11 @@ class LabeledField(ctk.CTkFrame):
         self.system = system
         self._locked = False
         self._on_change = on_change
+        # Only the regression coefficient uses this. Its units are a function of the
+        # regression exponent n, which lives in a different field, so the page hands
+        # this widget a way to read that field. See REGRESSION COEFFICIENT in
+        # variable_conversions. Every other field converts from its own pair alone.
+        self._exponent_provider = exponent_provider
 
         # ---- label ---------------------------------------------------
         self._label = ctk.CTkLabel(self, text=spec.label, anchor="w",
@@ -108,10 +114,14 @@ class LabeledField(ctk.CTkFrame):
         options = spec.unit_options
 
         if len(options) >= 2:
+            # Most units are a symbol or two and fit the fixed column. A regression-law
+            # unit is a whole expression, so widen the menu just enough rather than
+            # truncating it into nonsense.
+            menu_width = max(_UNIT_WIDTH, 8 * max(len(o) for o in options) + 24)
             self._unit_menu = ctk.CTkOptionMenu(
                 self, values=options, variable=self._unit_var,
                 command=self._on_unit_changed,
-                width=_UNIT_WIDTH, dynamic_resizing=False,
+                width=menu_width, dynamic_resizing=False,
             )
             self._unit_menu.pack(side="left", padx=(theme.PAD_S, 0))
         elif len(options) == 1:
@@ -147,6 +157,37 @@ class LabeledField(ctk.CTkFrame):
     def unit(self) -> str:
         """The unit currently selected."""
         return self._unit_var.get()
+
+    # ==================================================================
+    # Unit conversion
+    # ==================================================================
+    #
+    # Everything below routes through these two rather than calling
+    # variable_conversions directly, so the regression coefficient's dependence
+    # on n is handled in one place instead of at four call sites.
+
+    @property
+    def _is_regression(self) -> bool:
+        return self.spec.category == vc.REGRESSION_COEFFICIENT
+
+    def _exponent(self) -> Optional[float]:
+        """The regression exponent n, read live from its own field."""
+        if self._exponent_provider is None:
+            return None
+        try:
+            return self._exponent_provider()
+        except Exception:            # noqa: BLE001 — a missing sibling must not break typing
+            return None
+
+    def _value_to_SI(self, value: float, unit: str) -> Optional[float]:
+        if self._is_regression:
+            return vc.regression_to_SI(value, unit, self._exponent())
+        return vc.to_SI(value, unit)
+
+    def _value_from_SI(self, value: float, unit: str) -> Optional[float]:
+        if self._is_regression:
+            return vc.regression_from_SI(value, unit, self._exponent())
+        return vc.from_SI(value, unit)
 
     def get_text(self) -> str:
         """Exactly what's in the entry, untouched."""
@@ -216,8 +257,8 @@ class LabeledField(ctk.CTkFrame):
         if not isinstance(value, (int, float)):
             return None
         try:
-            return vc.to_SI(value, unit)
-        except (ValueError, KeyError):
+            return self._value_to_SI(value, unit)
+        except (ValueError, KeyError, TypeError):
             return None
 
     def clear(self) -> None:
@@ -249,8 +290,8 @@ class LabeledField(ctk.CTkFrame):
             self._si_cache = None
             return
         try:
-            self._si_cache = vc.to_SI(float(raw), self.unit)
-        except (ValueError, KeyError):
+            self._si_cache = self._value_to_SI(float(raw), self.unit)
+        except (ValueError, KeyError, TypeError):
             self._si_cache = None
 
     def _set_unit_silently(self, unit: str) -> None:
@@ -304,8 +345,17 @@ class LabeledField(ctk.CTkFrame):
         if raw == "" or self.spec.value_type == "text":
             return
 
+        exact = self._si_cache
         try:
-            if self._si_cache is not None:
+            if self._is_regression:
+                # Deliberately ignores the cache. n may have changed since it was
+                # filled, and a cached SI value computed at the old n would be
+                # converted back out at the new one. Recomputing from what is on
+                # screen is always right, and a fitted coefficient is entered to a
+                # few significant figures anyway, so there is no rounding to protect.
+                exact = self._value_to_SI(float(raw), old_unit)
+                converted = self._value_from_SI(exact, new_unit)
+            elif self._si_cache is not None:
                 converted = vc.from_SI(self._si_cache, new_unit)
             else:
                 converted = vc.convert(float(raw), old_unit, new_unit)
@@ -313,7 +363,6 @@ class LabeledField(ctk.CTkFrame):
             return
 
         # Rewrite the display without letting the trace clobber the cache.
-        exact = self._si_cache
         self._updating_display = True
         try:
             self.var.set(_format_number(converted))

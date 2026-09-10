@@ -208,7 +208,13 @@ class UnsteadyPage(InputPage):
             self.add_advanced_header(
                 wrap, "Advanced (propellant & combustion parameters)")
             for key in _CHAMBER_ADVANCED:
-                self.add_advanced_field(wrap, f"{cv}.{key}")
+                if key == "chamber_regression_rate_scaling_constant":
+                    self.add_advanced_field(
+                        wrap, f"{cv}.{key}",
+                        exponent_provider=self.regression_exponent_provider(
+                            f"{cv}.chamber_regression_rate_exponent"))
+                else:
+                    self.add_advanced_field(wrap, f"{cv}.{key}")
 
     # ==================================================================
     # Model selection

@@ -52,9 +52,9 @@
             "CV4_chamber": {
                 "model": "0D_quasi_steady",
                 "chamber_fuel_length": [17.716535433071, "in"],
-                "chamber_fuel_density": [56.18516451853, "lb/ft3"],
+                "chamber_fuel_density": [56.18516451853, "lb/ft^3"],
                 "chamber_fuel_external_diameter": [7.874015748031, "in"],
-                "chamber_regression_rate_scaling_constant": [0.000132, "."],
+                "chamber_regression_rate_scaling_constant": [0.132, "(mm/s)/(kg/m^2/s)^n"],
                 "chamber_regression_rate_exponent": [0.555, "."],
                 "chamber_cstar_efficiency": [1.0, "."],
                 "pre_chamber_diameter": [7.874015748031, "in"],

@@ -7,16 +7,16 @@ The same file backs both the steady and unsteady forms, which is why the paraffi
 
 {
     "steady": {
-        "fuel_grain_density": [900, "kg/m3"],
-        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "fuel_grain_density": [900, "kg/m^3"],
+        "regression_rate_scaling_coefficient": [0.132, "(mm/s)/(kg/m^2/s)^n"],
         "regression_rate_exponent": [0.555, "."],
         "liquid_oxidizer_type": "NITROUS OXIDE",
         "solid_fuel_type": "EICOSANE (PARAFFIN)"
     },
 
     "unsteady": {
-        "chamber_fuel_density": [900, "kg/m3"],
-        "chamber_regression_rate_scaling_constant": [0.000132, "."],
+        "chamber_fuel_density": [900, "kg/m^3"],
+        "chamber_regression_rate_scaling_constant": [0.132, "(mm/s)/(kg/m^2/s)^n"],
         "chamber_regression_rate_exponent": [0.555, "."],
         "chamber_cstar_efficiency": [0.9, "."]
     }

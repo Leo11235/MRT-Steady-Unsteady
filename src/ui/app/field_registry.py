@@ -120,6 +120,33 @@ class FieldSpec:
 
 DIMENSIONLESS = "dimensionless"
 
+# The regression coefficient's units depend on the regression exponent, so it gets its
+# own category and its own converter. See REGRESSION COEFFICIENT in variable_conversions.
+REGRESSION = vc.REGRESSION_COEFFICIENT
+
+# The 'a' tooltip is long because a's units are the least obvious thing in either form,
+# and this is the only documentation these inputs get in-app. Shared by steady and
+# unsteady, which spell the key differently but mean the same quantity.
+_REGRESSION_HELP = (
+    "The 'a' in r_dot = a*G_ox^n. Paraffin with N2O is about 0.132 in the default "
+    "convention.\n\n"
+    "UNITS: a has no fixed unit. It absorbs whatever is left after dividing a speed by "
+    "a flux raised to n, so its dimensions move whenever n moves. At n = 0.555 they "
+    "come out as m^2.11 kg^-0.555 s^-0.445, which is why no paper quotes it that way. "
+    "The dropdown picks a CONVENTION instead: a rate unit paired with a flux unit, "
+    "which is how papers do quote it. Read 0.132 in '(mm/s)/(kg/m2/s)^n' as: feed G_ox "
+    "in kg/m2/s and r_dot comes out in mm/s.\n\n"
+    "The two metric conventions convert by a flat 1 and 1e-3 whatever n is. The "
+    "imperial one slides with n, from 9.58e-4 at n = 0.5 to 4.97e-4 at n = 0.6, so set "
+    "n before you touch a. Switching convention reconverts using whatever n currently "
+    "holds.\n\n"
+    "Changing n does not change the number in this box, but it does change what that "
+    "number means, so copy a and n from a paper together. The default was also fitted "
+    "against OXIDIZER flux, not total flux; a value fitted against total flux will not "
+    "transfer even with the units right."
+)
+
+
 
 # =============================================================================
 # Steady fields
@@ -136,9 +163,8 @@ _STEADY: tuple[FieldSpec, ...] = (
               "Length of the fuel grain."),
     FieldSpec("fuel_grain_density", "Fuel grain density", "density",
               "Bulk density of the solid fuel."),
-    FieldSpec("regression_rate_scaling_coefficient", "Regression coefficient (a)", DIMENSIONLESS,
-              "The 'a' in r_dot = a*G^n, with G in kg/m2/s and r_dot in m/s.\nWARNING: though listed as dimensionless, a's units in SI are actually m^(1+2n) · kg^(-n) · s^(n-1), where n is the regression rate exponent. The default value is verified via research and changing it is not recommended."
-              "Paraffin with N2O is around 0.000132."),
+    FieldSpec("regression_rate_scaling_coefficient", "Regression coefficient (a)", REGRESSION,
+              _REGRESSION_HELP),
     FieldSpec("regression_rate_exponent", "Regression exponent (n)", DIMENSIONLESS,
               "The 'n' in r_dot = a*G^n. Paraffin with N2O is around 0.555."),
     FieldSpec("liquid_oxidizer_type", "Liquid oxidizer", DIMENSIONLESS,
@@ -224,8 +250,8 @@ _UNSTEADY: tuple[FieldSpec, ...] = (
               "Bulk density of the solid fuel."),
     FieldSpec("chamber_fuel_external_diameter", "Fuel external diameter", "length",
               "Outer diameter of the fuel grain, bounded by the case."),
-    FieldSpec("chamber_regression_rate_scaling_constant", "Regression coefficient (a)", DIMENSIONLESS,
-              "The 'a' in r_dot = a*G^n. Paraffin with N2O is around 0.000132.\nWARNING: though listed as dimensionless, a's units in SI are actually m^(1+2n) · kg^(-n) · s^(n-1), where n is the regression rate exponent. The default value is verified via research and changing it is not recommended."),
+    FieldSpec("chamber_regression_rate_scaling_constant", "Regression coefficient (a)", REGRESSION,
+              _REGRESSION_HELP),
     FieldSpec("chamber_regression_rate_exponent", "Regression exponent (n)", DIMENSIONLESS,
               "The 'n' in r_dot = a*G^n. Paraffin with N2O is around 0.555."),
     FieldSpec("chamber_cstar_efficiency", "C* efficiency", DIMENSIONLESS,

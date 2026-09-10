@@ -1,7 +1,7 @@
 import re, json
 from pathlib import Path
 from math import pi, sqrt
-from src.common.variable_conversions import to_SI, pair_to_SI
+from src.common.variable_conversions import to_SI, pair_to_SI, regression_pair_to_SI
 
 _STEADY_DIR = Path(__file__).resolve().parent
 _STATIC_DATA_DIR = _STEADY_DIR / "static_data"
@@ -23,6 +23,10 @@ def load_steady_config(input_file_path):
     metadata = input_file.get('metadata', {})
     
     # convert any UI-side diameter keys into the radius/area keys the rest of the steady physics expects clean and standardize rocket inputs
+    # a's units depend on the regression exponent n, so it cannot go through the generic
+    # per-pair converter. Read n first. See REGRESSION COEFFICIENT in variable_conversions.
+    regression_n = pair_to_SI(rocket_inputs.get("regression_rate_exponent"))
+
     rocket_inputs_cleaned = {}
     for key, val in rocket_inputs.items():
         # skip PROPEP str inputs
@@ -30,6 +34,9 @@ def load_steady_config(input_file_path):
             rocket_inputs_cleaned[key] = val
             continue
         # convert to SI
+        if key == "regression_rate_scaling_coefficient":
+            rocket_inputs_cleaned[key] = regression_pair_to_SI(val, regression_n)
+            continue
         newval = to_SI(val[0], val[1])
         # convert diameters to radii
         if "diameter" in key:

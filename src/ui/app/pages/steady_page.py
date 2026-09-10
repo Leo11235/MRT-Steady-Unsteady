@@ -195,7 +195,13 @@ class SteadyPage(InputPage):
         self.add_advanced_header(
             wrap, "Advanced (propellant chemistry & regression law)")
         for key in _ADVANCED_KEYS:
-            self.add_advanced_field(wrap, key)
+            if key == "regression_rate_scaling_coefficient":
+                self.add_advanced_field(
+                    wrap, key,
+                    exponent_provider=self.regression_exponent_provider(
+                        "regression_rate_exponent"))
+            else:
+                self.add_advanced_field(wrap, key)
 
     # ---- tab 3 --------------------------------------------------------
 

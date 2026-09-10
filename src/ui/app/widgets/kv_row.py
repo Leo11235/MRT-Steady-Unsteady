@@ -40,8 +40,8 @@ from src.ui.app import field_registry as registry
 # and exponents and merely unhelpful for the rest.
 
 _SUFFIX_UNITS: dict[str, str] = {
-    "_m": "m", "_m2": "m2", "_m3": "m3",
-    "_kg": "kg", "_kgs": "kg/s", "_kgm3": "kg/m3",
+    "_m": "m", "_m2": "m^2", "_m3": "m^3",
+    "_kg": "kg", "_kgs": "kg/s", "_kgm3": "kg/m^3",
     "_pa": "Pa", "_k": "K", "_s": "s", "_n": "N", "_ns": "N*s",
     "_ms": "m/s", "_deg": "deg", "_rad": "rad",
 }
@@ -60,13 +60,13 @@ _COMPUTED_FIELDS: dict[str, tuple[str, str]] = {
     # <name>_final, which the suffix stripper below reduces to these.
     "altitude":                        ("Altitude", "m"),
     "velocity":                        ("Velocity", "m/s"),
-    "acceleration":                    ("Acceleration", "m/s2"),
+    "acceleration":                    ("Acceleration", "m/s^2"),
     "drag_force":                      ("Drag force", "N"),
     "grav_force":                      ("Gravitational force", "N"),
     "time":                            ("Time", "s"),
     "chamber_temperature":             ("Chamber temperature", "K"),
-    "nozzle_throat_area":              ("Nozzle throat area", "m2"),
-    "nozzle_exit_area":                ("Nozzle exit area", "m2"),
+    "nozzle_throat_area":              ("Nozzle throat area", "m^2"),
+    "nozzle_exit_area":                ("Nozzle exit area", "m^2"),
     "nozzle_throat_radius":            ("Nozzle throat radius", "m"),
     "nozzle_exit_radius":              ("Nozzle exit radius", "m"),
     "nozzle_gas_exit_pressure":        ("Nozzle exit pressure", "Pa"),

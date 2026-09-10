@@ -97,7 +97,7 @@ Download the latest [`MRT-Steady-Unsteady-Setup.exe`](https://github.com/Leo1123
     </tr>
     <tr>
       <td>Regression coefficient (a)*</td>
-      <td>The <code>a</code> in <code>r_dot = a·G^n</code>. Around 1.32e-4 for paraffin with N<sub>2</sub>O.</td>
+      <td>The <code>a</code> in <code>r_dot = a·G_ox^n</code>. <br>While <code>a</code>'s true units are <code>L<sup>1+2n</sup>·M<sup>−n</sup>·T<sup>n−1</sup></code>, this <code>n</code>-dependence is clunky. (At the default <code>n = 0.555</code> that works out to m<sup>2.11</sup>·kg<sup>−0.555</sup>·s<sup>−0.445</sup>.) The convention is to leave <code>n</code> implicit and use a rate unit paired with a flux unit. The default of 0.132 in  <code>(mm/s)/(kg/m^2/s)^n </code> units is recommended. 
     </tr>
     <tr>
       <td>Regression exponent (n)*</td>
@@ -332,7 +332,7 @@ Download the latest [`MRT-Steady-Unsteady-Setup.exe`](https://github.com/Leo1123
     </tr>
     <tr>
       <td>Regression coefficient (a)*</td>
-      <td>The <code>a</code> in <code>r_dot = a·G^n</code>. Around 1.32e-4 for paraffin with N<sub>2</sub>O..</td>
+      <td>The <code>a</code> in <code>r_dot = a·G_ox^n</code>. <br>While <code>a</code>'s true units are <code>L<sup>1+2n</sup>·M<sup>−n</sup>·T<sup>n−1</sup></code>, this <code>n</code>-dependence is clunky. (At the default <code>n = 0.555</code> that works out to m<sup>2.11</sup>·kg<sup>−0.555</sup>·s<sup>−0.445</sup>.) The convention is to leave <code>n</code> implicit and use a rate unit paired with a flux unit. The default of 0.132 in  <code>(mm/s)/(kg/m^2/s)^n </code> units is recommended. 
     </tr>
     <tr>
       <td>Regression exponent (n)*</td>

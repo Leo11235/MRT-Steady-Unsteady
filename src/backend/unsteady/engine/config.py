@@ -4,7 +4,7 @@ Parses .jsonc inputs, merges them with default settings, and validates them
 
 import json5, os
 from pathlib import Path
-from src.common.variable_conversions import to_SI, pair_to_SI
+from src.common.variable_conversions import to_SI, pair_to_SI, regression_pair_to_SI
 
 # load .jsonc inputs file
 # takes a filepath str, returns a dict
@@ -160,11 +160,18 @@ def load_unsteady_config(user_inputs_filepath: str | Path,
         for param_key, param_value in cv_data["kwargs"].items():
             rocket_inputs[param_key] = param_value
 
+    # the regression coefficient a is the one input whose unit depends on another input.
+    # its dimensions are a function of the exponent n. see REGRESSION COEFFICIENT in variable_conversions.
+    regression_n = pair_to_SI(rocket_inputs.get("chamber_regression_rate_exponent"))
+
     # clean and standardize rocket inputs
     rocket_inputs_cleaned = {}
     for key, val in rocket_inputs.items():
         # convert to SI
-        newval = to_SI(val[0], val[1])
+        if key == "chamber_regression_rate_scaling_constant":
+            newval = regression_pair_to_SI(val, regression_n)
+        else:
+            newval = to_SI(val[0], val[1])
         # convert diameters to radii
         if "diameter" in key:
             p1, p2 = key.split("diameter")

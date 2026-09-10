@@ -52,6 +52,8 @@ import matplotlib
 from matplotlib.axes import Axes
 from matplotlib.collections import LineCollection
 from matplotlib.figure import Figure
+
+from src.common import variable_conversions as vc
 from matplotlib.patches import Patch, Rectangle, FancyBboxPatch, Polygon
 from matplotlib.backends.backend_pdf import PdfPages
 
@@ -653,7 +655,7 @@ _INPUT_GROUPS = [
         ("chamber_fuel_density", "Fuel density", "kg/m³", 1),
         ("chamber_fuel_external_radius", "Fuel OR", "m", 4),
         ("chamber_fuel_mass", "Fuel mass loaded", "kg", 3),
-        ("chamber_regression_rate_scaling_constant", "Regression a", "", 7),
+        ("chamber_regression_rate_scaling_constant", "Regression a [mm/s form]", "", 4),
         ("chamber_regression_rate_exponent", "Regression n", "", 3),
         ("chamber_cstar_efficiency", "C* efficiency", "", 3),
         ("pre_chamber_volume", "Pre-chamber V", "m³", 6),
@@ -689,7 +691,15 @@ def _draw_inputs_table(ax, rocket_inputs: dict):
         row_colors.append(("#eef2f7", "bold"))
         for key, label, unit, prec in fields:
             if key in flat:
-                rows.append([f"  {label}", _fmt(flat[key], unit, prec)])
+                value = flat[key]
+                # a is stored in SI but quoted everywhere else, the input form included,
+                # in the mm/s convention. Show the number the user actually typed rather
+                # than 1.32e-04. See REGRESSION COEFFICIENT in variable_conversions.
+                if key.endswith("regression_rate_scaling_constant"):
+                    value = vc.regression_from_SI(
+                        value, "(mm/s)/(kg/m2/s)^n",
+                        flat.get("chamber_regression_rate_exponent") or 0.0)
+                rows.append([f"  {label}", _fmt(value, unit, prec)])
                 row_colors.append(("white", "normal"))
 
     if not rows:

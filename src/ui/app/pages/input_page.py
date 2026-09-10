@@ -254,6 +254,24 @@ class InputPage(ctk.CTkFrame):
                      font=ctk.CTkFont(size=theme.SIZE_SMALL, slant="italic")).pack(
             side="left", padx=(theme.PAD_XS, 0))
 
+    def regression_exponent_provider(self, exponent_path: str):
+        """A live reader for the regression exponent, for the coefficient field.
+
+        The coefficient's units are a function of n, so its widget has to be able
+        to look n up. Late-bound on purpose: the coefficient field is built before
+        the exponent field it depends on, and n has to be read fresh on every unit
+        switch rather than captured once at build time.
+        """
+        def read():
+            field = self.fields.get(exponent_path)
+            if field is None:
+                return None
+            try:
+                return float(field.get_text())
+            except (TypeError, ValueError):
+                return None
+        return read
+
     def add_advanced_field(self, parent, path: str, **kwargs) -> LabeledField:
         field = self.add_field(parent, path, **kwargs)
         self._advanced_paths.append(path)

@@ -19,13 +19,25 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from src.common.variable_conversions import pair_to_SI
+from src.common.variable_conversions import pair_to_SI, regression_pair_to_SI
 
 # convert one config block into the flat SI + radius form the checks want
 def _to_physics_values(block: dict) -> dict:
     out: dict[str, Any] = {}
+    # a's units depend on the regression exponent n, so it needs its sibling before it can be read
+    exponent = None
+    for key in block:
+        if key.endswith("regression_rate_exponent"):
+            exponent = pair_to_SI(block[key])
+            break
     for key, value in block.items():
         if key == "model":
+            continue
+        if "regression_rate_scaling" in key:
+            try:
+                out[key] = regression_pair_to_SI(value, exponent)
+            except (ValueError, KeyError):
+                pass
             continue
         try:
             converted = pair_to_SI(value)

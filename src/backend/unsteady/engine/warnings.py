@@ -126,16 +126,18 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = 
     """
     a = _number(rocket_inputs, "chamber_regression_rate_scaling_constant")
     if a is not None:
+        # a arrives here in SI, but the form and every paper quote it in the mm/s convention
+        a_mm = a * 1e3
         if a < 0.5e-4:
             warning_dict["init_low_chamber_regression_rate_scaling_constant"] = {
                     "severity": "caution",
-                    "message": f"Regression rate constant ({a}) is unusually low. Recommended range is [0.5e-4, 1e-3]. ",
+                    "message": f"Regression coefficient ({a_mm:.6g} mm/s per (kg/m2/s)^n) is unusually low. Recommended range is [0.05, 1]. ",
                     "chamber_regression_rate_scaling_constant": a
                 }
         elif a> 1e-3: 
             warning_dict["init_high_chamber_regression_rate_scaling_constant"] = {
                     "severity": "caution",
-                    "message": f"Regression rate constant ({a}) is unusually high. Recommended range is [0.5e-4, 1e-3]. ",
+                    "message": f"Regression coefficient ({a_mm:.6g} mm/s per (kg/m2/s)^n) is unusually high. Recommended range is [0.05, 1]. ",
                     "chamber_regression_rate_scaling_constant": a
                 }
 

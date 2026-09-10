@@ -67,8 +67,8 @@
         // base requirements — needed for every simulation type
         // (oxidizer_mass_flow_rate and chamber_pressure are swept above, so
         //  they're filled in per point by the solver rather than set here)
-        "fuel_grain_density": [900, "kg/m3"],
-        "regression_rate_scaling_coefficient": [0.000132, "."],
+        "fuel_grain_density": [900, "kg/m^3"],
+        "regression_rate_scaling_coefficient": [0.132, "(mm/s)/(kg/m^2/s)^n"],
         "regression_rate_exponent": [0.555, "."],
         "liquid_oxidizer_type": "NITROUS OXIDE",
         //"oxidizer_molecule_code": 657,

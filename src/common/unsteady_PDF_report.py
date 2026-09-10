@@ -77,11 +77,11 @@ _DERIVED_CATEGORIES = [("_radius", "length"), ("_area", "area"), ("_volume", "vo
 
 # add superscripts for to be easier on the eyes to the PDF reader
 _UNIT_LABELS = {
-    "m2": "m²", "mm2": "mm²", "cm2": "cm²", "in2": "in²", "ft2": "ft²",
-    "m3": "m³", "mm3": "mm³", "cm3": "cm³", "in3": "in³", "ft3": "ft³",
-    "m/s2": "m/s²", "ft/s2": "ft/s²",
+    "m^2": "m²", "mm^2": "mm²", "cm^2": "cm²", "in^2": "in²", "ft^2": "ft²",
+    "m^3": "m³", "mm^3": "mm³", "cm^3": "cm³", "in^3": "in³", "ft^3": "ft³",
+    "m/s^2": "m/s²", "ft/s^2": "ft/s²",
     "N*s": "N·s", "lbf*s": "lbf·s",
-    "kg/m3": "kg/m³", "g/cm3": "g/cm³", "lb/ft3": "lb/ft³", "lb/in3": "lb/in³",
+    "kg/m^3": "kg/m³", "g/cm^3": "g/cm³", "lb/ft^3": "lb/ft³", "lb/in^3": "lb/in³",
     "deg": "°", "C": "°C", "F": "°F", ".": "",
 }
 

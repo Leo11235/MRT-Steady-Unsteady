@@ -67,24 +67,24 @@ LENGTH: dict[str, float] = {
 }
 
 # Area
-# SI: m2
+# SI: m^2
 AREA: dict[str, float] = {
-    "m2": 1.0,
-    "mm2": 1e-6,
-    "cm2": 1e-4,
-    "in2": 0.0254 ** 2, # 6.4516e-4
-    "ft2": 0.3048 ** 2, # 0.09290304
+    "m^2": 1.0,
+    "mm^2": 1e-6,
+    "cm^2": 1e-4,
+    "in^2": 0.0254 ** 2, # 6.4516e-4
+    "ft^2": 0.3048 ** 2, # 0.09290304
 }
 
 # Volume
-# SI: m3
+# SI: m^3
 VOLUME: dict[str, float] = {
-    "m3": 1.0,
-    "mm3": 1e-9,
-    "cm3": 1e-6,
+    "m^3": 1.0,
+    "mm^3": 1e-9,
+    "cm^3": 1e-6,
     "L": 1e-3,
-    "in3": 0.0254 ** 3, # 1.6387064e-5
-    "ft3": 0.3048 ** 3, # 0.028316846592
+    "in^3": 0.0254 ** 3, # 1.6387064e-5
+    "ft^3": 0.3048 ** 3, # 0.028316846592
     "gal": 3.785411784e-3, # US liquid gallon
 }
 
@@ -100,14 +100,14 @@ MASS: dict[str, float] = {
 }
 
 # Density
-# SI: kg/m3
+# SI: kg/m^3
 DENSITY: dict[str, float] = {
-    "kg/m3": 1.0,
-    "g/cm3": 1e3,
-    "g/L": 1.0, # identical to kg/m3, but people write both
+    "kg/m^3": 1.0,
+    "g/cm^3": 1e3,
+    "g/L": 1.0, # identical to kg/m^3, but people write both
     "kg/L": 1e3,
-    "lb/ft3": 0.45359237 / 0.028316846592, # 16.018463373960142
-    "lb/in3": 0.45359237 / 1.6387064e-5, # 27679.904710203125
+    "lb/ft^3": 0.45359237 / 0.028316846592, # 16.018463373960142
+    "lb/in^3": 0.45359237 / 1.6387064e-5, # 27679.904710203125
 }
 
 # Pressure
@@ -192,10 +192,10 @@ VELOCITY: dict[str, float] = {
 }
 
 # Acceleration
-# SI: m/s2
+# SI: m/s^2
 ACCELERATION: dict[str, float] = {
-    "m/s2":  1.0,
-    "ft/s2": 0.3048,
+    "m/s^2":  1.0,
+    "ft/s^2": 0.3048,
     "g0":    9.80665, # standard gravity in case we ever want to measure in g's
 }
 
@@ -234,17 +234,7 @@ MOLAR_MASS: dict[str, float] = {
 
 ################################################################################################################
 # REGISTRY
-# everything above, indexed.  
-# these three tables are what the generic helpers, the UI dropdowns, and the config validator all read
-# "distance" shares the LENGTH table but is a separate DISPLAY category.
-#
-# Hardware and mission distances want different units from the same physical
-# dimension: a fuel grain is 6 in / 15 cm, an apogee is 45000 ft / 13716 m.
-# Showing a grain diameter in feet or an apogee in centimetres is useless in
-# both directions, and no unit string can tell the two apart — "m" is "m".
-# So the distinction lives on the field, via FieldSpec.category, and this
-# category exists to carry it. Conversions are identical; only the default
-# display unit differs.
+# these three tables are what the generic helpers, the UI dropdowns, and the config validator all read "distance" shares the LENGTH table but is a separate DISPLAY category.
 CATEGORIES: dict[str, dict[str, float]] = {
     "dimensionless": DIMENSIONLESS,
     "length": LENGTH,
@@ -269,21 +259,22 @@ CATEGORIES: dict[str, dict[str, float]] = {
 SI_UNITS: dict[str, str] = {
     "dimensionless": ".",
     "length": "m",
-    "distance": "m",       # same physical dimension as length; see CATEGORIES
-    "area": "m2",
-    "volume": "m3",
+    "distance": "m", # same physical dimension as length; see CATEGORIES
+    "area": "m^2",
+    "volume": "m^3",
     "mass": "kg",
-    "density": "kg/m3",
+    "density": "kg/m^3",
     "pressure": "Pa",
     "temperature": "K",
     "time": "s",
     "angle": "rad",
     "velocity": "m/s",
-    "acceleration": "m/s2",
+    "acceleration": "m/s^2",
     "force": "N",
     "impulse": "N*s",
     "mass_flow": "kg/s",
     "molar_mass": "kg/mol",
+    "regression_coefficient": "(m/s)/(kg/m^2/s)^n",
 }
 
 # alternate spellings people (and older config files) use (maps alias --> canonical unit string)
@@ -299,24 +290,25 @@ ALIASES: dict[str, str] = {
     "meter": "m", "metre": "m", "meters": "m", "metres": "m",
     "inch": "in", "inches": "in", '"': "in",
     "foot": "ft", "feet": "ft", "'": "ft",
-    # area
-    "m^2": "m2", "m**2": "m2", "m²": "m2",
-    "mm^2": "mm2", "cm^2": "cm2",
-    "in^2": "in2", "in**2": "in2", "sq_in": "in2",
-    "ft^2": "ft2", "ft**2": "ft2",
+    # area.  The bare forms were the canonical spelling before v1.6, so every one of
+    # them has to keep resolving: results files and saved presets still hold them.
+    "m2": "m^2", "m**2": "m^2", "m²": "m^2",
+    "mm2": "mm^2", "mm**2": "mm^2", "cm2": "cm^2", "cm**2": "cm^2",
+    "in2": "in^2", "in**2": "in^2", "sq_in": "in^2",
+    "ft2": "ft^2", "ft**2": "ft^2", "sq_ft": "ft^2",
     # volume
-    "m^3": "m3", "m**3": "m3", "m³": "m3",
-    "mm^3": "mm3", "cm^3": "cm3", "cc": "cm3",
-    "in^3": "in3", "ft^3": "ft3",
+    "m3": "m^3", "m**3": "m^3", "m³": "m^3",
+    "mm3": "mm^3", "cm3": "cm^3", "cc": "cm^3",
+    "in3": "in^3", "ft3": "ft^3",
     "l": "L", "liter": "L", "litre": "L",
     # mass
     "lbm": "lb", "lbs": "lb", "pound": "lb",
     "kilogram": "kg", "gram": "g", "tonne": "t",
     # density
-    "kg/m^3": "kg/m3", "kg/m**3": "kg/m3", "kg/m³": "kg/m3", "kgm3": "kg/m3",
-    "g/cm^3": "g/cm3", "g/cc": "g/cm3",
-    "lbm/ft3": "lb/ft3", "lb/ft^3": "lb/ft3", "lbm/ft^3": "lb/ft3",
-    "lbm/in3": "lb/in3", "lb/in^3": "lb/in3",
+    "kg/m3": "kg/m^3", "kg/m**3": "kg/m^3", "kg/m³": "kg/m^3", "kgm3": "kg/m^3",
+    "g/cm3": "g/cm^3", "g/cc": "g/cm^3", "g/cm**3": "g/cm^3",
+    "lbm/ft3": "lb/ft^3", "lb/ft3": "lb/ft^3", "lbm/ft^3": "lb/ft^3",
+    "lbm/in3": "lb/in^3", "lb/in3": "lb/in^3", "lbm/in^3": "lb/in^3",
     # pressure
     "pa": "Pa", "PA": "Pa", "kpa": "kPa", "mpa": "MPa",
     "PSI": "psi", "Bar": "bar", "ATM": "atm", "Torr": "torr",
@@ -337,8 +329,8 @@ ALIASES: dict[str, str] = {
     "fps": "ft/s", "ft/sec": "ft/s",
     "kph": "km/h", "knot": "kn", "knots": "kn",
     # acceleration
-    "m/s^2": "m/s2", "m/s**2": "m/s2", "m/s²": "m/s2",
-    "ft/s^2": "ft/s2", "ft/s**2": "ft/s2",
+    "m/s2": "m/s^2", "m/s**2": "m/s^2", "m/s²": "m/s^2",
+    "ft/s2": "ft/s^2", "ft/s**2": "ft/s^2",
     # force
     "newton": "N",
     # impulse
@@ -372,6 +364,8 @@ def _canonical(unit: Any) -> str:
 
 def _find_category(unit: str) -> Optional[str]:
     """category containing this EXACT unit string, or None (no alias lookup)"""
+    if unit in REGRESSION_UNITS:
+        return REGRESSION_COEFFICIENT
     for category, table in CATEGORIES.items():
         if unit in table:
             return category
@@ -382,14 +376,12 @@ def category_of(unit: Any) -> str:
     """
     which physical category a unit belongs to
         category_of("psi") --> "pressure"
-        category_of("kg/m3") --> "density"
+        category_of("kg/m^3") --> "density"
     """
     u = _canonical(unit)
     category = _find_category(u)
     if category is None:
-        raise ValueError(
-            f"Unknown unit: {unit!r}. Accepted units listed in CATEGORIES in variable_conversions.py."
-        )
+        raise ValueError(f"Unknown unit: {unit!r}. Accepted units listed in CATEGORIES in variable_conversions.py.")
     return category
 
 
@@ -402,6 +394,8 @@ def units_in_category(category: str) -> list[str]:
     """
     every accepted unit in a category
     """
+    if category == REGRESSION_COEFFICIENT:
+        return list(REGRESSION_UNITS)
     if category not in CATEGORIES:
         raise ValueError(f"Unknown category: {category!r}")
     return list(CATEGORIES[category].keys())
@@ -419,126 +413,64 @@ def same_category(unit_a: Any, unit_b: Any) -> bool:
 
 ########################################################################################################################################
 # conversions
+# convert a value from a user-facing unit into SI
 def to_SI(value: Optional[float], unit: Any) -> Optional[float]:
-    """
-    Convert a value from a user-facing unit into SI.
-
-        to_SI(1.5, "in") --> 0.0381
-        to_SI(400, "psi") --> 2757903.0
-        to_SI(25, "C") --> 298.15
-
-    None passes straight through, so an unfilled 'one or the other' config
-    field stays None instead of becoming 0.0.
-    """
     if value is None:
         return None
     u = _canonical(unit)
     category = category_of(u)
     if category == "temperature":
         return temperature_to_SI(float(value), u)
+    if category == REGRESSION_COEFFICIENT:
+        raise ValueError(_REGRESSION_MISUSE.format(unit=u, fn="regression_to_SI"))
     return float(value) * CATEGORIES[category][u]
 
-
+# opposite of to_SI
 def from_SI(value: Optional[float], unit: Any) -> Optional[float]:
-    """
-    Convert an SI value into a user-facing unit.  Inverse of to_SI().
-
-        from_SI(0.0381, "in")     -> 1.5
-        from_SI(298.15, "C")      -> 25.0
-    """
     if value is None:
         return None
     u = _canonical(unit)
     category = category_of(u)
     if category == "temperature":
         return temperature_from_SI(float(value), u)
+    if category == REGRESSION_COEFFICIENT:
+        raise ValueError(_REGRESSION_MISUSE.format(unit=u, fn="regression_from_SI"))
     return float(value) / CATEGORIES[category][u]
 
-
+# convert between any two units of the same category
 def convert(value: Optional[float], from_unit: Any, to_unit: Any) -> Optional[float]:
-    """
-    Convert between any two units of the same category.
-
-        convert(1.0, "in", "mm")   -> 25.4
-        convert(100, "C", "F")      -> 212.0
-
-    Raises ValueError if the units measure different things.
-    """
     if value is None:
         return None
     src, dst = _canonical(from_unit), _canonical(to_unit)
     if category_of(src) != category_of(dst):
-        raise ValueError(
-            f"Cannot convert {src!r} ({category_of(src)}) to "
-            f"{dst!r} ({category_of(dst)}) — different categories."
-        )
+        raise ValueError(f"Cannot convert {src!r} ({category_of(src)}) to {dst!r} ({category_of(dst)}) — different categories.")
     return from_SI(to_SI(value, src), dst)
 
-
-
-# [value, unit] pairs
-
-#
-# Config files store every physical input as a two-element list:
-#
-#     "tank_internal_diameter": [0.2, "m"]
-#     "tank_internal_length":   [null, "m"]      <- 'one or the other', unused
-#
-# These helpers are the bridge between that on-disk shape and a bare SI float.
-
+# takes a [value, unit] config pair, returns just 'value' as an SI float
 def pair_to_SI(pair: Any) -> Any:
-    """
-    Unpack a [value, unit] config pair into a bare SI float.
-
-        pair_to_SI([1.5, "in"])   -> 0.0381
-        pair_to_SI([None, "m"])   -> None
-        pair_to_SI([0.64, "."])   -> 0.64
-
-    A bare number is accepted and assumed to already be SI, so legacy configs
-    written before the pair format still load.  Strings (oxidizer type, rocket
-    name) pass through untouched.
-    """
     if pair is None:
         return None
     if isinstance(pair, (list, tuple)):
         if len(pair) != 2:
-            raise ValueError(
-                f"Expected a [value, unit] pair, got {len(pair)} element(s): {pair!r}"
-            )
+            raise ValueError(f"Expected a [value, unit] pair, got {len(pair)} element(s): {pair!r}")
         value, unit = pair
         if value is None or value == "":
             return None
         if isinstance(value, str):
             return value
         return to_SI(value, unit)
-    if isinstance(pair, bool):          # bool is an int subclass; check first
+    if isinstance(pair, bool): # bool is an int subclass; check first
         return pair
-    if isinstance(pair, (int, float)):  # legacy bare number, already SI
+    if isinstance(pair, (int, float)): # legacy bare number, already SI
         return float(pair)
-    return pair                          # strings and anything else
+    return pair # strings and anything else
 
-
+# returns a [value, unit] pair from an SI value, expressed in 'unit'
 def pair_from_SI(value: Optional[float], unit: Any) -> list:
-    """
-    Build a [value, unit] pair from an SI value, expressed in `unit`.
-    The round-trip partner of pair_to_SI().
-
-        pair_from_SI(0.0381, "in")  -> [1.5, "in"]
-        pair_from_SI(None, "m")     -> [None, "m"]
-    """
     return [from_SI(value, unit), _canonical(unit)]
 
-
+# convert an entire config block of [value, unit] pairs into bare SI floats
 def block_to_SI(block: dict, skip: Iterable[str] = ("model",)) -> dict:
-    """
-    Convert a whole config block of [value, unit] pairs into bare SI floats.
-
-    Keys in `skip`, and any value that isn't a pair, are copied verbatim — so
-    "model": "sigmoid" and the metadata strings survive untouched.
-
-        block_to_SI({"nozzle_throat_diameter": [32, "mm"], "model": "1D_frozen"})
-        -> {"nozzle_throat_diameter": 0.032, "model": "1D_frozen"}
-    """
     skip_set = set(skip)
     out: dict = {}
     for key, value in block.items():
@@ -565,8 +497,8 @@ def m_to_in(value): return convert(value, "m", "in")
 def ft_to_m(value): return convert(value, "ft", "m")
 def in_to_m(value): return convert(value, "in", "m")
 
-def m2_to_in2(value): return convert(value, "m2", "in2")
-def in2_to_m2(value): return convert(value, "in2", "m2")
+def m2_to_in2(value): return convert(value, "m^2", "in^2")
+def in2_to_m2(value): return convert(value, "in^2", "m^2")
 
 def Pa_to_psi(value): return convert(value, "Pa", "psi")
 def psi_to_Pa(value): return convert(value, "psi", "Pa")
@@ -591,31 +523,35 @@ UNIT_SYSTEMS: dict[str, dict[str, str]] = {
         "length": "cm",
         # display pressures in kPa instead of Pa so it's easier to read
         "pressure": "kPa",
+        # literature convention 0.132 with these units
+        "regression_coefficient": "(mm/s)/(kg/m^2/s)^n",
     },
     "MRT": {
         "angle": "deg",
         "length": "in", # hardware
         "distance": "ft", # apogees, altitudes
-        "area": "in2",
+        "area": "in^2",
         "pressure": "psi",
         "velocity": "ft/s",
-        "acceleration": "ft/s2",
+        "acceleration": "ft/s^2",
+        "regression_coefficient": "(mm/s)/(kg/m^2/s)^n",
     },
     "IMP": {
         "angle": "deg",
         "length": "in", # hardware
         "distance": "ft", # apogees, altitudes
-        "area": "in2",
-        "volume": "ft3",
+        "area": "in^2",
+        "volume": "ft^3",
         "mass": "lb",
-        "density": "lb/ft3",
+        "density": "lb/ft^3",
         "pressure": "psi",
         "temperature": "F",
         "velocity": "ft/s",
-        "acceleration": "ft/s2",
+        "acceleration": "ft/s^2",
         "force": "lbf",
         "impulse": "lbf*s",
         "mass_flow": "lb/s",
+        "regression_coefficient": "(in/s)/(lbm/in^2/s)^n",
     },
 }
 
@@ -653,5 +589,82 @@ def storage_unit(category: str, system: str = "SI") -> str:
 
 
 def to_system(value: Optional[float], category: str, system: str = "SI") -> Optional[float]:
-    """Convert an SI value into whatever unit `system` displays that category in."""
+    """Convert an SI value into whatever unit 'system' displays that category in."""
     return from_SI(value, unit_for_system(category, system))
+
+##########################################
+# REGRESSION COEFFICIENT
+#
+# fuel regression law: r_dot = a * G_ox ** n
+# [a] = L^(1+2n) * M^(-n) * T^(n-1)
+#
+# at the default n = 0.555 that is m^2.11 * kg^-0.555 * s^-0.445. looks terrible and breaks with the rest of this file, so this gets its own section and instead use rate unit paired with flux unit. 
+# n stays implicit: "0.132 mm/s per (kg/m^2/s)^n"
+# a_SI = a_unit * rate_in_m_per_s * flux_in_SI ** (-n) is the new convention
+
+REGRESSION_COEFFICIENT = "regression_coefficient"
+
+REGRESSION_UNITS: dict[str, tuple[str, str, str]] = {
+    "(m/s)/(kg/m^2/s)^n": ("m",  "kg", "m^2"), # SI base; what results files store
+    "(mm/s)/(kg/m^2/s)^n": ("mm", "kg", "m^2"), # what the literature quotes
+    "(in/s)/(lbm/in^2/s)^n": ("in", "lb", "in^2"), # disgusting IMPs
+}
+
+# raiseerror message
+_REGRESSION_MISUSE = "Unit {unit!r} is a regression coefficient: its dimensions depend on the regression exponent n, so it cannot go through the generic converter. Use {fn}(value, unit, n) instead."
+
+# true if this unit string names one of the regression-law conventions
+def is_regression_unit(unit: Any) -> bool:
+    return _canonical(unit) in REGRESSION_UNITS
+
+# multiplies 'unit' by n to get the SI coefficient
+    # ie 
+    # regression_factor("(mm/s)/(kg/m^2/s)^n", 0.555) --> 1e-3
+    # regression_factor("(in/s)/(lbm/in^2/s)^n", 0.555) --> 6.6796e-4
+# "." is accepted and returns 1 so that older configs don't break
+def regression_factor(unit: Any, n: float) -> float:
+    u = _canonical(unit)
+    if u == ".":
+        return 1.0
+    if u not in REGRESSION_UNITS:
+        raise ValueError(f"Unknown regression coefficient unit: {unit!r}. Accepted: {', '.join(REGRESSION_UNITS)}")
+    length_unit, mass_unit, area_unit = REGRESSION_UNITS[u]
+    rate = CATEGORIES["length"][length_unit]                     # m per rate length unit
+    flux = CATEGORIES["mass"][mass_unit] / CATEGORIES["area"][area_unit]
+    return rate * flux ** (-float(n))
+
+# returns regression coef in 'unit' at exponent 'n' as an SI float
+def regression_to_SI(value: Optional[float], unit: Any, n: float) -> Optional[float]:
+    if value is None:
+        return None
+    return float(value) * regression_factor(unit, n)
+
+# opposive of regression_to_SI
+def regression_from_SI(value: Optional[float], unit: Any, n: float) -> Optional[float]:
+    if value is None:
+        return None
+    return float(value) / regression_factor(unit, n)
+
+# pair_to_SI() for the one input that needs the exponent alongside it
+    # ie regression_pair_to_SI([0.132, "(mm/s)/(kg/m^2/s)^n"], 0.555) returns 0.000132
+def regression_pair_to_SI(pair: Any, n: Optional[float]) -> Optional[float]:
+    if pair is None:
+        return None
+    if isinstance(pair, (list, tuple)):
+        if len(pair) != 2:
+            raise ValueError(f"Expected a [value, unit] pair, got {pair!r}")
+        value, unit = pair
+    else:
+        value, unit = pair, "."
+    if value is None or value == "":
+        return None
+    u = _canonical(unit)
+    # only the imperial convention actually needs n, so a missing exponent is harmless there and fatal here.
+    if n is None and u != "." and REGRESSION_UNITS.get(u, ("", "", ""))[1:] != ("kg", "m^2"):
+        raise ValueError(f"Cannot read a regression coefficient in {u!r} without the regression exponent n. Load n before a.")
+    return regression_to_SI(float(value), u, 0.0 if n is None else n)
+
+# pair_from_SI() for the regression coefficient
+def regression_pair_from_SI(value: Optional[float], unit: Any, n: float) -> list:
+    return [regression_from_SI(value, unit, n), _canonical(unit)]
+
