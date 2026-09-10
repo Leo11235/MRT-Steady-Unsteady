@@ -31,10 +31,19 @@ PATCHNOTES: list[dict] = [
             
             "'Units' button in results page moved above other buttons to clarify that graphs and reports are generated in whichever unit is currently selected.",
             
+            "When using SI units, pressures display in kPa rather than Pa."
+            
             "Added new input guards to warn users if rocket outer diameter is more than 40% larger than outer fuel diameter, or if rocket outer diameter is more than 50% of rocket height."
+            
+            "Upgraded unsteady terminal printout, better for debugging & more intuitive.",
 
+            "Fixed the 'not responding' greyout that appeared when opening an input page for the first time, starting a simulation, or opening a past run.",
 
+            "Opening a saved run is now several seconds faster.",
+            
+            "Added 'User manual' button to home screen. Opens a .md file in the repo with instructions on how to use the program.",
 
+            "Updated the developer manual for future MRT generations.",
         ],
     },
     {
@@ -83,7 +92,7 @@ PATCHNOTES: list[dict] = [
             
             "Every unsteady physics model dropdown now shows a short description of the model.",
             
-            "Added hover tooltips everywhere.",
+            "Added hover tooltips for all input fields.",
         ],
     },
     {
@@ -105,14 +114,14 @@ PATCHNOTES: list[dict] = [
         "version": "1.1",
         "date":    "2026-07-22",
         "notes": [
-            "First installer-based release. App now installs from a standard Windows setup .exe with an uninstaller entry in Add/Remove Programs, upgrades cleanly over previous versions, and preserves presets & past runs across reinstalls.",
+            "First installer-based release. App now installs from a standard Windows setup .exe, upgrades cleanly over previous versions, and preserves presets & past runs across reinstalls.",
         ],
     },
     {
         "version": "1.0",
         "date":    "2026-07-18",
         "notes": [
-            "Initial release.",
+            "Initial release, backend only.",
         ],
     },
 ]

@@ -8,7 +8,8 @@ Launch command:
 Build command: 
     build_tools\build.bat
 
-CONFIG TESTS
+GENERAL/MOST IMPORTANT
+- Verify docs/{user_manual, developer_manual} and update anything that no longer fits with the program's new state. 
 - Run all the files in user_data\simulation_configs\ui_configs. Expected output is written in simulation description block. 
 - Move some of the configs from tests/(un)steady_configs into C:\Users\<user>\AppData\Roaming\MRT-Steady-Unsteady\user_data\simulation_configs (or Mac/Linux equivalent) and run them. Each config file contains the expected outcome in its description. 
 
