@@ -635,9 +635,6 @@ _INPUT_GROUPS = [
         ("tank_oxidizer_mass", "Ox mass loaded",    "kg",    3),
         ("tank_ullage_fraction",    "Ullage fraction",   "",      3),
         ("tank_internal_length",  "Internal length",   "m",     3),
-        ("dip_tube_external_radius",  "Dip tube OD/2",     "m",     5),
-        ("dip_tube_internal_radius",  "Dip tube ID/2",     "m",     5),
-        ("dip_tube_length",  "Dip tube length",   "m",     3),
     ]),
     ("Valve (CV2)", [
         ("valve_time_constant", "Time constant",  "s",   3),
@@ -1654,8 +1651,7 @@ def make_rocket_cross_section(sim_results: dict) -> Optional[Figure]:
     R_tank   = flat.get("tank_internal_radius")
     # Length: prefer the config value; fall back to reconstructing from
     # the t=0 sim state when the ullage branch was used (no
-    # tank_internal_length_m in the config).  Ignores dip-tube-displaced
-    # volume — negligible for the visual proportions.
+    # tank_internal_length_m in the config).
     L_tank   = flat.get("tank_internal_length")
     if L_tank is None and R_tank:
         data = sim_results.get("data", {}) or {}

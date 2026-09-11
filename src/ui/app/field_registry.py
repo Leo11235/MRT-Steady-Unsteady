@@ -210,12 +210,6 @@ _UNSTEADY: tuple[FieldSpec, ...] = (
               "Initial N2O bulk temperature."),
     FieldSpec("tank_oxidizer_mass", "Oxidizer mass", "mass",
               "Total oxidizer mass."),
-    FieldSpec("dip_tube_external_diameter", "Dip tube external diameter", "length",
-              "External diameter of the dip tube."),
-    FieldSpec("dip_tube_internal_diameter", "Dip tube internal diameter", "length",
-              "Internal flow diameter of the dip tube."),
-    FieldSpec("dip_tube_length", "Dip tube length", "length",
-              "Length of the dip tube, measured down from the top of the tank."),
     FieldSpec("tank_ullage_fraction", "Ullage fraction", DIMENSIONLESS,
               "Fraction of tank volume that is gas at t=0, from 0 to 1. Fill "
               "this OR the internal length, not both."),

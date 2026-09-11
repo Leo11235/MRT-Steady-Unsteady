@@ -224,20 +224,8 @@ Download the latest [`MRT-Steady-Unsteady-Setup.exe`](https://github.com/Leo1123
       <td>Total N<sub>2</sub>O loaded into the tank. Typically 10-40 kg.</td>
     </tr>
     <tr>
-      <td>Dip tube external diameter</td>
-      <td>Outer diameter of the dip tube, which displaces tank volume.</td>
-    </tr>
-    <tr>
-      <td>Dip tube internal diameter</td>
-      <td>Flow diameter through the dip tube.</td>
-    </tr>
-    <tr>
-      <td>Dip tube length</td>
-      <td>Length of the dip tube, measured down from the top of the tank.</td>
-    </tr>
-    <tr>
       <td>Ullage fraction</td>
-      <td>Fraction of tank volume that is vapour at t=0, from 0 to 1. Physics innacuracies may arise below 0.10. Fill this <b>or</b> the internal length</td>
+      <td>Vapour volume divided by liquid volume at t=0. 0.10 means a tank that is 1/11 gas, or 9.1% of total volume. Physics inaccuracies may arise below 0.10. Fill this <b>or</b> the internal length.</td>
     </tr>
     <tr>
       <td>Internal length</td>
@@ -451,11 +439,12 @@ The Unsteady model expects certain variables to stay within pre-tested operating
 | Tank temperature | Below 300 K | N<sub>2</sub>O's critical point is 309.5 K. Above roughly 300 K the saturated-equilibrium tank model degrades, and at the critical point it fails outright |
 | Flight Mach number | Away from 0.8 to 1.2 | A fixed drag coefficient is least defensible through the transonic region |
 | Fuel grain length | Above 20 in | The 1D regression model loses accuracy at low length-to-diameter ratios |
+| Tank fill | Liquid must fit, and some vapour must remain | Checked before the run when you give a tank length. Neither phase can be negative, so an over- or under-filled tank is rejected rather than simulated |
 
 When reading the results, warnings can appear in one of three severity categories: 
 * **Advisory** warnings are worth knowing about but either not a physics problem, or unavoidable due to Unsteady's physics formulation. High ullage fraction; an unusually low c* efficiency; a tank warm enough to be worth watching.
 * **Caution** indicates the config is outside the range where the model is trustworthy, or is physically questionable. A short fuel grain; a very tight port; ullage under 10%. 
-* **Critical** warnings mean the simulation will almost certainly fail or show nonsense values. Fuel cell wider than the airframe's outer diameter; c* efficiency above 100%. This will not prevent the simulation attempting to run but is nevertheless an indicator that the config should be revised. 
+* **Critical** warnings mean the program will almost certainly crash or show nonsense values. Fuel cell wider than the airframe's outer diameter; c* efficiency above 100%; a tank asked to hold more oxidizer than fits. This will not prevent the simulation attempting to run but is nevertheless an indicator that the config should be revised. 
 
 ---
 

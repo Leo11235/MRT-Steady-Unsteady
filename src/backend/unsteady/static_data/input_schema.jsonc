@@ -8,9 +8,6 @@
       "tank_internal_diameter",
       "tank_temperature",
       "tank_oxidizer_mass",
-      "dip_tube_external_diameter",
-      "dip_tube_internal_diameter",
-      "dip_tube_length",
       ["tank_ullage_fraction", "tank_internal_length"]
     ]
   },

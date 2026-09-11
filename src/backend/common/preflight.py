@@ -5,14 +5,9 @@ The engine's own 'warn_initialization_limits' only fires once the config has alr
 
 Both entry points here:
   - deep-copy their input, so nothing they touch mutates the caller's dict,
-  - do the same [value, unit] to SI and diameter-to-radius conversion the real
-    loaders do, because the checks are written against physics-side values,
+  - do the same [value, unit] to SI and diameter-to-radius conversion the real loaders do, because the checks are written against physics-side values,
   - return a dict of warnings keyed by ID, empty when the inputs look clean.
-
-Callers show a modal when the result is non-empty.  A "critical" severity means the run would almost certainly fail; anything else is advisory and the user should be able to proceed anyway.
-
-Later this should become the single implementation, with the loaders calling it rather than duplicating the range logic.  Today it mirrors them.
-"""
+  """
 
 from __future__ import annotations
 
@@ -63,6 +58,7 @@ def preflight_unsteady(rocket_inputs: dict) -> dict:
             flat.update(_to_physics_values(block))
 
     warnings: dict = {}
+    _check_tank_fill(flat, warnings)
     try:
         warn_initialization_limits(flat, warnings)
     except KeyError as exc:
@@ -114,3 +110,45 @@ def preflight_steady(rocket_inputs: dict) -> dict:
             }
 
     return warnings
+
+# catch a tank that cannot physically hold the requested oxidizer
+def _check_tank_fill(flat: dict, warnings: dict) -> None:
+    import math
+
+    R_T = flat.get("tank_internal_radius")
+    L_T = flat.get("tank_internal_length")
+    m_ox = flat.get("tank_oxidizer_mass")
+    T_T = flat.get("tank_temperature")
+    if not all(isinstance(v, (int, float)) for v in (R_T, L_T, m_ox, T_T)):
+        return # ullage branch, or an incomplete form; nothing to check yet
+    if R_T <= 0 or L_T <= 0 or m_ox <= 0:
+        return # the ordinary validators own nonsense geometry
+
+    try:
+        from src.backend.unsteady.physics.N2O_properties import N2O_properties as N2O
+        v_l = N2O.get_N2O_property("v_l", T_T)
+        v_v = N2O.get_N2O_property("v_v", T_T)
+        W_o = 0.044013 # kg/mol, N2O
+    except Exception:
+        return # don't block runs in the preflight checker. crashes will be bug reports. 
+
+    n_tot = m_ox / W_o
+    V_tank = math.pi * R_T ** 2 * L_T
+    V_liquid_only = n_tot * v_l
+    V_vapour_only = n_tot * v_v
+
+    if V_liquid_only >= V_tank:
+        warnings["tank_overfilled"] = {
+            "severity": "critical",
+            "message": f"Tank cannot hold this much oxidizer. {m_ox:.3f} kg of saturated liquid at {T_T:.1f} K occupies {V_liquid_only*1e3:.2f} L, but the tank is only {V_tank*1e3:.2f} L ({V_liquid_only/V_tank*100:.0f}% full before any ullage). There is no saturated state to start from, so the run will fail. Reduce the oxidizer mass, lengthen the tank, or widen it.",
+            "tank_volume_L": V_tank * 1e3,
+            "liquid_volume_L": V_liquid_only * 1e3,
+        }
+    elif V_vapour_only <= V_tank:
+        warnings["tank_no_liquid_phase"] = {
+            "severity": "critical",
+            "message": f"Tank is too large for this much oxidizer to be saturated. {m_ox:.3f} kg as pure saturated vapour at {T_T:.1f} K occupies {V_vapour_only*1e3:.2f} L, less than the tank's {V_tank*1e3:.2f} L, so no liquid phase exists. Increase the oxidizer mass or shorten the tank.",
+            "tank_volume_L": V_tank * 1e3,
+            "vapour_volume_L": V_vapour_only * 1e3,
+        }
+

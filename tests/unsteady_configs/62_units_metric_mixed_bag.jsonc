@@ -30,9 +30,6 @@
                 "tank_internal_diameter": [20.0, "cm"],
                 "tank_temperature": [25.0, "C"],
                 "tank_oxidizer_mass": [15500.0, "g"],
-                "dip_tube_external_diameter": [1.2, "cm"],
-                "dip_tube_internal_diameter": [0.8, "cm"],
-                "dip_tube_length": [45.0, "cm"],
                 "tank_ullage_fraction": [0.1, "."],
                 "tank_internal_length": [null, "m"]
             },
