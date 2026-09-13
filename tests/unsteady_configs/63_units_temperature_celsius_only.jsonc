@@ -16,9 +16,9 @@
                 "json_path_exists": ["performance.overall", "event_log", "data.time"],
                 "reaches_phases": ["phase_1", "phase_2", "phase_3", "phase_5", "phase_6", "phase_7"],
                 "value_between": {
-                    "performance.overall.peak_chamber_pressure_Pa": [50000, 30000000],
-                    "performance.overall.burntime_s": [3, 40],
-                    "performance.overall.apogee_m_agl": [3000, 12000]
+                    "performance.overall.peak_chamber_pressure": [50000, 30000000],
+                    "performance.overall.burntime": [3, 40],
+                    "performance.overall.apogee_agl": [3000, 12000]
                 },
                 "no_nans_in": ["time", "p_C", "sy_R", "F_thrust"]
             }

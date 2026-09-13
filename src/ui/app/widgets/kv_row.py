@@ -20,6 +20,8 @@ from typing import Any, Optional
 
 import customtkinter as ctk
 
+from src.common import output_registry as outputs
+from src.common.unit_labels import pretty_unit
 from src.common import variable_conversions as vc
 from src.ui.app import theme
 from src.ui.app import field_registry as registry
@@ -31,20 +33,17 @@ from src.ui.app import field_registry as registry
 #
 # Two sources, in order:
 #
-#   1. The field registry, which covers everything that was an input.
-#   2. The suffix on the key itself. Unsteady OUTPUT keys still carry their
-#      unit (peak_thrust_N, apogee_m_agl, burntime_s), even though input keys
-#      no longer do. Parsing them saves naming every computed value by hand.
+#   1. The output registry, which covers everything the simulation computes,
+#      under its current name and every older spelling.
+#   2. The field registry, which covers everything that was an input.
+#
+# Unsteady output keys used to carry their unit in the name (peak_thrust_N,
+# apogee_m_agl) and this module parsed the suffix to work out what they were.
+# That convention is gone: src/common/output_registry.py holds the meanings
+# now, so a name can be readable without losing its unit.
 #
 # Anything neither source explains renders unitless, which is right for ratios
 # and exponents and merely unhelpful for the rest.
-
-_SUFFIX_UNITS: dict[str, str] = {
-    "_m": "m", "_m2": "m^2", "_m3": "m^3",
-    "_kg": "kg", "_kgs": "kg/s", "_kgm3": "kg/m^3",
-    "_pa": "Pa", "_k": "K", "_s": "s", "_n": "N", "_ns": "N*s",
-    "_ms": "m/s", "_deg": "deg", "_rad": "rad",
-}
 
 # Explicit entries for computed values whose names don't self-describe.
 _COMPUTED_FIELDS: dict[str, tuple[str, str]] = {
@@ -106,6 +105,10 @@ def category_of_key(key: str) -> Optional[str]:
     The registry wins when it knows the key. Otherwise, if the key is
     length-dimensioned, the name decides.
     """
+    spec = outputs.find(key)
+    if spec is not None:
+        return None if spec.category in (outputs.DIMENSIONLESS, outputs.TEXT) else spec.category
+
     if registry.has(key):
         category = registry.get(key).category
         return None if category == "dimensionless" else category
@@ -119,8 +122,21 @@ def category_of_key(key: str) -> Optional[str]:
     return None
 
 
+def display_scale_of(key: str) -> float:
+    """What to multiply a stored value by before showing it.
+
+    2.0 for the radius keys, 1.0 for everything else. The physics stores radii and
+    people read diameters, and this is the single place that gap is bridged.
+    """
+    spec = outputs.find(key)
+    return spec.display_scale if spec is not None else 1.0
+
+
 def describe(key: str) -> tuple[str, Optional[str]]:
     """(label, SI unit) for a result key.  Unit is None when dimensionless."""
+    described = outputs.describe(key)
+    if described is not None:
+        return described
     if registry.has(key):
         spec = registry.get(key)
         if spec.category == "dimensionless":
@@ -148,15 +164,6 @@ def _describe_uncategorised(key: str) -> tuple[str, Optional[str]]:
             return (f"{label} ({qualifier.lstrip('_')})",
                     None if unit == "." else unit)
 
-    # Fall back to the suffix, longest first so "_m3" wins over "_m".
-    lowered = key.lower()
-    for suffix in sorted(_SUFFIX_UNITS, key=len, reverse=True):
-        if lowered.endswith(suffix):
-            return _prettify(key[: -len(suffix)]), _SUFFIX_UNITS[suffix]
-        # Some keys bury the unit mid-name: apogee_m_agl, altitude_m_asl.
-        if f"{suffix}_" in lowered:
-            return _prettify(key.replace(suffix, "", 1)), _SUFFIX_UNITS[suffix]
-
     return _prettify(key), None
 
 
@@ -169,28 +176,57 @@ def _prettify(key: str) -> str:
 # Formatting
 # =============================================================================
 
+# Narrow no-break space. A plain space would let a number wrap across two lines,
+# and a non-breaking space is wide enough to read as two separate numbers.
+_GROUP_SEP = "\u202f"
+
+
+def _group_digits(text: str) -> str:
+    """Space the integer part into threes: 34693.08 -> 34\u202f693.08.
+
+    Display only. Everything that exports a number takes it from
+    value_for_display() instead, so no separator ever reaches a CSV cell or the
+    clipboard. Scientific notation is left alone: grouping the mantissa of
+    1.32e-04 helps nobody.
+    """
+    if "e" in text or "E" in text:
+        return text
+    sign = ""
+    if text[:1] in "+-":
+        sign, text = text[0], text[1:]
+    whole, dot, frac = text.partition(".")
+    if len(whole) > 3:
+        groups = [whole[max(0, i - 3):i] for i in range(len(whole), 0, -3)][::-1]
+        whole = _GROUP_SEP.join(groups)
+    return f"{sign}{whole}{dot}{frac}"
+
+
 def format_scalar(value: Any) -> str:
     """Render one value for display.
 
-    Trims trailing zeros, drops a pointless ".0", and switches to scientific
-    notation for very small numbers instead of showing "0".
+    Trims trailing zeros, drops a pointless ".0", switches to scientific notation
+    for very small numbers instead of showing "0", and groups long integer parts
+    so a six-digit figure can be read at a glance.
     """
     if value is None:
         return "—"
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, int):
-        return str(value)
+        return _group_digits(str(value))
     if isinstance(value, float):
         if value != value:                  # NaN
             return "—"
         if abs(value) < 1e-15:
             return "0"
         if abs(value - round(value)) < 1e-9 and abs(value) < 1e15:
-            return str(int(round(value)))
+            return _group_digits(str(int(round(value))))
         if abs(value) < 1e-3 or abs(value) >= 1e7:
             return f"{value:.4g}"
-        return f"{value:.4f}".rstrip("0").rstrip(".")
+        # Large numbers do not need four decimals; small ones do. Four significant
+        # figures after the point is noise on 34693.0796 and essential on 0.6096.
+        decimals = 2 if abs(value) >= 1000 else 4
+        return _group_digits(f"{value:.{decimals}f}".rstrip("0").rstrip("."))
     if isinstance(value, dict):
         return f"({len(value)} keys)"
     if isinstance(value, (list, tuple)):
@@ -231,10 +267,15 @@ def native_system_of(results: dict) -> str:
     return "MRT" if units == "MRT" else "SI"
 
 
-def convert_for_display(value: Any, si_unit: Optional[str], system: str,
-                        category: Optional[str] = None,
-                        native_system: str = "SI") -> tuple[str, str]:
-    """(formatted value, unit label) for a value in the given unit system.
+def value_for_display(value: Any, si_unit: Optional[str], system: str,
+                      category: Optional[str] = None,
+                      native_system: str = "SI") -> tuple[Any, str]:
+    """(converted value, unit label) for a value in the given unit system.
+
+    The number itself, NOT a formatted string. Conversion and formatting are
+    separate on purpose: the screen wants a rounded, grouped, human-readable
+    string, and an export wants the number. Producing the string first and
+    parsing it back is how a CSV ends up full of text cells.
 
     `category` overrides what would otherwise be inferred from `si_unit`. Pass
     it whenever you know it: metres are both "length" and "distance", and only
@@ -252,19 +293,31 @@ def convert_for_display(value: Any, si_unit: Optional[str], system: str,
         number, unit = pair
         try:
             target = vc.unit_for_system(vc.category_of(unit), system)
-            return format_scalar(vc.convert(number, unit, target)), target
+            return vc.convert(number, unit, target), target
         except (ValueError, KeyError):
-            return format_scalar(number), unit
+            return number, unit
 
     if si_unit is None or not isinstance(value, (int, float)) or isinstance(value, bool):
-        return format_scalar(value), ""
+        return value, ""
     try:
         resolved = category or vc.category_of(si_unit)
         source = vc.storage_unit(resolved, native_system)
         target = vc.unit_for_system(resolved, system)
-        return format_scalar(vc.convert(float(value), source, target)), target
+        return vc.convert(float(value), source, target), target
     except (ValueError, KeyError):
-        return format_scalar(value), si_unit
+        return value, si_unit
+
+
+def convert_for_display(value: Any, si_unit: Optional[str], system: str,
+                        category: Optional[str] = None,
+                        native_system: str = "SI") -> tuple[str, str]:
+    """(formatted value, unit label) for a value in the given unit system.
+
+    The display half of value_for_display(). Everything that puts a number on
+    screen goes through here; anything exporting one goes through the other.
+    """
+    raw, unit = value_for_display(value, si_unit, system, category, native_system)
+    return format_scalar(raw), unit
 
 
 # =============================================================================
@@ -278,17 +331,28 @@ class KVRow(ctk.CTkFrame):
 
     def __init__(self, master, key: str, value: Any, system: str = "SI",
                  *, name_width: Optional[int] = None,
-                 native_system: str = "SI") -> None:
+                 native_system: str = "SI",
+                 label: Optional[str] = None) -> None:
         super().__init__(master, fg_color="transparent")
 
         self.key = key
         self._value = value
         self._label, self._si_unit = describe(key)
+        if label is not None:
+            # Some rows are named by where they sit rather than by their key:
+            # "Diameter" under Pre chamber, "Length" under Fuel cell.
+            self._label = label
         self._category = category_of_key(key)
         self._native_system = native_system
 
-        shown, unit_label = convert_for_display(value, self._si_unit, system,
-                                                self._category, native_system)
+        # Kept so exports can carry the number rather than re-parsing the label.
+        # Same quantity and same unit as the screen shows, just unrounded and
+        # ungrouped. See _as_table() in results_page.
+        self._scale = display_scale_of(key)
+        self._raw, unit_label = value_for_display(self._scaled(value), self._si_unit,
+                                                  system, self._category, native_system)
+        shown = format_scalar(self._raw)
+        self._unit_label = unit_label
 
         self._name_widget = ctk.CTkLabel(
             self, text=self._compose_name(unit_label),
@@ -302,15 +366,38 @@ class KVRow(ctk.CTkFrame):
         self._value_widget.pack(side="left", fill="x", expand=True,
                                 padx=(0, theme.PAD_L))
 
+    def _scaled(self, value: Any) -> Any:
+        """`value` with the registry's display scale applied, if it has one."""
+        if self._scale == 1.0 or not isinstance(value, (int, float)) or isinstance(value, bool):
+            return value
+        return value * self._scale
+
     def _compose_name(self, unit_label: str) -> str:
-        return f"{self._label} ({unit_label})" if unit_label else self._label
+        shown = pretty_unit(unit_label)
+        return f"{self._label} ({shown})" if shown else self._label
 
     def update_system(self, system: str) -> None:
         """Re-label and re-convert for a new unit system.  No rebuild."""
-        shown, unit_label = convert_for_display(self._value, self._si_unit, system,
-                                                self._category, self._native_system)
+        self._raw, unit_label = value_for_display(self._scaled(self._value), self._si_unit,
+                                                  system, self._category, self._native_system)
+        self._unit_label = unit_label
         self._name_widget.configure(text=self._compose_name(unit_label))
-        self._value_widget.configure(text=shown)
+        self._value_widget.configure(text=format_scalar(self._raw))
+
+    @property
+    def raw_value(self) -> Any:
+        """The number behind the label, in the unit currently on screen.
+
+        What exports should use. The displayed string is rounded and, once digit
+        grouping lands, will carry separators too, neither of which belongs in a
+        CSV cell or on the clipboard.
+        """
+        return self._raw
+
+    @property
+    def unit_label(self) -> str:
+        """The unit currently shown beside this value, or "" when there is none."""
+        return self._unit_label
 
     def matches(self, query: str) -> bool:
         """Case-insensitive search across the label, the raw key and the value.

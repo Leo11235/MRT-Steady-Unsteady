@@ -15,8 +15,8 @@
                 "files_exist": ["sim_data.json"],
                 "json_path_exists": ["performance.overall", "event_log", "data.time"],
                 "value_between": {
-                    "performance.overall.peak_chamber_pressure_Pa": [50000, 30000000],
-                    "performance.overall.burntime_s": [0.05, 120]
+                    "performance.overall.peak_chamber_pressure": [50000, 30000000],
+                    "performance.overall.burntime": [0.05, 120]
                 },
                 "no_nans_in": ["time", "p_C", "sy_R", "F_thrust"]
             }

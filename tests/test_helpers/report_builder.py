@@ -28,8 +28,8 @@ _HEADLINE_OUTPUTS = {
     "steady": ("reached_apogee", "target_apogee_reached", "fuel_mass",
                "burntime", "thrust", "Isp", "total_impulse",
                "average_oxidizer_to_fuel_ratio", "initial_internal_fuel_radius"),
-    "unsteady": ("apogee_m_asl", "apogee_m_agl", "max_velocity_ms",
-                 "burnout_time_s", "total_impulse_Ns", "max_thrust_N"),
+    "unsteady": ("apogee_asl", "apogee_agl", "burntime",
+                 "total_impulse", "peak_thrust", "average_OF_ratio"),
 }
 
 

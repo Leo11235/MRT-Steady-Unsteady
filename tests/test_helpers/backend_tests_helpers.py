@@ -10,6 +10,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from src.common import output_registry as _outputs
 from typing import Any, Callable, Iterable, Optional
 
 import json5
@@ -232,14 +233,21 @@ def classify_exception(exc: Optional[BaseException]) -> str:
 def _resolve(data: Any, dotted: str) -> tuple[bool, Any]:
     """
     walk a dotted path into nested dicts/lists
-    "performance.overall.apogee_m_agl" or "data.time.0"
+    "performance.overall.apogee_agl" or "data.time.0"
     returns (found, value)
     """
     current = data
     for part in dotted.split("."):
         if isinstance(current, dict):
             if part not in current:
-                return False, None
+                # A results key may be written under its current name or, in an
+                # older file, a pre-1.6 spelling. Let the output registry decide
+                # whether this segment is one of those before giving up, so an
+                # assertion path outlives a rename.
+                actual = _outputs.key_in(current, part)
+                if actual is None:
+                    return False, None
+                part = actual
             current = current[part]
         elif isinstance(current, (list, tuple)):
             try:

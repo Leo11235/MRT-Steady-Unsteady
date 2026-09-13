@@ -363,7 +363,7 @@ def warn_launch_capability(warning_dict: dict, metrics: dict, min_TtW: float, mi
             "severity": "caution",
             "message": f"Peak thrust-to-weight is {TtW:.2f}, below the recommended minimum of {min_TtW:.1f}. A rocket this marginal leaves the rail slowly and is unstable while it does.",
             "peak_thrust_to_weight": TtW,
-            "peak_thrust_N": metrics.get("peak_thrust_N"),
+            "peak_thrust": metrics.get("peak_thrust"),
             "minimum": min_TtW,
         }
 

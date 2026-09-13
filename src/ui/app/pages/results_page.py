@@ -70,6 +70,9 @@ class ResultsPage(ctk.CTkFrame):
         # Every KVRow on the page, so the unit toggle and the filter can reach
         # all of them without knowing which tab they live in.
         self._rows: list[KVRow] = []
+        # Rows that re-unit with the rest but are never filtered or exported:
+        # the summary box and the per-phase grid. See add_row(filterable=...).
+        self._unfiltered_rows: list[KVRow] = []
         # Labels that aren't rows but still carry converted numbers — section
         # headers naming a sweep point's coordinates, for instance. Each is a
         # (widget, builder) pair; the builder is re-run on a unit change.
@@ -290,15 +293,36 @@ class ResultsPage(ctk.CTkFrame):
     # ==================================================================
 
     def clear(self, frame) -> None:
+        """Empty a tab, and forget the rows that lived in it.
+
+        Without the forgetting, loading a second run leaves the first run's
+        destroyed widgets in _rows, and every filter or unit change then walks
+        hundreds of dead references.
+        """
         for child in list(frame.winfo_children()):
             child.destroy()
+        self._rows = [r for r in self._rows if r.winfo_exists()]
+        self._unfiltered_rows = [r for r in self._unfiltered_rows if r.winfo_exists()]
 
-    def add_row(self, parent, key: str, value: Any) -> KVRow:
-        """One name/value row, registered for filtering and unit switching."""
+    def add_row(self, parent, key: str, value: Any, *,
+                filterable: bool = True, label: Optional[str] = None) -> KVRow:
+        """One name/value row, registered for unit switching.
+
+        `filterable=False` keeps the row out of the search filter and out of
+        exports, while still re-uniting with everything else. The summary box and
+        the per-phase grid use it: filtering a twelve-row summary down to one row
+        destroys the thing, and neither is a list you search through.
+
+        `label` overrides the registry's name, for rows whose meaning depends on
+        where they sit rather than on their key.
+        """
         row = KVRow(parent, key, value, self.system,
-                    native_system=self.native_system)
+                    native_system=self.native_system, label=label)
         row.pack(fill="x", pady=1)
-        self._rows.append(row)
+        if filterable:
+            self._rows.append(row)
+        else:
+            self._unfiltered_rows.append(row)
         return row
 
     def add_dynamic_label(self, widget, build_text) -> None:
@@ -426,7 +450,7 @@ class ResultsPage(ctk.CTkFrame):
         self.system = system
         self._system_var.set(system)
         self._highlight_unit_button()
-        for row in self._rows:
+        for row in self._rows + self._unfiltered_rows:
             try:
                 row.update_system(system)
             except Exception:                   # noqa: BLE001
@@ -468,17 +492,20 @@ class ResultsPage(ctk.CTkFrame):
     def _visible_rows(self) -> list[KVRow]:
         return [r for r in self._rows if r.winfo_ismapped()]
 
-    def _as_table(self) -> list[tuple[str, str, str]]:
-        """(key, label, displayed value) for every visible row.
+    def _as_table(self) -> list[tuple[str, str, Any]]:
+        """(key, label, value) for every visible row.
 
-        Exports follow the filter and the unit toggle: what you exported is
-        what you were looking at.
+        Exports follow the filter and the unit toggle: what you exported is what
+        you were looking at, in the units you were looking at it in.
+
+        The value is the NUMBER, not the string on screen. The label is rounded
+        for reading and will gain digit grouping, and neither survives a paste
+        into a spreadsheet: a cell reading "5 274.4" is text. Non-numeric rows
+        (terminal state, model names) pass through as themselves.
         """
         table = []
         for row in self._visible_rows():
-            label, si_unit = describe(row.key)
-            shown = row._value_widget.cget("text")      # noqa: SLF001
-            table.append((row.key, row._name_widget.cget("text"), shown))  # noqa: SLF001
+            table.append((row.key, row._name_widget.cget("text"), row.raw_value))  # noqa: SLF001
         return table
 
     def _on_copy(self) -> None:
@@ -486,7 +513,9 @@ class ResultsPage(ctk.CTkFrame):
         if not rows:
             self._set_status("Nothing to copy", error=True)
             return
-        text = "\n".join(f"{label}\t{value}" for _key, label, value in rows)
+        # Blanks stay blank rather than becoming the word "None".
+        text = "\n".join(f"{label}\t{'' if value is None else value}"
+                         for _key, label, value in rows)
         try:
             self.clipboard_clear()
             self.clipboard_append(text)

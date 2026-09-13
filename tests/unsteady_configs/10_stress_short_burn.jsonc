@@ -12,8 +12,8 @@
                 "files_exist": ["sim_data.json"],
                 "reaches_phases": ["phase_1", "phase_2"],
                 "value_between": {
-                    "performance.overall.burntime_s": [0.5, 8],
-                    "performance.overall.peak_chamber_pressure_Pa": [500000, 10000000]
+                    "performance.overall.burntime": [0.5, 8],
+                    "performance.overall.peak_chamber_pressure": [500000, 10000000]
                 },
                 "no_nans_in": ["time", "p_C", "F_thrust"]
             }

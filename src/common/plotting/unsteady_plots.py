@@ -53,6 +53,7 @@ from matplotlib.axes import Axes
 from matplotlib.collections import LineCollection
 from matplotlib.figure import Figure
 
+from src.common import output_registry as outputs
 from src.common import variable_conversions as vc
 from matplotlib.patches import Patch, Rectangle, FancyBboxPatch, Polygon
 from matplotlib.backends.backend_pdf import PdfPages
@@ -524,6 +525,15 @@ def _open_axes(title: str, window_title: str | None = None,
 # Formatting helpers
 # =============================================================================
 
+def _v(block, key, default=None):
+    """Read a result key, accepting the current name or any older spelling.
+
+    Thin wrapper on output_registry.value_of() so these figures stay readable.
+    Every results file ever written renders through the same call.
+    """
+    return outputs.value_of(block, key, default)
+
+
 def _fmt(value, unit="", precision=2):
     if value is None or (isinstance(value, float) and not math.isfinite(value)):
         return "—"
@@ -594,20 +604,22 @@ def make_performance_panel(sim_results: dict) -> Figure:
 def _draw_scorecard(ax, overall: dict, meta: dict):
     ax.set_title("Overall performance", fontsize=13, fontweight="bold", loc="left")
     cells = [
-        ("Apogee (AGL)",    overall.get("apogee_m_agl"),                       "m",   1),
-        ("Apogee (ASL)",    overall.get("apogee_m_asl"),                       "m",   1),
-        ("Burn time",       overall.get("burntime_s"),                         "s",   2),
-        ("Total impulse",   overall.get("total_impulse_Ns"),                   "N·s", 0),
-        ("Peak thrust",     _n_to_kn(overall.get("peak_thrust_N")),            "kN",  2),
-        ("Average thrust",  _n_to_kn(overall.get("average_thrust_N")),         "kN",  2),
-        ("Pad T/W",         overall.get("pad_thrust_to_weight"),               "",    2),
-        ("Peak chamber p",  _pa_to_bar(overall.get("peak_chamber_pressure_Pa")),"bar",1),
-        ("Peak chamber T",  overall.get("peak_chamber_temperature_K"),         "K",   0),
-        ("Average O/F",     overall.get("average_OF_ratio"),                   "",    2),
-        ("Oxidizer used",   overall.get("ox_mass_consumed_kg"),                "kg",  2),
-        ("Fuel used",       overall.get("fuel_mass_consumed_kg"),              "kg",  2),
-        ("Oxidizer left",   overall.get("ox_mass_remaining_kg"),               "kg",  2),
-        ("Fuel left",       overall.get("fuel_mass_remaining_kg"),             "kg",  2),
+        # outputs.value_of() rather than .get(): it resolves both the current key
+        # and the pre-1.6 spelling, so a run saved before the rename still plots.
+        ("Apogee (AGL)",    _v(overall, "apogee_agl"),                         "m",   1),
+        ("Apogee (ASL)",    _v(overall, "apogee_asl"),                         "m",   1),
+        ("Burn time",       _v(overall, "burntime"),                           "s",   2),
+        ("Total impulse",   _v(overall, "total_impulse"),                      "N·s", 0),
+        ("Peak thrust",     _n_to_kn(_v(overall, "peak_thrust")),              "kN",  2),
+        ("Average thrust",  _n_to_kn(_v(overall, "average_thrust")),           "kN",  2),
+        ("Pad T/W",         _v(overall, "pad_thrust_to_weight"),               "",    2),
+        ("Peak chamber p",  _pa_to_bar(_v(overall, "peak_chamber_pressure")),  "bar", 1),
+        ("Peak chamber T",  _v(overall, "peak_chamber_temperature"),           "K",   0),
+        ("Average O/F",     _v(overall, "average_OF_ratio"),                   "",    2),
+        ("Oxidizer used",   _v(overall, "ox_mass_consumed"),                   "kg",  2),
+        ("Fuel used",       _v(overall, "fuel_mass_consumed"),                 "kg",  2),
+        ("Oxidizer left",   _v(overall, "ox_mass_remaining"),                  "kg",  2),
+        ("Fuel left",       _v(overall, "fuel_mass_remaining"),                "kg",  2),
         ("Sim wall clock",  meta.get("total_simulation_time"),                 "s",   2),
         ("Total timesteps", meta.get("total_timesteps"),                       "",    0),
     ]
@@ -733,17 +745,17 @@ def _draw_by_phase_table(ax, by_phase: dict):
         if entry is None:
             continue
         is_burn = phase_name in BURN_PHASES
-        row = [PHASE_LABELS[phase_name], _fmt(entry.get("duration_s"), "", 2)]
+        row = [PHASE_LABELS[phase_name], _fmt(_v(entry, "duration"), "", 2)]
         if is_burn:
             row += [
-                _fmt(entry.get("total_impulse_Ns"), "", 0),
-                _fmt(_n_to_kn(entry.get("peak_thrust_N")), "", 2),
-                _fmt(entry.get("average_OF_ratio"), "", 2),
-                _fmt(_pa_to_bar(entry.get("peak_chamber_pressure_Pa")), "", 1),
+                _fmt(_v(entry, "total_impulse"), "", 0),
+                _fmt(_n_to_kn(_v(entry, "peak_thrust")), "", 2),
+                _fmt(_v(entry, "average_OF_ratio"), "", 2),
+                _fmt(_pa_to_bar(_v(entry, "peak_chamber_pressure")), "", 1),
             ]
         else:
-            peak_v = entry.get("peak_velocity_ms")
-            term_v = entry.get("terminal_velocity_ms")
+            peak_v = _v(entry, "peak_velocity")
+            term_v = _v(entry, "terminal_velocity")
             descent = f"peak {_fmt(peak_v, 'm/s', 1)}, term {_fmt(term_v, 'm/s', 1)}"
             row += [descent, "", "", ""]
         rows.append(row)
@@ -796,7 +808,7 @@ def _draw_events_table(ax, event_log):
         return
     headers = ["t [s]", "Type", "Message"]
     rows = [
-        [_fmt(ev.get("t_s"), "", 3), ev.get("event_type", ""), ev.get("message", "")]
+        [_fmt(_v(ev, "t"), "", 3), ev.get("event_type", ""), ev.get("message", "")]
         for ev in event_log
     ]
     table = ax.table(cellText=rows, colLabels=headers, colWidths=[0.10, 0.18, 0.72],
@@ -1625,7 +1637,7 @@ def make_thrust_with_events_plot(sim_results: dict) -> Figure:
     if len(t) > 0:
         t_max = float(np.max(t))
         for ev in event_log:
-            t_ev = ev.get("t_s")
+            t_ev = _v(ev, "t")
             if t_ev is None or t_ev > t_max:
                 continue
             ax.axvline(t_ev, color="#1d3557", linestyle="--", linewidth=0.9)

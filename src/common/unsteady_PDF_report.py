@@ -65,25 +65,19 @@ def _styles():
 
 
 ####### labels & units
+from src.common import output_registry as _outputs
+from src.common import unit_labels as _unit_labels
+
 try:
     from src.ui.app import field_registry as _registry
 except Exception: 
     _registry = None
 
-# result keys carry their dimension as a suffix rather than in the registry; this is an artifact from when output units were in SI only. should remove this suffix entirely in the future but that will be a ######
-_SUFFIX_CATEGORIES = [("_Ns", "impulse"), ("_kg", "mass"), ("_Pa", "pressure"), ("_K", "temperature"), ("_ms", "velocity"), ("_N", "force"), ("_s", "time"),]
 # geometry the loader derives rather than reads
 _DERIVED_CATEGORIES = [("_radius", "length"), ("_area", "area"), ("_volume", "volume"), ("_length", "length"), ("_delta_p", "pressure"),]
 
-# add superscripts for to be easier on the eyes to the PDF reader
-_UNIT_LABELS = {
-    "m^2": "m²", "mm^2": "mm²", "cm^2": "cm²", "in^2": "in²", "ft^2": "ft²",
-    "m^3": "m³", "mm^3": "mm³", "cm^3": "cm³", "in^3": "in³", "ft^3": "ft³",
-    "m/s^2": "m/s²", "ft/s^2": "ft/s²",
-    "N*s": "N·s", "lbf*s": "lbf·s",
-    "kg/m^3": "kg/m³", "g/cm^3": "g/cm³", "lb/ft^3": "lb/ft³", "lb/in^3": "lb/in³",
-    "deg": "°", "C": "°C", "F": "°F", ".": "",
-}
+# superscripts and the like, shared with the results page so the two agree
+_UNIT_LABELS = _unit_labels.UNIT_LABELS
 
 
 def _describe(key: str):
@@ -92,18 +86,15 @@ def _describe(key: str):
 
     category is a variable_conversions category name, or None when the value carries no unit at all (ratios, counts, flags, text).
     """
+    # computed results first
+    spec = _outputs.find(key)
+    if spec is not None:
+        return spec.label, (None if spec.category in (_outputs.DIMENSIONLESS, _outputs.TEXT) else spec.category)
+
     if _registry is not None and _registry.has(key):
         spec = _registry.get(key)
         return spec.label, (None if spec.category == "dimensionless" else spec.category)
 
-    # keep distinction between AGL or ASL, otherwise they both appear as "Apogee"
-    for suffix, datum in (("_m_agl", "AGL"), ("_m_asl", "ASL")):
-        if key.endswith(suffix):
-            return f"{_prettify(key[: -len(suffix)])} {datum}", "distance"
-
-    for suffix, category in _SUFFIX_CATEGORIES:
-        if key.endswith(suffix):
-            return _prettify(key[: -len(suffix)]), category
     for suffix, category in _DERIVED_CATEGORIES:
         if key.endswith(suffix):
             return _prettify(key), category
@@ -257,9 +248,9 @@ CV_TITLES = {
 
 # once again ugly anachronistic suffix system, should be removed eventually, this is a workaround
 PERF_CATEGORIES = [
-    ("Engine", ["burntime_s", "total_impulse_Ns", "peak_thrust_N", "average_thrust_N", "peak_chamber_pressure_Pa", "peak_chamber_temperature_K", "average_OF_ratio"]),
-    ("Flight", ["pad_thrust_to_weight", "apogee_m_agl", "apogee_m_asl"]),
-    ("Propellant", ["ox_mass_available_kg", "ox_mass_consumed_kg", "ox_mass_remaining_kg", "fuel_mass_available_kg", "fuel_mass_consumed_kg", "fuel_mass_remaining_kg", "total_propellant_available_kg", "total_propellant_consumed_kg"]),
+    ("Engine", ["burntime", "total_impulse", "peak_thrust", "average_thrust", "peak_chamber_pressure", "peak_chamber_temperature", "average_OF_ratio"]),
+    ("Flight", ["pad_thrust_to_weight", "apogee_agl", "apogee_asl"]),
+    ("Propellant", ["ox_mass_available", "ox_mass_consumed", "ox_mass_remaining", "fuel_mass_available", "fuel_mass_consumed", "fuel_mass_remaining", "total_propellant_available", "total_propellant_consumed"]),
 ]
 
 PHASE_LABELS = {
@@ -439,9 +430,11 @@ def generate_report(run_dir,
     for heading, keys in PERF_CATEGORIES:
         rows = []
         for key in keys:
-            if key in overall:
-                rows.append(units.row(key, overall[key]))
-                seen.add(key)
+            # a file may hold the current name or a pre-1.6 one. ask which spelling this run used, so the row renders and "Other" doesn't repeat it.
+            actual = _outputs.key_in(overall, key)
+            if actual is not None:
+                rows.append(units.row(actual, overall[actual]))
+                seen.add(actual)
         if rows:
             add(KeepTogether([Paragraph(_esc(heading), st["h3"]), _kv_table(st, rows)]))
     rest = [units.row(k, v) for k, v in overall.items() if k not in seen]
@@ -451,11 +444,11 @@ def generate_report(run_dir,
     if by_phase:
         add(Paragraph("1.3 &nbsp; By flight phase", st["h2"]))
         # (key, heading, category) -- the heading's unit is filled in from the display system rather than baked into the string
-        columns = [("duration_s", "Duration", "time"),
-                   ("total_impulse_Ns", "Impulse", "impulse"),
-                   ("peak_thrust_N", "Peak thrust", "force"),
-                   ("average_thrust_N", "Mean thrust", "force"),
-                   ("peak_chamber_pressure_Pa", "Peak p_C", "pressure"),
+        columns = [("duration", "Duration", "time"),
+                   ("total_impulse", "Impulse", "impulse"),
+                   ("peak_thrust", "Peak thrust", "force"),
+                   ("average_thrust", "Mean thrust", "force"),
+                   ("peak_chamber_pressure", "Peak p_C", "pressure"),
                    ("average_OF_ratio", "Mean O/F", None)]
 
         def _head(text, category):
@@ -465,13 +458,13 @@ def generate_report(run_dir,
         rows = []
         for phase in sorted(by_phase):
             data = by_phase[phase] or {}
-            rows.append([PHASE_LABELS.get(phase, phase), _fmt(units.value(data.get("t_start_s"), "time"))] + [_fmt(units.value(data.get(key), category)) for key, _, category in columns])
+            rows.append([PHASE_LABELS.get(phase, phase), _fmt(units.value(_outputs.value_of(data, "t_start"), "time"))] + [_fmt(units.value(_outputs.value_of(data, key), category)) for key, _, category in columns])
         add(_grid_table(st, ["Phase", _head("Start", "time")] + [_head(lab, cat) for _, lab, cat in columns], rows, [0.20, 0.10, 0.11, 0.13, 0.12, 0.12, 0.12, 0.10]))
         add(Paragraph("Coast and descent phases produce no thrust, so their engine columns are empty by construction.", st["note"]))
 
     add(Paragraph("1.4 &nbsp; Event log", st["h2"]))
     if events:
-        rows = [[_fmt(e.get("t_s")), e.get("event_type", ""), e.get("message", "")] for e in events if isinstance(e, dict)]
+        rows = [[_fmt(_outputs.value_of(e, "t")), e.get("event_type", ""), e.get("message", "")] for e in events if isinstance(e, dict)]
         add(_grid_table(st, ["t (s)", "Event", "Detail"], rows, [0.10, 0.24, 0.66], left_align_first=False))
     else:
         add(Paragraph("No events logged.", st["note"]))

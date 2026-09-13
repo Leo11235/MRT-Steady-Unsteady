@@ -12,7 +12,7 @@
                 "files_exist": ["sim_data.json"],
                 "reaches_phases": ["phase_1", "phase_2", "phase_3", "phase_5", "phase_6", "phase_7"],
                 "value_between": {
-                    "performance.by_phase.phase_7.duration_s": [10, 600]
+                    "performance.by_phase.phase_7.duration": [10, 600]
                 },
                 "no_nans_in": ["time", "sy_R", "vy_R"]
             }

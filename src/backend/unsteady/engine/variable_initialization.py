@@ -44,12 +44,19 @@ def initialize_state_vector(rocket_inputs: dict, constants_dict: dict, get_N2O_p
     # decide whether to initialize tank variables using ullage or tank length
     if "tank_internal_length" in rocket_inputs:
         V_l, n_l, n_v, V_V = initialize_state_vector_using_tank_length(rocket_inputs, v_l, v_v, m_o_tot_0, W_o, A_T)
+        # the two branches are mirror images and should leave the same record behind
+        rocket_inputs["tank_ullage_fraction"] = float(V_V / V_l) if V_l > 0 else 0.0
     elif "tank_ullage_fraction" in rocket_inputs:
         V_l, n_l, n_v, L_T, V_V = initialize_state_vector_using_ullage(rocket_inputs, v_l, v_v, m_o_tot_0, W_o, A_T)
         rocket_inputs["tank_internal_length"] = float(L_T)
     
     # ensure tank isn't being asked to hold more liquid than it has volume. 
     _validate_tank_fill(n_l, n_v, v_l, v_v, m_o_tot_0, W_o, A_T, rocket_inputs)
+
+    # add for the results JSON later
+    rocket_inputs["tank_liquid_volume"] = float(V_l)
+    rocket_inputs["tank_ullage_volume"] = float(V_V)
+    rocket_inputs["tank_volume"] = float(V_l + V_V)
     
     # INITIALIZE CV4: combustion chamber variables [r_f, m_o, m_f, p_C]
     L_f = rocket_inputs["chamber_fuel_length"]
@@ -62,6 +69,7 @@ def initialize_state_vector(rocket_inputs: dict, constants_dict: dict, get_N2O_p
         m_f_tot = rocket_inputs["chamber_fuel_mass"]
         p_f = rocket_inputs["chamber_fuel_density"]
         r_f = math.sqrt(R_f**2 - m_f_tot/(math.pi*p_f*L_f)) 
+        rocket_inputs["chamber_fuel_internal_radius"] = float(r_f)
         
     m_f = 0.0 # initial fuel in the chamber gas
     m_o = 0.0 # initial oxidizer in the chamber gas
@@ -142,8 +150,13 @@ def compute_rocket_variables(rocket_inputs):
     rocket_inputs["drogue_parachute_frontal_area"] = math.pi * rocket_inputs["drogue_parachute_radius"] ** 2
     rocket_inputs["main_parachute_frontal_area"] = math.pi * rocket_inputs["main_parachute_radius"] ** 2
     rocket_inputs["rocket_frontal_area"] = math.pi * rocket_inputs["rocket_outer_radius"] ** 2
+    rocket_inputs["nozzle_throat_area"] = math.pi * rocket_inputs["nozzle_throat_radius"] ** 2
+    rocket_inputs["nozzle_exit_area"] = math.pi * rocket_inputs["nozzle_exit_radius"] ** 2
     # volumes
     rocket_inputs["pre_chamber_volume"] = math.pi * rocket_inputs["pre_chamber_radius"] ** 2 * rocket_inputs["pre_chamber_length"]
     rocket_inputs["post_chamber_volume"] = math.pi * rocket_inputs["post_chamber_radius"] ** 2 * rocket_inputs["post_chamber_length"]
+    # ratios
+    if rocket_inputs["nozzle_throat_radius"] > 0:
+        rocket_inputs["nozzle_expansion_ratio"] = (rocket_inputs["nozzle_exit_radius"] / rocket_inputs["nozzle_throat_radius"]) ** 2
     
     return rocket_inputs

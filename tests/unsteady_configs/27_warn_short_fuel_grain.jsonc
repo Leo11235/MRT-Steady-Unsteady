@@ -12,7 +12,7 @@
                 "files_exist": ["sim_data.json"],
                 "reaches_phases": ["phase_1", "phase_2"],
                 "value_between": {
-                    "performance.overall.burntime_s": [0.5, 15]
+                    "performance.overall.burntime": [0.5, 15]
                 },
                 "no_nans_in": ["time", "p_C", "F_thrust"]
             }

@@ -1,5 +1,5 @@
 """
-All the main objects of the simulation are created here:
+All the main objects of the simulation are created here
 """
 
 from datetime import datetime
@@ -99,7 +99,7 @@ class History:
         # PHASE_TRANSITION and any ABORT_* event get logged the same way
         if event_type == "PHASE_TRANSITION" or event_type.startswith("ABORT"): 
             self.events_log.append({
-                "t_s": t,
+                "t": t,
                 "event_type": event_type,
                 "message": message})
 
@@ -126,6 +126,22 @@ class History:
         valid_values = valid_values[~np.isnan(valid_values)]
         return float(np.mean(valid_values)) if len(valid_values) > 0 else None
 
+    # time-weighted mean of a series over a window
+    def _time_average(self, time_array: np.ndarray, value_array: np.ndarray, mask: np.ndarray) -> float | None:
+        indices = np.where(mask)[0]
+        if len(indices) < 2:
+            return self._safe_mean(value_array, mask)
+        span = float(time_array[indices[-1]] - time_array[indices[0]])
+        if span <= 0:
+            return self._safe_mean(value_array, mask)
+        return self._integrate_time_series(time_array, value_array, mask) / span
+
+    # average O/F as the ratio of the masses actually consumed
+    def _mass_ratio_OF(self, ox_consumed: float, fuel_consumed: float, OF: np.ndarray, mask: np.ndarray) -> float | None:
+        if fuel_consumed and fuel_consumed > 1e-12 and ox_consumed is not None:
+            return float(ox_consumed / fuel_consumed)
+        return self._safe_mean(OF, mask)
+
     # performs numerical integration for a given set of values over time, used primarily to calculate total impulse from the thrust curve
     def _integrate_time_series(self, time_array: np.ndarray, value_array: np.ndarray, mask: np.ndarray) -> float:
         valid_indices = np.where(mask)[0]
@@ -139,7 +155,7 @@ class History:
         t = self.time_series["time"]
         if not t:
             return {
-                "peak_thrust_N": 0.0, 
+                "peak_thrust": 0.0, 
                 "peak_thrust_to_weight": None, 
                 "altitude_gain": 0.0,
                 "reached_operating_point": False,
@@ -162,8 +178,8 @@ class History:
         reached_operating_point = any(p not in (None, "phase_1") for p in phases)
 
         return {
-            "peak_thrust_N": peak_thrust,
-            "initial_mass_kg": initial_mass,
+            "peak_thrust": peak_thrust,
+            "initial_mass": initial_mass,
             "peak_thrust_to_weight": (peak_thrust / (initial_mass * 9.80665)) if (initial_mass > 0 and peak_thrust > 1) else None,
             "altitude_gain": (max(sy_R) - launch_alt) if sy_R else 0.0,
             "reached_operating_point": reached_operating_point,
@@ -180,18 +196,24 @@ class History:
         #### convert time series lists to NumPy arrays for vectorized math
         t = np.array(self.time_series["time"])
         phases = np.array(self.time_series.get("phase", [None] * len(t)))
-        n_v = np.array(self.time_series["n_v"])
-        n_l = np.array(self.time_series["n_l"])
-        p_C = np.array(self.time_series["p_C"])
-        r_f = np.array(self.time_series["r_f"])
-        sy_R = np.array(self.time_series["sy_R"])
-        vx_R = np.array(self.time_series["vx_R"])
-        vy_R = np.array(self.time_series["vy_R"])
+        n_v = np.array(self.time_series["n_v"]) # vapor moles in tank
+        n_l = np.array(self.time_series["n_l"]) # liquid moles 
+        p_C = np.array(self.time_series["p_C"]) # chamber pressure
+        r_f = np.array(self.time_series["r_f"]) # inner fuel radius
+        m_o_c = np.array(self.time_series["m_o"]) # ox mass
+        m_f_c = np.array(self.time_series["m_f"]) # fuel mass
+        cstar = np.array(self.derived_series.get("cstar", np.full(len(t), np.nan))) # cstar efficiency
+        F_thrust = np.array(self.derived_series.get("F_thrust", np.zeros(len(t)))) # thrust
+        OF = np.array(self.derived_series.get("OF", np.full(len(t), np.nan))) # OF ratio
+        T_c = np.array(self.derived_series.get("T_c", np.full(len(t), np.nan))) # chamber temp
+        sx_R = np.array(self.time_series["sx_R"]) # horizontal distance from launchsite
+        sy_R = np.array(self.time_series["sy_R"]) # altitude
+        vx_R = np.array(self.time_series["vx_R"]) # horizontal velocity
+        vy_R = np.array(self.time_series["vy_R"]) # vertical velocity
+        ax_R = np.array(self.derived_series.get("ax_R", np.full(len(t), np.nan))) # horizontal acceleration
+        ay_R = np.array(self.derived_series.get("ay_R", np.full(len(t), np.nan))) # vertical acceleration
+        a_mag = np.sqrt(ax_R**2 + ay_R**2) # acceleration magnitude
         
-        F_thrust = np.array(self.derived_series.get("F_thrust", np.zeros(len(t))))
-        OF = np.array(self.derived_series.get("OF", np.full(len(t), np.nan)))
-        T_c = np.array(self.derived_series.get("T_c", np.full(len(t), np.nan)))
-
         #### extract initial constants
         ri = self.static_data
         launch_alt = ri.get("launch_site_altitude_asl", 0.0)
@@ -231,6 +253,21 @@ class History:
         fuel_remaining = math.pi * rho_f * L_f * (R_f**2 - r_f_burnout**2)
         fuel_consumed = fuel_mass_initial - fuel_remaining
 
+        # peak acceleration during burn
+        peak_acceleration = self._safe_max(a_mag, burn_mask) or 0.0
+
+        # Isp (total)
+        g0 = 9.80665
+        propellant_consumed = ox_consumed + fuel_consumed
+        specific_impulse = (total_impulse / (g0 * propellant_consumed)) if propellant_consumed > 1e-9 else 0.0
+
+        # c* is only meaningful once there is actually gas in the chamber. ignore portions of the run where CV5 assumes 1000 m/s
+        combusting = burn_mask & (m_o_c >= 1e-4) & (m_f_c >= 1e-4)
+        # logged series is the real c*
+        eta_cstar = ri.get("chamber_cstar_efficiency", 1.0) or 1.0
+        average_cstar_actual = self._time_average(t, cstar, combusting)
+        average_cstar_theoretical = ((average_cstar_actual / eta_cstar) if average_cstar_actual is not None else None)
+
         #### calculate per-phase mtrics
         by_phase = {}
         for phase_name in ALL_PHASES:
@@ -242,9 +279,9 @@ class History:
             phase_duration = float(t[idx[-1]] - t[idx[0]])
 
             entry = {
-                "t_start_s": float(t[idx[0]]),
-                "t_end_s": float(t[idx[-1]]),
-                "duration_s": phase_duration,
+                "t_start": float(t[idx[0]]),
+                "t_end": float(t[idx[-1]]),
+                "duration": phase_duration,
             }
 
             if phase_name in BURN_PHASES:
@@ -253,45 +290,50 @@ class History:
                 phase_fuel_consumed = math.pi * rho_f * L_f * (float(r_f[idx[-1]])**2 - float(r_f[idx[0]])**2)
 
                 entry.update({
-                    "total_impulse_Ns": phase_impulse,
-                    "peak_thrust_N": self._safe_max(F_thrust, mask) or 0.0,
-                    "average_thrust_N": (phase_impulse / phase_duration) if phase_duration > 0 else 0.0,
-                    "peak_chamber_pressure_Pa": self._safe_max(p_C, mask) or 0.0,
-                    "average_OF_ratio": self._safe_mean(OF, mask),
-                    "peak_chamber_temperature_K": self._safe_max(T_c, mask),
-                    "ox_mass_consumed_kg": float(phase_ox_consumed),
-                    "fuel_mass_consumed_kg": float(phase_fuel_consumed),
+                    "total_impulse": phase_impulse,
+                    "peak_thrust": self._safe_max(F_thrust, mask) or 0.0,
+                    "average_thrust": (phase_impulse / phase_duration) if phase_duration > 0 else 0.0,
+                    "peak_chamber_pressure": self._safe_max(p_C, mask) or 0.0,
+                    "average_OF_ratio": self._mass_ratio_OF(phase_ox_consumed, phase_fuel_consumed, OF, mask),
+                    "peak_chamber_temperature": self._safe_max(T_c, mask),
+                    "ox_mass_consumed": float(phase_ox_consumed),
+                    "fuel_mass_consumed": float(phase_fuel_consumed),
                 })
 
             elif phase_name in DESCENT_PHASES:
                 v_mag = np.sqrt(vx_R[mask]**2 + vy_R[mask]**2)
                 entry.update({
-                    "peak_velocity_ms": float(np.max(v_mag)) if len(v_mag) > 0 else 0.0,
-                    "terminal_velocity_ms": float(v_mag[-1]) if len(v_mag) > 0 else 0.0,
+                    "peak_velocity": float(np.max(v_mag)) if len(v_mag) > 0 else 0.0,
+                    "terminal_velocity": float(v_mag[-1]) if len(v_mag) > 0 else 0.0,
                 })
 
             by_phase[phase_name] = entry
 
         return {
             "overall": {
-                "burntime_s": burntime,
-                "total_impulse_Ns": total_impulse,
-                "peak_thrust_N": peak_thrust,
-                "average_thrust_N": (total_impulse / burntime) if burntime > 0 else 0.0,
-                "peak_chamber_pressure_Pa": self._safe_max(p_C, burn_mask) or 0.0,
-                "peak_chamber_temperature_K": self._safe_max(T_c, burn_mask),
-                "average_OF_ratio": self._safe_mean(OF, burn_mask),
+                "burntime": burntime,
+                "total_impulse": total_impulse,
+                "peak_thrust": peak_thrust,
+                "average_thrust": (total_impulse / burntime) if burntime > 0 else 0.0,
+                "peak_chamber_pressure": self._safe_max(p_C, burn_mask) or 0.0,
+                "peak_chamber_temperature": self._safe_max(T_c, burn_mask),
+                "average_OF_ratio": self._mass_ratio_OF(ox_consumed, fuel_consumed, OF, burn_mask),
+                "peak_acceleration": peak_acceleration,
+                "specific_impulse": specific_impulse,
+                "average_cstar_actual": average_cstar_actual,
+                "average_cstar_theoretical": average_cstar_theoretical,
                 "pad_thrust_to_weight": pad_T_W,
-                "apogee_m_asl": float(np.max(sy_R)) if len(sy_R) > 0 else 0.0,
-                "apogee_m_agl": (float(np.max(sy_R)) - launch_alt) if len(sy_R) > 0 else 0.0,
-                "ox_mass_available_kg": ox_mass_initial,
-                "fuel_mass_available_kg": fuel_mass_initial,
-                "ox_mass_consumed_kg": float(ox_consumed),
-                "fuel_mass_consumed_kg": float(fuel_consumed),
-                "ox_mass_remaining_kg": float(n_ox_burnout * W_o),
-                "fuel_mass_remaining_kg": float(fuel_remaining),
-                "total_propellant_available_kg": ox_mass_initial + fuel_mass_initial,
-                "total_propellant_consumed_kg": float(ox_consumed + fuel_consumed),
+                "apogee_asl": float(np.max(sy_R)) if len(sy_R) > 0 else 0.0,
+                "apogee_agl": (float(np.max(sy_R)) - launch_alt) if len(sy_R) > 0 else 0.0,
+                "landing_downrange": float(abs(sx_R[-1])) if len(sx_R) > 0 else 0.0,
+                "ox_mass_available": ox_mass_initial,
+                "fuel_mass_available": fuel_mass_initial,
+                "ox_mass_consumed": float(ox_consumed),
+                "fuel_mass_consumed": float(fuel_consumed),
+                "ox_mass_remaining": float(n_ox_burnout * W_o),
+                "fuel_mass_remaining": float(fuel_remaining),
+                "total_propellant_available": ox_mass_initial + fuel_mass_initial,
+                "total_propellant_consumed": float(ox_consumed + fuel_consumed),
             },
             "by_phase": by_phase
         }
@@ -315,11 +357,7 @@ class History:
         metadata["total_simulation_time"] = self.time_series["time"][-1]
         return metadata
 
-    def export(self, rocket_inputs: dict, 
-               finalized_warnings: dict, 
-               rocket_inputs_metadata: dict, 
-               output_dir_filepath: Path
-               ) -> dict:
+    def export(self, rocket_inputs: dict, finalized_warnings: dict, rocket_inputs_metadata: dict, output_dir_filepath: Path) -> dict:
         """
         Sends results to JSON storage
         """
@@ -384,3 +422,6 @@ class History:
             generate_report(output_dir, sim_results)
 
         return file_path
+
+
+

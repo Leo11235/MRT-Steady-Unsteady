@@ -12,8 +12,8 @@
                 "files_exist": ["sim_data.json"],
                 "reaches_phases": ["phase_1", "phase_2", "phase_3"],
                 "value_between": {
-                    "performance.by_phase.phase_1.duration_s": [0.1, 5.0],
-                    "performance.overall.apogee_m_agl": [2000, 12000]
+                    "performance.by_phase.phase_1.duration": [0.1, 5.0],
+                    "performance.overall.apogee_agl": [2000, 12000]
                 },
                 "no_nans_in": ["time", "p_C", "F_thrust"]
             }
