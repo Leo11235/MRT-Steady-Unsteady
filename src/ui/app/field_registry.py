@@ -176,7 +176,8 @@ _STEADY: tuple[FieldSpec, ...] = (
 
     # kinematics
     FieldSpec("target_apogee", "Target apogee", "distance",
-              "Design apogee. The convergence solver iterates fuel mass until the trajectory reaches this."),
+              "Design apogee, measured ABOVE THE LAUNCH PAD. The convergence solver "
+              "iterates fuel mass until the trajectory reaches this height above the site."),
     FieldSpec("launch_site_altitude", "Launch site altitude", "distance",
               "Launch-site elevation above sea level."),
     FieldSpec("dry_mass", "Dry mass", "mass",

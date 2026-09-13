@@ -73,3 +73,15 @@ def simulate_rocket_ascent(rocket_inputs, rocket_parameters, simulation_settings
         flight_dict["altitude"].append(h_new)
     
     return flight_dict
+
+
+# reduce a finished ascent to the scalars the results page shows
+def record_ascent_results(rocket_inputs, rocket_parameters, flight_dict):
+    altitude = flight_dict["altitude"]
+    # the ascent loop stops the moment velocity goes negative, so the last sample is the apogee
+    apogee_asl = altitude[-1]
+
+    rocket_parameters["reached_apogee"] = apogee_asl
+    rocket_parameters["reached_apogee_agl"] = apogee_asl - rocket_inputs["launch_site_altitude"]
+    rocket_parameters["peak_velocity"] = max(flight_dict["velocity"])
+    rocket_parameters["peak_acceleration"] = max(abs(a) for a in flight_dict["acceleration"])

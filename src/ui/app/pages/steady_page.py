@@ -102,7 +102,11 @@ class SteadyPage(InputPage):
         inputs = results.get("rocket_inputs") or {}
         return show_apogee_shortfall(
             self,
-            reached=params.get("reached_apogee"),
+            # AGL, because target_apogee is AGL. reached_apogee is the
+            # sea-level number and is only a fallback for runs written before
+            # the AGL key existed, where it is the best available.
+            reached=params.get("reached_apogee_agl",
+                               params.get("reached_apogee")),
             target=inputs.get("target_apogee"),
             system=self.system,
             # The file is in MRT units when the run's output_units said so, so

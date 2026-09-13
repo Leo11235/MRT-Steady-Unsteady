@@ -15,6 +15,7 @@ def CV3_calculations(rocket_inputs, rocket_parameters, simulation_settings, cons
     rocket_parameters["average_fuel_mass_flow_rate"] = calculate_Mf(rocket_inputs, rocket_parameters)
     rocket_parameters["total_propellant_mass_flow_rate"] = rocket_inputs["oxidizer_mass_flow_rate"] + rocket_parameters["average_fuel_mass_flow_rate"]
     rocket_parameters["burntime"] = calculate_Tburn(rocket_inputs, rocket_parameters)
+    rocket_parameters["oxidizer_mass"] = calculate_Mo_total(rocket_inputs, rocket_parameters)
     rocket_parameters["nozzle_throat_area"] = calculate_At(rocket_inputs, rocket_parameters, constants_dict)
     rocket_parameters["nozzle_throat_radius"] = calculate_Rt(rocket_inputs, rocket_parameters)
 
@@ -26,6 +27,7 @@ def CV3_calculations(rocket_inputs, rocket_parameters, simulation_settings, cons
     rocket_parameters["nozzle_gas_exit_mach_number"] = calculate_Me(rocket_inputs, rocket_parameters)
     rocket_parameters["nozzle_exit_area"] = calculate_Ae(rocket_inputs, rocket_parameters)
     rocket_parameters["nozzle_exit_radius"] = calculate_Re(rocket_inputs, rocket_parameters)
+    rocket_parameters["nozzle_expansion_ratio"] = calculate_expansion_ratio(rocket_parameters)
     rocket_parameters["nozzle_gas_exit_temperature"] = calculate_Te(rocket_inputs, rocket_parameters)
     rocket_parameters["nozzle_gas_exit_velocity"] = calculate_Ve(rocket_inputs, rocket_parameters, constants_dict)
     rocket_parameters["thrust"] = calculate_F(rocket_inputs, rocket_parameters, constants_dict)
@@ -70,6 +72,19 @@ def calculate_fuel_mass(rocket_inputs, rocket_parameters):
     return pi * Lf * (Re ** 2 - Ri0 ** 2) * p
 
 # average mass flow rate
+def calculate_Mo_total(rocket_inputs, rocket_parameters):
+    Mo = rocket_inputs["oxidizer_mass_flow_rate"]
+    t = rocket_parameters["burntime"]
+
+    return Mo * t
+
+# nozzle expansion ratio, exit area over throat area
+def calculate_expansion_ratio(rocket_parameters):
+    At = rocket_parameters["nozzle_throat_area"]
+    Ae = rocket_parameters["nozzle_exit_area"]
+
+    return Ae / At
+
 def calculate_Mf(rocket_inputs, rocket_parameters):
     Mo = rocket_inputs["oxidizer_mass_flow_rate"]
     a = rocket_inputs["regression_rate_scaling_coefficient"]
@@ -197,10 +212,9 @@ def calculate_Ns(rocket_inputs, rocket_parameters):
 def calculate_Mw(rocket_inputs, rocket_parameters):
     Md = rocket_inputs["dry_mass"]
     Mf = rocket_parameters["fuel_mass"]
-    t = rocket_parameters["burntime"]
-    Mo = rocket_inputs["oxidizer_mass_flow_rate"]
+    Mo = rocket_parameters["oxidizer_mass"]
 
-    Mw = Md + Mf + Mo * t
+    Mw = Md + Mf + Mo
     return Mw
 
 # thrust to weight ratio

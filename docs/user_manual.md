@@ -135,7 +135,7 @@ Download the latest [`MRT-Steady-Unsteady-Setup.exe`](https://github.com/Leo1123
     </tr>
     <tr>
       <td>Target apogee</td>
-      <td>The altitude the fuel mass convergence solver iterates toward. IREC and Launch Canada entries usually aim for 10,000 - 30,000 ft.</td>
+      <td>The altitude the fuel mass convergence solver iterates toward, measured above the launch pad rather than above sea level. IREC and Launch Canada entries usually aim for 10,000 - 30,000 ft.</td>
     </tr>
     <tr>
       <td>Launch site altitude</td>

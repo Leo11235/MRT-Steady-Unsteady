@@ -474,6 +474,9 @@ def psi_to_Pa(value): return convert(value, "psi", "Pa")
 def ms_to_fts(value): return convert(value, "m/s", "ft/s")
 def fts_to_ms(value): return convert(value, "ft/s", "m/s")
 
+def ms2_to_fts2(value): return convert(value, "m/s^2", "ft/s^2")
+def fts2_to_ms2(value): return convert(value, "ft/s^2", "m/s^2")
+
 def K_to_C(value): return convert(value, "K", "C")
 def C_to_K(value): return convert(value, "C", "K")
 
