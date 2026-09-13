@@ -6,6 +6,7 @@ __pycache__/
 user_data/ui_settings.json
 user_data/simulation_configs
 user_data/simulation_results
+user_data/crash_log.txt
 
 # everything the build produces lives in build_tools/
 build_tools/build/

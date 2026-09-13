@@ -40,9 +40,10 @@ import customtkinter as ctk
 from src.ui.app import settings as user_settings
 from src.ui.app import theme
 from src.ui.app.pages.placeholder import PlaceholderPage
-from src.ui.app.services import recent_presets
+from src.ui.app.services import crash_guard, recent_presets
 from src.ui.app.services.shortcuts import ShortcutRouter, load_bindings
 from src.ui.app.widgets.confirm_button import ConfirmButton
+from src.ui.app.widgets.word_edit import enable_word_editing
 
 
 @dataclass(frozen=True)
@@ -84,6 +85,12 @@ class AppShell(ctk.CTk):
         ctk.set_appearance_mode(theme.APPEARANCE)
         ctk.set_default_color_theme(theme.COLOR_THEME)
 
+        # Before anything is drawn. Tk answers a failed bitmap allocation with
+        # a message box and abort() rather than an exception; this replaces
+        # that with a line in user_data/crash_log.txt and a quiet exit. See
+        # services/crash_guard.py, including what it cannot do.
+        crash_guard.install()
+
         self.title(f"{theme.APP_TITLE}")
         self.minsize(*theme.MIN_WINDOW)
         # Deliberately no geometry() call before maximising. An explicit
@@ -91,6 +98,10 @@ class AppShell(ctk.CTk):
         # Windows setups Tk flashes it during startup — you see a full-screen
         # blank window snap down to 1100x720 and back.
         self._maximize()
+
+        # Control-BackSpace and Control-Delete, for every entry in the app. Tk
+        # binds neither, so without this they quietly do nothing useful.
+        enable_word_editing(self)
 
         self._build_top_bar()
 

@@ -146,6 +146,14 @@ class CollapsibleSection(ctk.CTkFrame):
     def is_open(self) -> bool:
         return self._open
 
+    def set_on_toggle(self, callback: Optional[Callable[[bool], None]]) -> None:
+        """Replace the toggle callback after construction.
+
+        The results page wires this up so it can tell a user's own open/shut
+        choice apart from one the search box made on their behalf.
+        """
+        self._on_toggle = callback
+
     def set_subtitle(self, text: str) -> None:
         """Update the grey text beside the title.
 

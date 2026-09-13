@@ -16,7 +16,7 @@ inputs — fall back to the suffix parser below.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import customtkinter as ctk
 
@@ -405,6 +405,15 @@ class KVRow(ctk.CTkFrame):
         self._value_widget.configure(text=self._compose_value(self._raw, unit_label))
 
     @property
+    def label(self) -> str:
+        """The row's display name, after any per-row override.
+
+        What the search matches against: the name of the thing, not the section
+        it sits in or the number it currently holds.
+        """
+        return self._label
+
+    @property
     def raw_value(self) -> Any:
         """The number behind the label, in the unit currently on screen.
 
@@ -420,17 +429,196 @@ class KVRow(ctk.CTkFrame):
         return self._unit_label
 
     def matches(self, query: str) -> bool:
-        """Case-insensitive search across the label, the raw key and the value.
+        """Whether this row's NAME contains the query.
 
-        Including the raw key means someone who knows the JSON can search for
-        `apogee_m_agl` and find the row labelled "Apogee".
+        Name only. Searching "chamber" should find the values actually called
+        chamber something, not every row that happens to live inside CV4, and not
+        every row whose current number contains those digits.
         """
         if not query or not query.strip():
             return True
-        needle = query.lower().strip()
-        haystack = "\n".join((
-            self._name_widget.cget("text"),
-            self.key,
-            str(self._value_widget.cget("text")),
-        )).lower()
-        return needle in haystack
+        return query.lower().strip() in self._label.lower()
+
+
+
+# =============================================================================
+# Search results
+# =============================================================================
+#
+# One line per hit:
+#
+#     Hardware & Parameters › CV6: Trajectory › Flight parameters ›
+#     Horizontal distance at landing ......... 4 210.5 m
+#
+# The breadcrumb is muted and the name is not, because the name is what was
+# searched for and the path is only there to say where to click next time.
+#
+# TWO RULES, BOTH LEARNED THE HARD WAY
+#
+# A row never writes to itself from inside a <Configure> handler. The dot
+# leader has to be measured, and measuring inside the event that layout fires
+# means every measurement can provoke the next one; the results page calls
+# draw_dots() from a debounced timer instead, so a write lands after layout has
+# settled rather than in the middle of it.
+#
+# No cell is ever allowed to reach zero width. Tk asks Windows for an
+# off-screen bitmap the size of the widget it is drawing, CreateDIBSection
+# refuses a zero-sized one, and Tk's response to that is to panic and abort the
+# process rather than to raise something Python could catch. Hence grid with a
+# minsize on every column, rather than pack with an expanding filler that gets
+# squeezed to nothing the moment a row's content overflows.
+#
+# Rows are also reused rather than rebuilt: show() re-points an existing row at
+# a different result. Building three hundred CustomTkinter widgets per
+# keystroke, each one a canvas, is what put the process near that limit.
+
+_CRUMB = "  ›  "          # single right-pointing angle quote, with air around it
+
+# How much wider than measured to assume a dot is, and how many to leave off
+# the end. Both exist so a row underfills rather than overflows: the font is
+# measured at its nominal size while Tk draws it scaled, so the measurement is
+# an underestimate on any display that is not at 100%.
+_DOT_FUDGE = 1.15
+_DOT_HEADROOM = 4
+
+
+class SearchResultRow(ctk.CTkFrame):
+    """One search hit. Built once, then re-pointed with show()."""
+
+    def __init__(self, master, *, system: str = "SI",
+                 native_system: str = "SI") -> None:
+        super().__init__(master, fg_color="transparent")
+
+        self.key = ""
+        self._label = ""
+        self._value: Any = None
+        self._raw: Any = None
+        self._text_builder: Optional[Callable[[str], str]] = None
+        self._si_unit: Optional[str] = None
+        self._category: Optional[str] = None
+        self._scale = 1.0
+        self._system = system
+        self._native_system = native_system
+        self._dot_count = -1
+
+        for column, weight, minsize in ((0, 0, 8), (1, 0, 8), (2, 1, 16), (3, 0, 8)):
+            self.grid_columnconfigure(column, weight=weight, minsize=minsize)
+
+        self._crumb_widget = ctk.CTkLabel(self, text="", anchor="w",
+                                          text_color=theme.TEXT_MUTED)
+        self._crumb_widget.grid(row=0, column=0, sticky="w")
+
+        self._name_widget = ctk.CTkLabel(self, text="", anchor="w")
+        self._name_widget.grid(row=0, column=1, sticky="w")
+
+        self._dots = ctk.CTkLabel(self, text="", anchor="w",
+                                  text_color=theme.TEXT_MUTED)
+        self._dots.grid(row=0, column=2, sticky="ew", padx=theme.PAD_XS)
+
+        self._value_widget = ctk.CTkLabel(self, text="", anchor="e")
+        self._value_widget.grid(row=0, column=3, sticky="e",
+                                padx=(theme.PAD_S, 0))
+
+    # ------------------------------------------------------------------
+
+    def show(self, *, key: str, label: str, value: Any, path: tuple,
+             system: str, native_system: str,
+             text_builder: Optional[Callable[[str], str]] = None) -> None:
+        """Point this row at a result. Replaces text; creates no widgets."""
+        self.key = key
+        self._label = label
+        self._value = value
+        self._system = system
+        self._native_system = native_system
+        self._text_builder = text_builder
+        if text_builder is None:
+            self._si_unit = describe(key)[1]
+            self._category = category_of_key(key)
+            self._scale = display_scale_of(key)
+        else:
+            # A verdict in words, or two numbers sharing one unit. Nothing in
+            # the registry describes those; the builder is the whole answer.
+            self._si_unit, self._category, self._scale = None, None, 1.0
+
+        self._crumb_widget.configure(
+            text=(_CRUMB.join(path) + _CRUMB) if path else "")
+        self._name_widget.configure(text=label)
+        self._dot_count = -1
+        self._dots.configure(text="")
+        self._write_value()
+
+    def update_system(self, system: str) -> None:
+        """Re-convert for a new unit system, same as an ordinary row."""
+        self._system = system
+        self._write_value()
+
+    @property
+    def raw_value(self) -> Any:
+        return self._raw
+
+    @property
+    def label(self) -> str:
+        return self._label
+
+    # ------------------------------------------------------------------
+
+    def _write_value(self) -> None:
+        if self._text_builder is not None:
+            try:
+                text = self._text_builder(self._system)
+            except Exception:                   # noqa: BLE001
+                text = "—"
+            self._raw = text
+            self._value_widget.configure(text=text)
+            return
+
+        scaled = self._value
+        if (self._scale != 1.0 and isinstance(self._value, (int, float))
+                and not isinstance(self._value, bool)):
+            scaled = self._value * self._scale
+        raw, unit = value_for_display(scaled, self._si_unit, self._system,
+                                      self._category, self._native_system)
+        self._raw = raw
+        shown = pretty_unit(unit)
+        text = format_scalar(raw)
+        self._value_widget.configure(
+            text=f"{text} {shown}" if shown and text != "—" else text)
+
+    def draw_dots(self, available: int) -> None:
+        """Fill the gap with a leader, given the width the row has to work in.
+
+        Called from the page, never from an event on this widget. `available`
+        is the width of the list, not of this row: asking the row how wide it
+        is means asking about a layout this call is about to change.
+        """
+        if available <= 1:
+            return
+        try:
+            used = (self._crumb_widget.winfo_reqwidth()
+                    + self._name_widget.winfo_reqwidth()
+                    + self._value_widget.winfo_reqwidth()
+                    + 6 * theme.PAD_S)
+            count = max(int((available - used) // self._dot_width())
+                        - _DOT_HEADROOM, 0)
+            if count == self._dot_count:
+                return
+            self._dot_count = count
+            self._dots.configure(text="." * count)
+        except Exception:                       # noqa: BLE001
+            self._dot_count = 0
+            self._dots.configure(text="")
+
+    def _dot_width(self) -> int:
+        """Width of one dot in real pixels, rounded up.
+
+        cget("font") reports the nominal size; CustomTkinter draws it
+        multiplied by the display's widget scaling, so the raw measurement is
+        an underestimate on a display that is not at 100%. Overestimating
+        costs a few dots. Underestimating overflows the row.
+        """
+        font = self._dots.cget("font")
+        try:
+            scaling = ctk.ScalingTracker.get_widget_scaling(self)
+        except Exception:                       # noqa: BLE001
+            scaling = 1.0
+        return max(int(round(font.measure(".") * scaling * _DOT_FUDGE)), 1)

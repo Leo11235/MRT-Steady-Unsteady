@@ -43,10 +43,21 @@ from src.ui.app import backend_bridge, theme
 from src.ui.app import settings as user_settings
 from src.ui.app.services import os_utils
 from src.ui.app.widgets.help_icon import HelpIcon
-from src.ui.app.widgets.kv_row import KVRow, describe, native_system_of, format_scalar
+from src.ui.app.widgets.kv_row import (KVRow, SearchResultRow, describe,
+                                       native_system_of, format_scalar)
 from src.ui.app.widgets.search_entry import SearchEntry
 
 UNIT_SYSTEMS = ("SI", "IMP", "MRT")
+
+# How long typing has to stop before the results are rebuilt. Long enough that a
+# burst of typing costs one rebuild rather than one per character, short enough
+# that it still reads as instant.
+_SEARCH_DEBOUNCE_MS = 250
+# Separate timer for the dot leader, so a resize redraws the leaders without
+# rebuilding the list.
+_SEARCH_DOTS_MS = 120
+# A query matching everything is a query nobody reads to the end of.
+_SEARCH_MAX_ROWS = 300
 
 _SIDEBAR_MIN_W = 220
 _ACTION_W = 200
@@ -73,6 +84,19 @@ class ResultsPage(ctk.CTkFrame):
         # Rows that re-unit with the rest but are never filtered or exported:
         # the summary box and the per-phase grid. See add_row(filterable=...).
         self._unfiltered_rows: list[KVRow] = []
+        self._sections: list = []
+        # Every searchable value, as (path, label, key, value, text_builder).
+        # Built as the tabs render; see set_row_path() and the Search section
+        # below. A builder is set only for rows that are not a plain number.
+        self._search_index: list = []
+        self._search_rows: list = []
+        # Result rows are built once and re-pointed at whatever matches next.
+        # See _render_search() for why they are not rebuilt.
+        self._search_pool: list = []
+        self._row_path: tuple = ()
+        self._search_open = False
+        self._search_after = None
+        self._dots_after = None
         # Labels that aren't rows but still carry converted numbers — section
         # headers naming a sweep point's coordinates, for instance. Each is a
         # (widget, builder) pair; the builder is re-run on a unit change.
@@ -96,6 +120,7 @@ class ResultsPage(ctk.CTkFrame):
 
         self._build_frame()
         self._build_tabs()
+        self._build_search_overlay()
 
     # ==================================================================
     # Frame
@@ -110,9 +135,9 @@ class ResultsPage(ctk.CTkFrame):
         filter_row.grid(row=0, column=0, columnspan=2, sticky="ew",
                         padx=theme.PAD_M, pady=(theme.PAD_M, 0))
         SearchEntry(filter_row, textvariable=self._filter_var,
-                    placeholder="Filter by name, key or value…").pack(
+                    placeholder="Search every tab by name…").pack(
             fill="x", expand=True)
-        self._filter_var.trace_add("write", lambda *_: self._apply_filter())
+        self._filter_var.trace_add("write", lambda *_: self._on_filter_changed())
 
         self.tabs = ctk.CTkTabview(self, anchor="w")
         self.tabs.grid(row=1, column=0, sticky="nsew",
@@ -225,8 +250,32 @@ class ResultsPage(ctk.CTkFrame):
                 others = [n for n in self._tab_order
                           if n in shown and n != name]
                 if others:
-                    self.tabs.set(others[0])
+                    self._select_tab(others[0])
             bar.delete(name)
+
+    def _select_tab(self, name: str) -> None:
+        """Select a tab, then make sure it is still the one on screen.
+
+        CTkTabview.set() ends with `after(100, forget every tab but this one)`.
+        Two selections inside that window leave the first timer to un-grid the
+        tab the second one just showed, and the page goes blank with its button
+        still lit. Re-asserting the current tab once the timers have run costs
+        one idle callback and closes that hole.
+        """
+        try:
+            self.tabs.set(name)
+        except Exception:                       # noqa: BLE001
+            return
+        try:
+            self.after(150, self._reassert_tab)
+        except Exception:                       # noqa: BLE001
+            pass
+
+    def _reassert_tab(self) -> None:
+        try:
+            self.tabs._set_grid_current_tab()   # noqa: SLF001
+        except Exception:                       # noqa: BLE001
+            pass
 
     # ==================================================================
     # Subclass hooks
@@ -278,11 +327,16 @@ class ResultsPage(ctk.CTkFrame):
 
             self.run_path = json_path
             self._rows.clear()
+            self._unfiltered_rows.clear()
             self._dynamic_labels.clear()
+            # Without this the next run's values are indexed on top of the last
+            # one's, and searching then offers rows from a file you closed.
+            self._reset_search()
+            self._row_path = ()
 
             self.pump("Rendering results…")
             self._refresh_panels()
-            self._apply_filter()
+            self._on_filter_changed()
             self._set_status(f"{backend_bridge.run_display_name(path)}  ·  "
                              f"{json_path.stat().st_size // 1024} KB")
         finally:
@@ -303,15 +357,20 @@ class ResultsPage(ctk.CTkFrame):
             child.destroy()
         self._rows = [r for r in self._rows if r.winfo_exists()]
         self._unfiltered_rows = [r for r in self._unfiltered_rows if r.winfo_exists()]
+        self._sections = [s for s in self._sections if s.winfo_exists()]
 
     def add_row(self, parent, key: str, value: Any, *,
-                filterable: bool = True, label: Optional[str] = None) -> KVRow:
+                filterable: bool = True, label: Optional[str] = None,
+                searchable: Optional[bool] = None) -> KVRow:
         """One name/value row, registered for unit switching.
 
-        `filterable=False` keeps the row out of the search filter and out of
-        exports, while still re-uniting with everything else. The summary box and
-        the per-phase grid use it: filtering a twelve-row summary down to one row
-        destroys the thing, and neither is a list you search through.
+        `filterable=False` keeps the row out of exports and out of the list the
+        unit toggle walks as ordinary rows. The summary box and the per-phase
+        grid use it, being fixed layouts rather than lists.
+
+        `searchable` defaults to `filterable` and separates the two: the summary
+        box is not a list you scroll, but its values are still results, and
+        somebody searching for apogee should find it there.
 
         `label` overrides the registry's name, for rows whose meaning depends on
         where they sit rather than on their key.
@@ -323,7 +382,21 @@ class ResultsPage(ctk.CTkFrame):
             self._rows.append(row)
         else:
             self._unfiltered_rows.append(row)
+        if searchable is None:
+            searchable = filterable
+        if searchable:
+            self._register_searchable(key, row.label, value)
         return row
+
+    def add_section(self, parent, title: str, *, start_open: bool = False,
+                    subtitle: str = ""):
+        """A collapsible block. Registered so a reload can forget it cleanly."""
+        from src.ui.app.widgets.section import CollapsibleSection
+
+        section = CollapsibleSection(parent, title, start_open=start_open,
+                                     subtitle=subtitle)
+        self._sections.append(section)
+        return section
 
     def add_dynamic_label(self, widget, build_text) -> None:
         """Register a label whose text depends on the unit system.
@@ -460,7 +533,7 @@ class ResultsPage(ctk.CTkFrame):
                 widget.configure(text=build_text(system))
             except Exception:                   # noqa: BLE001
                 pass
-        self._apply_filter()        # labels changed, so matches may have too
+        self._refresh_search_units()
 
     def _highlight_unit_button(self) -> None:
         """Show which system is active. Selected is solid, the rest outlined."""
@@ -472,25 +545,291 @@ class ResultsPage(ctk.CTkFrame):
                 text_color=("white" if active else theme.TEXT_MUTED),
                 hover_color=theme.ACCENT_SLATE_HOVER if active else theme.CARD_HOVER)
 
-    def _apply_filter(self) -> None:
-        """Show only the rows matching the search box, across every tab."""
-        query = self._filter_var.get()
-        for row in self._rows:
+    # ==================================================================
+    # Search
+    # ==================================================================
+    #
+    # Typing anything moves you to a results view that lists every matching
+    # value as one flat row, each carrying the path you would have clicked
+    # through to reach it.  Clearing the box puts you back where you were.
+    #
+    # It is a separate view rather than a filter over the real tabs because the
+    # real tabs are mostly collapsed sections now: hiding rows inside folded
+    # blocks means typing appears to do nothing, and opening every block that
+    # holds a match rearranges the page under the user.  Building a list is both
+    # simpler and more useful, since a result can then say where it lives.
+
+    def set_row_path(self, *parts: str) -> None:
+        """Where rows added from here on actually live.
+
+        Renderers call this as they walk into a tab, a section and a sub-heading.
+        The parts become the breadcrumb on a search result, so a value found by
+        searching can be found again by clicking.
+        """
+        self._row_path = tuple(p for p in parts if p)
+
+    def add_searchable_text(self, label: str, text_builder,
+                            *, key: str = "") -> None:
+        """Register a result that search should find but that is not a KVRow.
+
+        The summary box builds some of its rows by hand: a verdict in words, a
+        pair of masses sharing one unit. Those are still results. The builder is
+        handed the unit system and returns the text, so a search result showing
+        one re-units exactly like the row it came from.
+        """
+        self._register_searchable(key, label, None, text_builder)
+
+    def _register_searchable(self, key: str, label: str, value: Any,
+                             text_builder=None) -> None:
+        self._search_index.append(
+            (self._row_path, label, key, value, text_builder))
+
+    def _build_search_overlay(self) -> None:
+        """The results view: a panel that covers the current tab's contents.
+
+        Deliberately NOT a tab. It used to be one, and the tab bar is a shared
+        widget: showing the view meant inserting a button, selecting it, and
+        deleting it again on every keystroke. Worse, CTkTabview.set() ends with
+        `after(100, forget every tab except this one)`, so two of those in
+        flight with different names would un-grid the tab you had just returned
+        to. That is the tab that kept coming back empty.
+
+        A placed overlay touches none of it. The tab bar stays live underneath,
+        so clicking a tab still works and the tabview shows it without being
+        told to. Clearing the box just takes the panel away, revealing the tab
+        that was never actually left.
+        """
+        try:
+            background = self.tabs.cget("fg_color")
+        except Exception:                       # noqa: BLE001
+            background = None
+        self._search_overlay = ctk.CTkFrame(
+            self.tabs, corner_radius=0,
+            **({"fg_color": background} if background else {}))
+
+        self._search_header = ctk.CTkLabel(
+            self._search_overlay, text="", anchor="w",
+            text_color=theme.TEXT_MUTED,
+            font=ctk.CTkFont(size=theme.SIZE_SMALL))
+        self._search_header.pack(fill="x", padx=theme.PAD_M,
+                                 pady=(theme.PAD_S, 0))
+
+        self._search_body = ctk.CTkScrollableFrame(self._search_overlay,
+                                                   label_text="")
+        self._search_body.pack(fill="both", expand=True,
+                               padx=theme.PAD_S, pady=theme.PAD_S)
+        try:
+            # add="+", because CustomTkinter has its own Configure binding on
+            # this frame and replacing it breaks scrolling.
+            self._search_body.bind("<Configure>",
+                                   lambda _e: self._schedule_dots(), add="+")
+        except Exception:                       # noqa: BLE001
+            pass
+
+        try:
+            self.tabs.configure(command=self._on_tab_clicked)
+        except Exception:                       # noqa: BLE001
+            pass
+
+    def _current_tab_frame(self):
+        try:
+            return self.tabs.tab(self.tabs.get())
+        except Exception:                       # noqa: BLE001
+            return None
+
+    def _show_search(self) -> None:
+        if self._search_open:
+            return
+        anchor = self._current_tab_frame()
+        try:
+            if anchor is not None:
+                self._search_overlay.place(in_=anchor, x=0, y=0,
+                                           relwidth=1, relheight=1)
+            else:
+                self._search_overlay.place(relx=0, rely=0,
+                                           relwidth=1, relheight=1)
+            self._search_overlay.lift()
+        except Exception:                       # noqa: BLE001
+            return
+        self._search_open = True
+
+    def _hide_search(self) -> None:
+        if not self._search_open:
+            return
+        self._search_open = False
+        try:
+            self._search_overlay.place_forget()
+        except Exception:                       # noqa: BLE001
+            pass
+
+    def _reset_search(self) -> None:
+        """Forget the last run's results without destroying the row widgets."""
+        self._search_index.clear()
+        self._search_rows = []
+        for row in self._search_pool:
             try:
-                if row.matches(query):
-                    if not row.winfo_ismapped():
-                        row.pack(fill="x", pady=1)
-                elif row.winfo_ismapped():
+                if row.winfo_manager():
                     row.pack_forget()
             except Exception:                   # noqa: BLE001
                 pass
+        self._hide_search()
+
+    def _on_tab_clicked(self) -> None:
+        """Clicking a tab abandons the search.
+
+        Nothing here selects anything: the tabview has already shown the tab
+        that was clicked by the time this runs. Emptying the box takes the
+        overlay away, and that is the whole of it.
+        """
+        if self._filter_var.get():
+            self._filter_var.set("")
+
+    def _on_filter_changed(self) -> None:
+        """Called on every keystroke. Does as little as possible.
+
+        Rebuilding the results list per character was enough work to make the
+        typed letter itself appear late. The work is pushed onto a timer, and
+        each new keystroke cancels the pending one, so a burst of typing costs
+        one rebuild at the end of it.
+
+        Emptying the box is the exception: leaving the search is cheap and
+        waiting to do it feels like the page has stuck.
+        """
+        if self._search_after is not None:
+            try:
+                self.after_cancel(self._search_after)
+            except Exception:                   # noqa: BLE001
+                pass
+            self._search_after = None
+        if not (self._filter_var.get() or "").strip():
+            self._apply_filter()
+            return
+        try:
+            self._search_after = self.after(_SEARCH_DEBOUNCE_MS,
+                                            self._apply_filter)
+        except Exception:                       # noqa: BLE001
+            self._apply_filter()
+
+    def _apply_filter(self) -> None:
+        """Rebuild the results view for whatever is in the box."""
+        self._search_after = None
+        query = (self._filter_var.get() or "").strip()
+        if not query:
+            self._hide_search()
+            return
+        self._render_search(query)
+        self._show_search()
+
+    def _render_search(self, query: str) -> None:
+        """One row per match, in the order the tabs present them.
+
+        The query is tested against the value's own name only, never against
+        the breadcrumb. Searching "chamber" should find the things actually
+        called chamber something, not every row that sits inside CV4.
+
+        Rows are reused. The pool grows to the largest result set the session
+        has seen and then stops, so a keystroke costs a few hundred string
+        writes rather than a few hundred widget constructions and as many
+        destructions. That churn is not just slow: every CustomTkinter widget
+        is a canvas, and Tk aborts the process outright if Windows ever
+        refuses it a drawing buffer.
+        """
+        needle = query.lower()
+        hits = [entry for entry in self._search_index
+                if needle in entry[1].lower()]
+        total = len(hits)
+        hits = hits[:_SEARCH_MAX_ROWS]
+
+        if total == 0:
+            self._search_header.configure(
+                text=f"Nothing matching \u201c{query}\u201d.")
+        elif total > len(hits):
+            self._search_header.configure(
+                text=f"{total} results for \u201c{query}\u201d. "
+                     f"Showing the first {len(hits)}.")
+        else:
+            plural = "s" if total != 1 else ""
+            self._search_header.configure(
+                text=f"{total} result{plural} for \u201c{query}\u201d")
+
+        for index, (path, label, key, value, builder) in enumerate(hits):
+            if index < len(self._search_pool):
+                row = self._search_pool[index]
+            else:
+                row = SearchResultRow(self._search_body, system=self.system,
+                                      native_system=self.native_system)
+                self._search_pool.append(row)
+            row.show(key=key, label=label, value=value, path=path,
+                     system=self.system, native_system=self.native_system,
+                     text_builder=builder)
+            if not row.winfo_manager():
+                row.pack(fill="x", pady=1)
+
+        # Hidden rows are always a suffix of the pool, so re-packing them later
+        # in index order puts them back in the order they were built.
+        for row in self._search_pool[len(hits):]:
+            try:
+                if row.winfo_manager():
+                    row.pack_forget()
+            except Exception:                   # noqa: BLE001
+                pass
+
+        self._search_rows = self._search_pool[:len(hits)]
+        self._schedule_dots()
+
+    def _schedule_dots(self) -> None:
+        """Ask for a dot leader pass, later.
+
+        Later matters. Drawing the leader means measuring widgets and then
+        writing to one of them, and a write that happens inside the Configure
+        event that layout fires can provoke the next Configure. Doing it from a
+        timer puts the write after layout has settled instead of inside it.
+        """
+        if self._dots_after is not None:
+            try:
+                self.after_cancel(self._dots_after)
+            except Exception:                   # noqa: BLE001
+                pass
+            self._dots_after = None
+        if not self._search_rows:
+            return
+        try:
+            self._dots_after = self.after(_SEARCH_DOTS_MS, self._draw_dots)
+        except Exception:                       # noqa: BLE001
+            self._draw_dots()
+
+    def _draw_dots(self) -> None:
+        self._dots_after = None
+        try:
+            available = self._search_body.winfo_width() - 4 * theme.PAD_M
+        except Exception:                       # noqa: BLE001
+            return
+        for row in self._search_rows:
+            try:
+                row.draw_dots(available)
+            except Exception:                   # noqa: BLE001
+                pass
+
+    def _refresh_search_units(self) -> None:
+        for row in self._search_rows:
+            try:
+                row.update_system(self.system)
+            except Exception:                   # noqa: BLE001
+                pass
+        self._schedule_dots()
 
     # ==================================================================
     # Actions
     # ==================================================================
 
     def _visible_rows(self) -> list[KVRow]:
-        return [r for r in self._rows if r.winfo_ismapped()]
+        """Every searchable row. Exports cover the whole run, not a search.
+
+        They used to follow the filter, back when searching hid rows in place.
+        A search is now its own view, and exporting whatever happened to match a
+        half-typed word is not what anyone means by "export results".
+        """
+        return list(self._rows)
 
     def _as_table(self) -> list[tuple[str, str, Any]]:
         """(key, label, value) for every visible row.

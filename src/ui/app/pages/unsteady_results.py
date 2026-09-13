@@ -38,7 +38,6 @@ from src.common import output_registry as outputs
 from src.common.unit_labels import pretty_unit
 from src.ui.app import theme
 from src.ui.app.widgets import kv_row
-from src.ui.app.widgets.section import CollapsibleSection
 from src.ui.app import backend_bridge
 from src.ui.app.pages.results_page import ResultsPage
 from src.ui.app.services import os_utils
@@ -215,6 +214,8 @@ _PHASE_ROW_GROUPS: tuple = (
 # The summary box reads as one object rather than as the top of a list, so its
 # border is heavy and its contents sit well inside it. 38 px is about a centimetre
 # at the 96 dpi these screens report.
+_HARDWARE_TAB = "Hardware & Parameters"
+
 _BOX_BORDER = 6
 _BOX_INSET = 38
 # The logo sits in the right half of the card. The rows are given a matching
@@ -240,7 +241,7 @@ class UnsteadyResultsPage(ResultsPage):
 
     def _build_tabs(self) -> None:
         self._overall = self.add_tab("Overall")
-        self._hardware = self.add_tab("Hardware & Parameters")
+        self._hardware = self.add_tab(_HARDWARE_TAB)
         self._phases = self.add_tab("Per phase")
         self._events = self.add_tab("Events")
         self._warnings = self.add_tab("Warnings")
@@ -366,9 +367,11 @@ class UnsteadyResultsPage(ResultsPage):
     def _render_summary_box(self, overall: dict) -> None:
         """The dozen numbers an engineer checks first, in one bordered card.
 
-        Deliberately neither collapsible nor filterable: it answers "how did this
-        run go", and a search box able to reduce it to one row would be
-        destroying the only fixed point on the page.
+        Deliberately not collapsible and never filtered in place: it answers "how
+        did this run go", and reducing it to one row would destroy the only fixed
+        point on the page. Its values are still indexed for search, under the
+        path "Overall", since the search results are a separate view and finding
+        apogee there costs the box nothing.
         """
         box = ctk.CTkFrame(self._overall, fg_color=theme.CARD_BG,
                            border_color=theme.ACCENT_SLATE,
@@ -381,21 +384,27 @@ class UnsteadyResultsPage(ResultsPage):
                    padx=(_BOX_INSET,
                          _BOX_INSET + (logo_width + _BOX_LOGO_GAP if logo_width else 0)))
 
+        self.set_row_path("Overall")
         for entry in _MAIN_ROWS:
             if entry == "__run__":
                 text, colour = self._run_verdict()
                 self._add_text_row(inner, "Run", text, colour)
+                self.add_searchable_text("Run", lambda _system, t=text: t)
             elif entry == "__level__":
-                level = self._overall_level()
+                level = self._overall_level().capitalize()
                 self._add_text_row(inner, "Overall warning level",
-                                   level.capitalize(), _LEVEL_COLOR.get(level))
+                                   level, _LEVEL_COLOR.get(level.lower()))
+                self.add_searchable_text("Overall warning level",
+                                         lambda _system, t=level: t)
             elif isinstance(entry, tuple):
                 used_key, total_key, label = entry
                 self._add_pair_row(inner, used_key, total_key, label, overall)
             else:
                 value = outputs.value_of(overall, entry)
                 if value is not None:
-                    self.add_row(inner, entry, value, filterable=False)
+                    self.add_row(inner, entry, value,
+                                 filterable=False, searchable=True)
+        self.set_row_path()
 
     def _add_box_logo(self, box) -> int:
         """The team logo, right-aligned inside the summary card.
@@ -438,14 +447,17 @@ class UnsteadyResultsPage(ResultsPage):
         if not rest and not metadata:
             return
 
-        section = CollapsibleSection(self._overall, "Performance", start_open=False)
+        section = self.add_section(self._overall, "Performance")
         section.pack(fill="x", pady=theme.PAD_XS)
+        self.set_row_path("Overall", "Performance")
         for key, value in rest.items():
             self.add_row(section.body, key, value)
         if metadata:
             self.add_heading(section.body, "Run metadata")
+            self.set_row_path("Overall", "Performance", "Run metadata")
             for key, value in metadata.items():
                 self.add_row(section.body, key, value)
+        self.set_row_path()
 
     def _add_pair_row(self, parent, used_key: str, total_key, label: str,
                       overall: dict) -> None:
@@ -461,7 +473,8 @@ class UnsteadyResultsPage(ResultsPage):
             return
         total = outputs.value_of(overall, total_key) if total_key else None
         if total is None:
-            self.add_row(parent, used_key, used, filterable=False, label=label)
+            self.add_row(parent, used_key, used, filterable=False,
+                         searchable=True, label=label)
             return
 
         row = ctk.CTkFrame(parent, fg_color="transparent")
@@ -472,9 +485,10 @@ class UnsteadyResultsPage(ResultsPage):
         value.pack(side="left", fill="x", expand=True)
 
         name.configure(text=label)
-        self.add_dynamic_label(
-            value,
-            lambda system, u=used, v=total, k=used_key: self._pair_text(u, v, k, system))
+        builder = (lambda system, u=used, v=total, k=used_key:
+                   self._pair_text(u, v, k, system))
+        self.add_dynamic_label(value, builder)
+        self.add_searchable_text(label, builder, key=used_key)
 
     def _pair_text(self, used, total, key: str, system: str) -> str:
         """ "14.3 / 15.5 kg". One unit, since both halves share it."""
@@ -527,7 +541,7 @@ class UnsteadyResultsPage(ResultsPage):
         models = inputs.get("CV_models") or {}
 
         for cv_key, title, groups in _HARDWARE:
-            section = CollapsibleSection(self._hardware, title, start_open=False)
+            section = self.add_section(self._hardware, title)
             section.pack(fill="x", pady=theme.PAD_XS)
 
             model = models.get(cv_key)
@@ -535,7 +549,9 @@ class UnsteadyResultsPage(ResultsPage):
                 self._add_text_row(section.body, "Physics model", str(model))
 
             if cv_key == "CV2_valve":
+                self.set_row_path(_HARDWARE_TAB, title)
                 self._render_valve(section.body, model, inputs)
+                self.set_row_path()
                 continue
 
             for heading, keys in groups:
@@ -552,8 +568,10 @@ class UnsteadyResultsPage(ResultsPage):
                     continue
                 if heading:
                     self.add_heading(section.body, heading)
+                self.set_row_path(_HARDWARE_TAB, title, heading)
                 for key, value, label in rendered:
                     self.add_row(section.body, key, value, label=label)
+                self.set_row_path()
 
     def _render_valve(self, parent, model, inputs: dict) -> None:
         """CV2 is the one block whose contents depend on which model ran.

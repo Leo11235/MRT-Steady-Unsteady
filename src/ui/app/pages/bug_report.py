@@ -126,20 +126,20 @@ class BugReportPage(ctk.CTkFrame):
         wrap.place(relx=0.5, rely=0.02, anchor="n",
                    relwidth=0.78, relheight=0.96)
 
-        ctk.CTkLabel(
-            wrap, text="Tell us what went wrong.",
-            font=ctk.CTkFont(size=theme.SIZE_TITLE, weight="bold"),
-            anchor="w",
-        ).pack(fill="x", pady=(theme.PAD_M, theme.PAD_S))
+        # ctk.CTkLabel(
+        #     wrap, text="Tell us what went wrong.",
+        #     font=ctk.CTkFont(size=theme.SIZE_TITLE, weight="bold"),
+        #     anchor="w",
+        # ).pack(fill="x", pady=(theme.PAD_M, theme.PAD_S))
 
-        ctk.CTkLabel(
-            wrap,
-            text="Reports go to the MRT Steady-Unsteady maintainer. A copy is "
-                 "also written to user_data/bug_reports/ on this machine.",
-            text_color=theme.TEXT_MUTED,
-            font=ctk.CTkFont(size=theme.SIZE_SMALL),
-            anchor="w", justify="left", wraplength=740,
-        ).pack(fill="x", pady=(0, theme.PAD_L))
+        # ctk.CTkLabel(
+        #     wrap,
+        #     text="Reports go to the MRT Steady-Unsteady maintainer. A copy is "
+        #          "also written to user_data/bug_reports/ on this machine.",
+        #     text_color=theme.TEXT_MUTED,
+        #     font=ctk.CTkFont(size=theme.SIZE_SMALL),
+        #     anchor="w", justify="left", wraplength=740,
+        # ).pack(fill="x", pady=(0, theme.PAD_L))
 
         # ---- User info -------------------------------------------------
         self._section_header(wrap, "User info")
