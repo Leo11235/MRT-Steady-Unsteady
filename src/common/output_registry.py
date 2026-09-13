@@ -140,7 +140,8 @@ _SPECS: tuple[OutputSpec, ...] = (
                legacy=("average_thrust_N",),
                help="Total impulse divided by duration. No meaningful total across "
                     "phases: averaging averages is not an average."),
-    OutputSpec("peak_acceleration", "Peak acceleration under thrust", "acceleration", ("overall",),
+    OutputSpec("peak_acceleration", "Peak acceleration", "acceleration", ("overall", "phase"),
+               aggregate="max",
                help="Largest acceleration magnitude while the engine is firing. Excludes "
                     "recovery: parachute inflation is a bigger number but a recovery-loads "
                     "one, and it would swamp this every time."),
@@ -249,8 +250,8 @@ _SPECS: tuple[OutputSpec, ...] = (
     # CV3 injector
     OutputSpec("injector_discharge_coefficient", "Discharge coefficient", DIMENSIONLESS, ("static",)),
     OutputSpec("injector_number_of_holes", "Number of holes", DIMENSIONLESS, ("static",)),
-    OutputSpec("injector_hole_radius", "Hole diameter", "length", ("static",), display_scale=2.0),
-    OutputSpec("injector_hole_area", "Hole area", "area", ("static",)),
+    OutputSpec("injector_hole_radius", "Hole diameter", "injector_length", ("static",), display_scale=2.0),
+    OutputSpec("injector_hole_area", "Hole area", "injector_area", ("static",)),
     OutputSpec("feed_pressure_loss", "Feed pressure loss", "pressure", ("static",)),
 
     # CV4 chamber
@@ -294,12 +295,12 @@ _SPECS: tuple[OutputSpec, ...] = (
     OutputSpec("rocket_drag_coefficient", "Drag coefficient", DIMENSIONLESS, ("static",)),
     OutputSpec("rocket_launch_angle", "Launch angle", "angle", ("static",)),
     OutputSpec("launch_site_altitude_asl", "Launch altitude ASL", "distance", ("static",)),
-    OutputSpec("drogue_parachute_radius", "Drogue diameter", "length", ("static",), display_scale=2.0),
+    OutputSpec("drogue_parachute_radius", "Drogue diameter", "canopy_length", ("static",), display_scale=2.0),
     OutputSpec("drogue_parachute_drag_coefficient", "Drogue drag coefficient", DIMENSIONLESS, ("static",)),
-    OutputSpec("drogue_parachute_frontal_area", "Drogue frontal area", "area", ("static",)),
-    OutputSpec("main_parachute_radius", "Main diameter", "length", ("static",), display_scale=2.0),
+    OutputSpec("drogue_parachute_frontal_area", "Drogue frontal area", "canopy_area", ("static",)),
+    OutputSpec("main_parachute_radius", "Main diameter", "canopy_length", ("static",), display_scale=2.0),
     OutputSpec("main_parachute_drag_coefficient", "Main drag coefficient", DIMENSIONLESS, ("static",)),
-    OutputSpec("main_parachute_frontal_area", "Main frontal area", "area", ("static",)),
+    OutputSpec("main_parachute_frontal_area", "Main frontal area", "canopy_area", ("static",)),
     OutputSpec("main_parachute_deployment_altitude_agl", "Main deployment altitude AGL",
                "distance", ("static",)),
 

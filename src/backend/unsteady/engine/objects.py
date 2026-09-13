@@ -232,7 +232,6 @@ class History:
 
         #### categorize phase groups
         BURN_PHASES = {"phase_1", "phase_2", "phase_3", "phase_4a", "phase_4c"}
-        DESCENT_PHASES = {"phase_5", "phase_6", "phase_7"}
         ALL_PHASES = ["phase_1", "phase_2", "phase_3", "phase_4a", "phase_4c", "phase_5", "phase_6", "phase_7"]
 
         burn_mask = np.isin(phases, list(BURN_PHASES))
@@ -277,11 +276,15 @@ class History:
         
             idx = np.where(mask)[0]
             phase_duration = float(t[idx[-1]] - t[idx[0]])
-
+            phase_v = np.sqrt(vx_R[mask]**2 + vy_R[mask]**2)
+            
             entry = {
                 "t_start": float(t[idx[0]]),
                 "t_end": float(t[idx[-1]]),
                 "duration": phase_duration,
+                "peak_velocity": float(np.max(phase_v)) if len(phase_v) > 0 else 0.0,
+                "terminal_velocity": float(phase_v[-1]) if len(phase_v) > 0 else 0.0,
+                "peak_acceleration": self._safe_max(a_mag, mask) or 0.0,
             }
 
             if phase_name in BURN_PHASES:
@@ -298,13 +301,6 @@ class History:
                     "peak_chamber_temperature": self._safe_max(T_c, mask),
                     "ox_mass_consumed": float(phase_ox_consumed),
                     "fuel_mass_consumed": float(phase_fuel_consumed),
-                })
-
-            elif phase_name in DESCENT_PHASES:
-                v_mag = np.sqrt(vx_R[mask]**2 + vy_R[mask]**2)
-                entry.update({
-                    "peak_velocity": float(np.max(v_mag)) if len(v_mag) > 0 else 0.0,
-                    "terminal_velocity": float(v_mag[-1]) if len(v_mag) > 0 else 0.0,
                 })
 
             by_phase[phase_name] = entry

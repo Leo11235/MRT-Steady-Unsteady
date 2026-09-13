@@ -223,9 +223,19 @@ def format_scalar(value: Any) -> str:
             return _group_digits(str(int(round(value))))
         if abs(value) < 1e-3 or abs(value) >= 1e7:
             return f"{value:.4g}"
-        # Large numbers do not need four decimals; small ones do. Four significant
-        # figures after the point is noise on 34693.0796 and essential on 0.6096.
-        decimals = 2 if abs(value) >= 1000 else 4
+        # Decimals earn their place by how much sits to the left of the point.
+        # 616.7358 is false precision and 8.019 is not, so the count shrinks as the
+        # number grows. Below 1 there is nothing to the left to count, so fall back
+        # to significant figures: a fixed three decimals would round 0.0015 to 0.002.
+        magnitude = abs(value)
+        if magnitude < 1:
+            return f"{value:.4g}"
+        if magnitude < 10:
+            decimals = 3
+        elif magnitude < 100:
+            decimals = 2
+        else:
+            decimals = 1
         return _group_digits(f"{value:.{decimals}f}".rstrip("0").rstrip("."))
     if isinstance(value, dict):
         return f"({len(value)} keys)"
@@ -351,8 +361,8 @@ class KVRow(ctk.CTkFrame):
         self._scale = display_scale_of(key)
         self._raw, unit_label = value_for_display(self._scaled(value), self._si_unit,
                                                   system, self._category, native_system)
-        shown = format_scalar(self._raw)
         self._unit_label = unit_label
+        shown = self._compose_value(self._raw, unit_label)
 
         self._name_widget = ctk.CTkLabel(
             self, text=self._compose_name(unit_label),
@@ -373,8 +383,18 @@ class KVRow(ctk.CTkFrame):
         return value * self._scale
 
     def _compose_name(self, unit_label: str) -> str:
+        """The name column. Just the name: the unit belongs beside the number.
+
+        "Internal diameter ... 20 cm" reads the way a person says it. Putting the
+        unit in the name column instead leaves the value dangling and pushes the
+        unit away from the figure it qualifies.
+        """
+        return self._label
+
+    def _compose_value(self, raw: Any, unit_label: str) -> str:
         shown = pretty_unit(unit_label)
-        return f"{self._label} ({shown})" if shown else self._label
+        text = format_scalar(raw)
+        return f"{text} {shown}" if shown and text != "—" else text
 
     def update_system(self, system: str) -> None:
         """Re-label and re-convert for a new unit system.  No rebuild."""
@@ -382,7 +402,7 @@ class KVRow(ctk.CTkFrame):
                                                   system, self._category, self._native_system)
         self._unit_label = unit_label
         self._name_widget.configure(text=self._compose_name(unit_label))
-        self._value_widget.configure(text=format_scalar(self._raw))
+        self._value_widget.configure(text=self._compose_value(self._raw, unit_label))
 
     @property
     def raw_value(self) -> Any:

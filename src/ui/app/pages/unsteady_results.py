@@ -28,11 +28,18 @@ from typing import Optional
 
 import customtkinter as ctk
 
+try:
+    from PIL import Image
+    _HAS_PIL = True
+except Exception:                               # noqa: BLE001
+    _HAS_PIL = False
+
 from src.common import output_registry as outputs
 from src.common.unit_labels import pretty_unit
 from src.ui.app import theme
 from src.ui.app.widgets import kv_row
 from src.ui.app.widgets.section import CollapsibleSection
+from src.ui.app import backend_bridge
 from src.ui.app.pages.results_page import ResultsPage
 from src.ui.app.services import os_utils
 from src.ui.app.widgets import figure_window
@@ -77,7 +84,10 @@ _MAIN_ROWS: tuple = (
     "average_thrust",
     "total_impulse",
     "pad_thrust_to_weight",
-    "peak_acceleration",
+    # The registry calls this "Peak acceleration" so the per-phase grid row reads
+    # cleanly. Here it needs the qualifier: the summary figure is burn-only, while
+    # the grid also covers descent, where parachute inflation is much larger.
+    ("peak_acceleration", None, "Peak acceleration under thrust"),
     ("ox_mass_consumed", "ox_mass_available", "Oxidizer mass used / available"),
     ("fuel_mass_consumed", "fuel_mass_available", "Fuel mass used / available"),
     "average_OF_ratio",
@@ -199,8 +209,19 @@ _PHASE_ROW_GROUPS: tuple = (
     ("Engine", ("total_impulse", "peak_thrust", "average_thrust",
                 "peak_chamber_pressure", "peak_chamber_temperature",
                 "average_OF_ratio", "ox_mass_consumed", "fuel_mass_consumed")),
-    ("Descent", ("peak_velocity", "terminal_velocity")),
+    ("Kinematics", ("peak_velocity", "terminal_velocity", "peak_acceleration")),
 )
+
+# The summary box reads as one object rather than as the top of a list, so its
+# border is heavy and its contents sit well inside it. 38 px is about a centimetre
+# at the 96 dpi these screens report.
+_BOX_BORDER = 6
+_BOX_INSET = 38
+# The logo sits in the right half of the card. The rows are given a matching
+# right margin so text and logo never collide, however long a terminal reason
+# runs, rather than relying on the two happening not to meet.
+_BOX_LOGO_H = 150
+_BOX_LOGO_GAP = 24
 
 # Terminal states, said in a way a person would say them.
 _RUN_LABELS = {
@@ -289,10 +310,15 @@ class UnsteadyResultsPage(ResultsPage):
                                         self.native_system)
 
     def _unit_suffix(self, key: str, system: str) -> str:
-        """" (N)" for a key that has a unit, "" for one that does not."""
+        """The unit for a key, as a trailing "  N", or "" when there is none.
+
+        Used for the grid's row labels. Everywhere else the unit sits beside the
+        number, but a grid row shares one unit across every column, and repeating
+        "N" in eight cells is noise rather than clarity.
+        """
         _value, unit = self._convert(1.0, key, system)
         shown = pretty_unit(unit)
-        return f" ({shown})" if shown else ""
+        return f"  {shown}" if shown else ""
 
     def _add_text_row(self, parent, label: str, text: str, colour=None) -> None:
         """A row whose value is a word rather than a measurement."""
@@ -345,12 +371,15 @@ class UnsteadyResultsPage(ResultsPage):
         destroying the only fixed point on the page.
         """
         box = ctk.CTkFrame(self._overall, fg_color=theme.CARD_BG,
-                           border_color=theme.ACCENT_SLATE, border_width=2,
-                           corner_radius=8)
+                           border_color=theme.ACCENT_SLATE,
+                           border_width=_BOX_BORDER, corner_radius=8)
         box.pack(fill="x", pady=(theme.PAD_M, theme.PAD_S))
 
+        logo_width = self._add_box_logo(box)
         inner = ctk.CTkFrame(box, fg_color="transparent")
-        inner.pack(fill="x", padx=theme.PAD_M, pady=theme.PAD_M)
+        inner.pack(fill="x", pady=theme.PAD_M,
+                   padx=(_BOX_INSET,
+                         _BOX_INSET + (logo_width + _BOX_LOGO_GAP if logo_width else 0)))
 
         for entry in _MAIN_ROWS:
             if entry == "__run__":
@@ -367,6 +396,35 @@ class UnsteadyResultsPage(ResultsPage):
                 value = outputs.value_of(overall, entry)
                 if value is not None:
                     self.add_row(inner, entry, value, filterable=False)
+
+    def _add_box_logo(self, box) -> int:
+        """The team logo, right-aligned inside the summary card.
+
+        Returns the width it occupies, or 0 when there is no logo, so the rows
+        can reserve exactly that much margin.
+
+        Placed rather than packed: it sits beside the rows without joining their
+        layout. Every failure is silent and returns 0, because a missing asset or
+        a Pillow that will not import should cost the user a decoration, not the
+        results next to it.
+        """
+        if not _HAS_PIL:
+            return 0
+        try:
+            path = backend_bridge.assets_dir() / "MRT_logo.png"
+            if not path.exists():
+                return 0
+            image = Image.open(path)
+            width, height = image.size
+            scaled = int(round(_BOX_LOGO_H * (width / height))) if height else _BOX_LOGO_H
+            ctk.CTkLabel(
+                box, text="",
+                image=ctk.CTkImage(light_image=image, dark_image=image,
+                                   size=(scaled, _BOX_LOGO_H)),
+            ).place(relx=1.0, rely=0.5, anchor="e", x=-_BOX_INSET)
+            return scaled
+        except Exception:                       # noqa: BLE001
+            return 0
 
     def _render_performance_rest(self, overall: dict) -> None:
         """Everything the run measured that the summary box does not show.
@@ -413,14 +471,19 @@ class UnsteadyResultsPage(ResultsPage):
         value = ctk.CTkLabel(row, text="", anchor="w")
         value.pack(side="left", fill="x", expand=True)
 
-        self.add_dynamic_label(
-            name,
-            lambda system, k=used_key, t=label: t + self._unit_suffix(k, system))
+        name.configure(text=label)
         self.add_dynamic_label(
             value,
-            lambda system, u=used, v=total, k=used_key:
-            kv_row.format_scalar(self._convert(u, k, system)[0]) + " / "
-            + kv_row.format_scalar(self._convert(v, k, system)[0]))
+            lambda system, u=used, v=total, k=used_key: self._pair_text(u, v, k, system))
+
+    def _pair_text(self, used, total, key: str, system: str) -> str:
+        """ "14.3 / 15.5 kg". One unit, since both halves share it."""
+        shown_used, unit = self._convert(used, key, system)
+        shown_total, _ = self._convert(total, key, system)
+        unit = pretty_unit(unit)
+        text = (f"{kv_row.format_scalar(shown_used)} / "
+                f"{kv_row.format_scalar(shown_total)}")
+        return f"{text} {unit}" if unit else text
 
     def _run_verdict(self) -> tuple:
         """(text, colour) for the Run row.

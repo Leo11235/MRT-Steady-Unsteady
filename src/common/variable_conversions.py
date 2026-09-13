@@ -1,46 +1,5 @@
 """
-Unit conversions for the whole program (backend + UI).
-
-Everything the physics touches is SI.  Users type in whatever unit they like,
-and results get displayed in whatever unit they like.  This module is the one
-place that knows how to move between the two.
-
-    config file  --to_SI-->  physics  --from_SI-->  UI display
-
-HOW IT'S ORGANIZED
-------------------
-One section per physical category (length, pressure, mass, ...).  Each section
-declares a table mapping every accepted unit string to the factor that converts
-it INTO the SI unit:
-
-    value_in_SI = value_in_unit * factor
-
-Temperature is the one exception — it needs an offset as well as a factor, so
-it carries its own pair of functions.
-
-To add a unit: add one row to the right table.  Nothing else needs to change.
-The generic helpers, the UI dropdowns, and the config validator all read these
-tables, so a new row lights up everywhere at once.
-
-To add a whole category: write the table, add it to CATEGORIES, and give it an
-entry in SI_UNITS.
-
-PUBLIC API
-----------
-    to_SI(value, unit)              1.5, "in"     -> 0.0381
-    from_SI(value, unit)            0.0381, "in"  -> 1.5
-    convert(value, from_u, to_u)    1.0, "in", "mm" -> 25.4
-    pair_to_SI([value, unit])       [1.5, "in"]   -> 0.0381   (config file pairs)
-    pair_from_SI(value, unit)       0.0381, "in"  -> [1.5, "in"]
-
-    category_of(unit)               "in"      -> "length"
-    SI_unit_of(unit)                "in"      -> "m"
-    units_in_category(category)     "length"  -> ["m", "mm", "cm", ...]
-    is_known_unit(unit)             "furlong" -> False
-
-Unit strings are matched case-sensitively against the tables first, then against
-a small alias table (so "kg/m^3", "kg/m3" and "kg/m**3" all work, as do "degC"
-and "C").  Dimensionless values use "." — a bare number with no unit.
+Unit conversions for the whole program (backend + UI)
 """
 
 from __future__ import annotations
@@ -129,9 +88,9 @@ PRESSURE: dict[str, float] = {
 # TEMPERATURE still lists the accepted units so the generic helpers and the UI dropdowns can find them.
 TEMPERATURE: dict[str, float] = {
     "K": 1.0,
-    "C": 1.0,     # offset handled below
-    "F": 1.0,     # offset + scale handled below
-    "R": 1.0,     # Rankine: pure scale, no offset
+    "C": 1.0, # offset handled below
+    "F": 1.0, # offset + scale handled below
+    "R": 1.0, # Rankine: pure scale, no offset
 }
 
 def temperature_to_SI(value: float, unit: str) -> float:
@@ -238,8 +197,12 @@ MOLAR_MASS: dict[str, float] = {
 CATEGORIES: dict[str, dict[str, float]] = {
     "dimensionless": DIMENSIONLESS,
     "length": LENGTH,
+    "canopy_length": LENGTH,
+    "injector_length": LENGTH,
     "distance": LENGTH,
     "area": AREA,
+    "canopy_area": AREA,
+    "injector_area": AREA,
     "volume": VOLUME,
     "mass": MASS,
     "density": DENSITY,
@@ -256,12 +219,17 @@ CATEGORIES: dict[str, dict[str, float]] = {
 }
 
 # SI unit of each category
+# parachutes, injectors, etc have special units (ie m, mm, etc)
 SI_UNITS: dict[str, str] = {
     "dimensionless": ".",
     "length": "m",
     "distance": "m", # same physical dimension as length; see CATEGORIES
     "area": "m^2",
     "volume": "m^3",
+    "canopy_length": "m",
+    "canopy_area": "m^2",
+    "injector_length": "m",
+    "injector_area": "m^2",
     "mass": "kg",
     "density": "kg/m^3",
     "pressure": "Pa",
@@ -519,11 +487,17 @@ UNIT_SYSTEMS: dict[str, dict[str, str]] = {
     "SI": {
         # Radians are the SI unit and what the physics uses, but nobody types a launch angle in radians
         "angle": "deg",
-        # Hardware is measured in centimetres, not metres
+        # most hardware measured in cm
         "length": "cm",
-        # display pressures in kPa instead of Pa so it's easier to read
+        "area": "cm^2",
+        "volume": "L",
+        "canopy_length": "m",
+        "canopy_area": "m^2",
+        "injector_length": "mm",
+        "injector_area": "mm^2",
+        # display pressures in kPa
         "pressure": "kPa",
-        # literature convention 0.132 with these units
+        # this is a whole thing, TODO: include an explanation in docs/developer_manual
         "regression_coefficient": "(mm/s)/(kg/m^2/s)^n",
     },
     "MRT": {
@@ -531,6 +505,11 @@ UNIT_SYSTEMS: dict[str, dict[str, str]] = {
         "length": "in", # hardware
         "distance": "ft", # apogees, altitudes
         "area": "in^2",
+        "volume": "in^3", # hardware volume follows hardware length, as in SI
+        "canopy_length": "ft",
+        "canopy_area": "ft^2",
+        "injector_length": "mm",
+        "injector_area": "mm^2",
         "pressure": "psi",
         "velocity": "ft/s",
         "acceleration": "ft/s^2",
@@ -541,7 +520,11 @@ UNIT_SYSTEMS: dict[str, dict[str, str]] = {
         "length": "in", # hardware
         "distance": "ft", # apogees, altitudes
         "area": "in^2",
-        "volume": "ft^3",
+        "volume": "in^3",
+        "canopy_length": "ft",
+        "canopy_area": "ft^2",
+        "injector_length": "in",
+        "injector_area": "in^2",
         "mass": "lb",
         "density": "lb/ft^3",
         "pressure": "psi",
@@ -555,19 +538,11 @@ UNIT_SYSTEMS: dict[str, dict[str, str]] = {
     },
 }
 
-
+# display unit a given unit system wants for a category
 def unit_for_system(category: str, system: str = "SI") -> str:
-    """
-    The display unit a given unit system wants for a category.  Falls back to
-    the SI unit when the system doesn't express a preference.
-
-        unit_for_system("pressure", "MRT")  -> "psi"
-        unit_for_system("mass", "MRT")      -> "kg"
-    """
     if category not in SI_UNITS:
         raise ValueError(f"Unknown category: {category!r}")
     return UNIT_SYSTEMS.get(system, {}).get(category, SI_UNITS[category])
-
 
 def storage_unit(category: str, system: str = "SI") -> str:
     """The unit a results FILE stores this category in, for a given system.
@@ -598,8 +573,7 @@ def to_system(value: Optional[float], category: str, system: str = "SI") -> Opti
 # fuel regression law: r_dot = a * G_ox ** n
 # [a] = L^(1+2n) * M^(-n) * T^(n-1)
 #
-# at the default n = 0.555 that is m^2.11 * kg^-0.555 * s^-0.445. looks terrible and breaks with the rest of this file, so this gets its own section and instead use rate unit paired with flux unit. 
-# n stays implicit: "0.132 mm/s per (kg/m^2/s)^n"
+###### n implicit, eg "0.132 mm/s per (kg/m^2/s)^n"
 # a_SI = a_unit * rate_in_m_per_s * flux_in_SI ** (-n) is the new convention
 
 REGRESSION_COEFFICIENT = "regression_coefficient"
