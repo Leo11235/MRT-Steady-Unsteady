@@ -39,6 +39,7 @@ from typing import Callable, Optional
 import customtkinter as ctk
 
 from src.ui.app import theme
+from src.ui.app.widgets import grouped_menu
 from src.ui.app.widgets.filter_combo import FilterCombo
 
 # Axis captions. "x-axis" alone doesn't say which of the two kinds of variable
@@ -53,18 +54,15 @@ _AXIS_LABELS = {
 }
 _AXIS_LABEL_W = 200
 
-_HEADER_PREFIX = "── "
-_HEADER_SUFFIX = " ──"
 _ADD_HOLD = "+ Hold a swept variable constant"
 _NO_HOLDS_LEFT = "(no other swept variables)"
 
 
-def _header(text: str) -> str:
-    return f"{_HEADER_PREFIX}{text}{_HEADER_SUFFIX}"
-
-
-def _is_header(value: str) -> bool:
-    return value.startswith(_HEADER_PREFIX) and value.endswith(_HEADER_SUFFIX)
+# The grouping convention lives in widgets/grouped_menu.py, because the steady
+# results page ranks a sweep with the same kind of dropdown and two copies of
+# this would drift.
+_header = grouped_menu.header
+_is_header = grouped_menu.is_header
 
 
 class _HoldPicker(ctk.CTkFrame):
@@ -264,13 +262,7 @@ class _GraphRow(ctk.CTkFrame):
 
     @staticmethod
     def _grouped_output_values(output_groups: list) -> list[str]:
-        values: list[str] = []
-        for group_name, pairs in output_groups:
-            if not pairs:
-                continue
-            values.append(_header(group_name))
-            values.extend(label for label, _wire in pairs)
-        return values or ["(none)"]
+        return grouped_menu.grouped_values(output_groups)
 
     def _labelled_menu(self, parent, label: str, var, values, guard_headers: bool):
         row = ctk.CTkFrame(parent, fg_color="transparent")
@@ -288,22 +280,7 @@ class _GraphRow(ctk.CTkFrame):
 
     @staticmethod
     def _guard_headers(var: ctk.StringVar, values: list[str]) -> None:
-        """Revert if a group header gets selected.
-
-        CTkOptionMenu can't mark an entry non-selectable, so the header is a
-        normal item and we undo the selection. Silently: an error message for
-        clicking a label would be worse than the click just not taking.
-        """
-        last = {"value": var.get()}
-
-        def on_write(*_args) -> None:
-            current = var.get()
-            if _is_header(current):
-                var.set(last["value"])
-            else:
-                last["value"] = current
-
-        var.trace_add("write", on_write)
+        grouped_menu.guard_headers(var, values)
 
     def _on_menu_changed(self, changed_var) -> None:
         self._resolve_duplicates(changed_var)

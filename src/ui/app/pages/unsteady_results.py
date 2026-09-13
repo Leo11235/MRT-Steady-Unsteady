@@ -28,16 +28,11 @@ from typing import Optional
 
 import customtkinter as ctk
 
-try:
-    from PIL import Image
-    _HAS_PIL = True
-except Exception:                               # noqa: BLE001
-    _HAS_PIL = False
-
 from src.common import output_registry as outputs
 from src.common.unit_labels import pretty_unit
 from src.ui.app import theme
 from src.ui.app.widgets import kv_row
+from src.ui.app.widgets import summary_box
 from src.ui.app import backend_bridge
 from src.ui.app.pages.results_page import ResultsPage
 from src.ui.app.services import os_utils
@@ -216,14 +211,6 @@ _PHASE_ROW_GROUPS: tuple = (
 # at the 96 dpi these screens report.
 _HARDWARE_TAB = "Hardware & Parameters"
 
-_BOX_BORDER = 6
-_BOX_INSET = 38
-# The logo sits in the right half of the card. The rows are given a matching
-# right margin so text and logo never collide, however long a terminal reason
-# runs, rather than relying on the two happening not to meet.
-_BOX_LOGO_H = 150
-_BOX_LOGO_GAP = 24
-
 # Terminal states, said in a way a person would say them.
 _RUN_LABELS = {
     "success_landed": "Success",
@@ -295,43 +282,16 @@ class UnsteadyResultsPage(ResultsPage):
     # ---- shared -------------------------------------------------------
 
     def _convert(self, value, key: str, system: str):
-        """(number, unit label) for one value in the page's unit system.
-
-        Goes through the same registry lookups a KVRow does, including the
-        radius-to-diameter scale, so a number shown outside a KVRow cannot
-        disagree with the same number shown inside one.
-        """
-        _label, si_unit = kv_row.describe(key)
-        scaled = value
-        scale = kv_row.display_scale_of(key)
-        if scale != 1.0 and isinstance(value, (int, float)) and not isinstance(value, bool):
-            scaled = value * scale
-        return kv_row.value_for_display(scaled, si_unit, system,
-                                        kv_row.category_of_key(key),
-                                        self.native_system)
+        """(number, unit label) for one value in the page's unit system."""
+        return summary_box.convert(value, key, system, self.native_system)
 
     def _unit_suffix(self, key: str, system: str) -> str:
-        """The unit for a key, as a trailing "  N", or "" when there is none.
-
-        Used for the grid's row labels. Everywhere else the unit sits beside the
-        number, but a grid row shares one unit across every column, and repeating
-        "N" in eight cells is noise rather than clarity.
-        """
-        _value, unit = self._convert(1.0, key, system)
-        shown = pretty_unit(unit)
-        return f"  {shown}" if shown else ""
+        """The unit for a key, as a trailing "  N", or "" when there is none."""
+        return summary_box.unit_suffix(key, system, self.native_system)
 
     def _add_text_row(self, parent, label: str, text: str, colour=None) -> None:
         """A row whose value is a word rather than a measurement."""
-        row = ctk.CTkFrame(parent, fg_color="transparent")
-        row.pack(fill="x", pady=1)
-        ctk.CTkLabel(row, text=label, width=340, anchor="w").pack(
-            side="left", padx=(0, theme.PAD_S))
-        value = ctk.CTkLabel(row, text=text, anchor="w", justify="left",
-                             wraplength=520)
-        if colour is not None:
-            value.configure(text_color=colour)
-        value.pack(side="left", fill="x", expand=True)
+        summary_box.add_text_row(parent, label, text, colour)
 
     # ---- Overall ------------------------------------------------------
 
@@ -367,73 +327,32 @@ class UnsteadyResultsPage(ResultsPage):
     def _render_summary_box(self, overall: dict) -> None:
         """The dozen numbers an engineer checks first, in one bordered card.
 
-        Deliberately not collapsible and never filtered in place: it answers "how
-        did this run go", and reducing it to one row would destroy the only fixed
-        point on the page. Its values are still indexed for search, under the
-        path "Overall", since the search results are a separate view and finding
-        apogee there costs the box nothing.
+        The card itself is widgets/summary_box.py, shared with the steady page.
+        What belongs in it is _MAIN_ROWS, at the top of this file. Everything
+        here is the translation between the two: a sentinel becomes a verdict,
+        a tuple becomes a pair, a bare key becomes a value.
         """
-        box = ctk.CTkFrame(self._overall, fg_color=theme.CARD_BG,
-                           border_color=theme.ACCENT_SLATE,
-                           border_width=_BOX_BORDER, corner_radius=8)
-        box.pack(fill="x", pady=(theme.PAD_M, theme.PAD_S))
-
-        logo_width = self._add_box_logo(box)
-        inner = ctk.CTkFrame(box, fg_color="transparent")
-        inner.pack(fill="x", pady=theme.PAD_M,
-                   padx=(_BOX_INSET,
-                         _BOX_INSET + (logo_width + _BOX_LOGO_GAP if logo_width else 0)))
+        box = summary_box.SummaryBox(self, self._overall)
 
         self.set_row_path("Overall")
         for entry in _MAIN_ROWS:
             if entry == "__run__":
-                text, colour = self._run_verdict()
-                self._add_text_row(inner, "Run", text, colour)
-                self.add_searchable_text("Run", lambda _system, t=text: t)
+                verdict, colour = self._run_verdict()
+                box.text("Run", verdict, colour)
             elif entry == "__level__":
                 level = self._overall_level().capitalize()
-                self._add_text_row(inner, "Overall warning level",
-                                   level, _LEVEL_COLOR.get(level.lower()))
-                self.add_searchable_text("Overall warning level",
-                                         lambda _system, t=level: t)
+                box.text("Overall warning level", level,
+                         _LEVEL_COLOR.get(level.lower()))
             elif isinstance(entry, tuple):
                 used_key, total_key, label = entry
-                self._add_pair_row(inner, used_key, total_key, label, overall)
+                box.pair(used_key, outputs.value_of(overall, used_key),
+                         outputs.value_of(overall, total_key) if total_key else None,
+                         label)
             else:
                 value = outputs.value_of(overall, entry)
                 if value is not None:
-                    self.add_row(inner, entry, value,
-                                 filterable=False, searchable=True)
+                    box.value(entry, value)
         self.set_row_path()
-
-    def _add_box_logo(self, box) -> int:
-        """The team logo, right-aligned inside the summary card.
-
-        Returns the width it occupies, or 0 when there is no logo, so the rows
-        can reserve exactly that much margin.
-
-        Placed rather than packed: it sits beside the rows without joining their
-        layout. Every failure is silent and returns 0, because a missing asset or
-        a Pillow that will not import should cost the user a decoration, not the
-        results next to it.
-        """
-        if not _HAS_PIL:
-            return 0
-        try:
-            path = backend_bridge.assets_dir() / "MRT_logo.png"
-            if not path.exists():
-                return 0
-            image = Image.open(path)
-            width, height = image.size
-            scaled = int(round(_BOX_LOGO_H * (width / height))) if height else _BOX_LOGO_H
-            ctk.CTkLabel(
-                box, text="",
-                image=ctk.CTkImage(light_image=image, dark_image=image,
-                                   size=(scaled, _BOX_LOGO_H)),
-            ).place(relx=1.0, rely=0.5, anchor="e", x=-_BOX_INSET)
-            return scaled
-        except Exception:                       # noqa: BLE001
-            return 0
 
     def _render_performance_rest(self, overall: dict) -> None:
         """Everything the run measured that the summary box does not show.
@@ -458,46 +377,6 @@ class UnsteadyResultsPage(ResultsPage):
             for key, value in metadata.items():
                 self.add_row(section.body, key, value)
         self.set_row_path()
-
-    def _add_pair_row(self, parent, used_key: str, total_key, label: str,
-                      overall: dict) -> None:
-        """One row reading "used / available".
-
-        One label because that is the comparison people actually make, but the
-        export still carries the two numbers separately: a spreadsheet cell
-        reading "14.3 / 15.5" is a string nobody can sum. With no second value
-        the row degrades to an ordinary one.
-        """
-        used = outputs.value_of(overall, used_key)
-        if used is None:
-            return
-        total = outputs.value_of(overall, total_key) if total_key else None
-        if total is None:
-            self.add_row(parent, used_key, used, filterable=False,
-                         searchable=True, label=label)
-            return
-
-        row = ctk.CTkFrame(parent, fg_color="transparent")
-        row.pack(fill="x", pady=1)
-        name = ctk.CTkLabel(row, text="", width=340, anchor="w")
-        name.pack(side="left", padx=(0, theme.PAD_S))
-        value = ctk.CTkLabel(row, text="", anchor="w")
-        value.pack(side="left", fill="x", expand=True)
-
-        name.configure(text=label)
-        builder = (lambda system, u=used, v=total, k=used_key:
-                   self._pair_text(u, v, k, system))
-        self.add_dynamic_label(value, builder)
-        self.add_searchable_text(label, builder, key=used_key)
-
-    def _pair_text(self, used, total, key: str, system: str) -> str:
-        """ "14.3 / 15.5 kg". One unit, since both halves share it."""
-        shown_used, unit = self._convert(used, key, system)
-        shown_total, _ = self._convert(total, key, system)
-        unit = pretty_unit(unit)
-        text = (f"{kv_row.format_scalar(shown_used)} / "
-                f"{kv_row.format_scalar(shown_total)}")
-        return f"{text} {unit}" if unit else text
 
     def _run_verdict(self) -> tuple:
         """(text, colour) for the Run row.

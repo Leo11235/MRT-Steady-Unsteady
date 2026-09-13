@@ -138,7 +138,7 @@ PATCHNOTES: list[dict] = [
 class PatchnotesPage(ctk.CTkFrame):
     """A scrolling list of releases, newest first."""
 
-    TITLE = "What's new"
+    TITLE = "Release notes"
 
     def __init__(self, master, on_navigate) -> None:
         super().__init__(master, corner_radius=0, fg_color="transparent")
@@ -149,12 +149,12 @@ class PatchnotesPage(ctk.CTkFrame):
         # Header block
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.pack(fill="x", padx=theme.PAD_L, pady=(theme.PAD_L, theme.PAD_S))
-        ctk.CTkLabel(
-            header,
-            text="Release notes",
-            font=ctk.CTkFont(size=theme.SIZE_HERO, weight="bold"),
-            text_color=theme.MRT_RED_THEMED,
-        ).pack(anchor="w")
+        # ctk.CTkLabel(
+        #     header,
+        #     text="Release notes",
+        #     font=ctk.CTkFont(size=theme.SIZE_HERO, weight="bold"),
+        #     text_color=theme.MRT_RED_THEMED,
+        # ).pack(anchor="w")
         ctk.CTkLabel(
             header,
             text=f"Currently on v{VERSION}",

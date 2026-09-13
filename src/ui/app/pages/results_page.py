@@ -33,6 +33,7 @@ called in the app or in the file.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from pathlib import Path
 from typing import Any, Optional
@@ -94,6 +95,9 @@ class ResultsPage(ctk.CTkFrame):
         # See _render_search() for why they are not rebuilt.
         self._search_pool: list = []
         self._row_path: tuple = ()
+        # Set while rows are being built for content that was already indexed;
+        # see suspend_search_index().
+        self._index_suspended = False
         self._search_open = False
         self._search_after = None
         self._dots_after = None
@@ -358,6 +362,8 @@ class ResultsPage(ctk.CTkFrame):
         self._rows = [r for r in self._rows if r.winfo_exists()]
         self._unfiltered_rows = [r for r in self._unfiltered_rows if r.winfo_exists()]
         self._sections = [s for s in self._sections if s.winfo_exists()]
+        self._dynamic_labels = [(widget, build) for widget, build in self._dynamic_labels
+                                if widget.winfo_exists()]
 
     def add_row(self, parent, key: str, value: Any, *,
                 filterable: bool = True, label: Optional[str] = None,
@@ -568,6 +574,31 @@ class ResultsPage(ctk.CTkFrame):
         """
         self._row_path = tuple(p for p in parts if p)
 
+    def add_searchable_value(self, key: str, value: Any, *,
+                             label: Optional[str] = None) -> None:
+        """Index a value for search without building a row for it.
+
+        For content rendered on demand. A parametric sweep builds a point's
+        rows only when someone opens that point, but the numbers are in the
+        file from the moment it loads, and a search that can only find what you
+        have already clicked on is not a search.
+        """
+        self._register_searchable(key, label or describe(key)[0], value)
+
+    @contextlib.contextmanager
+    def suspend_search_index(self):
+        """Build rows without indexing them. The other half of the above.
+
+        When the deferred rows finally appear, their values are already in the
+        index; registering them again would show every hit twice.
+        """
+        previous = self._index_suspended
+        self._index_suspended = True
+        try:
+            yield
+        finally:
+            self._index_suspended = previous
+
     def add_searchable_text(self, label: str, text_builder,
                             *, key: str = "") -> None:
         """Register a result that search should find but that is not a KVRow.
@@ -581,6 +612,8 @@ class ResultsPage(ctk.CTkFrame):
 
     def _register_searchable(self, key: str, label: str, value: Any,
                              text_builder=None) -> None:
+        if self._index_suspended:
+            return
         self._search_index.append(
             (self._row_path, label, key, value, text_builder))
 

@@ -109,7 +109,7 @@ _SPECS: tuple[OutputSpec, ...] = (
                help="Simulated time from ignition to the terminal state. Not wall clock."),
 
     # ---- timing -------------------------------------------------------
-    OutputSpec("burntime", "Burn time", "time", ("overall",),
+    OutputSpec("burntime", "Burn time", "time", ("overall", "steady"),
                legacy=("burntime_s",),
                help="Total time the engine produced thrust."),
     OutputSpec("t_start", "Start time", "time", ("phase",), aggregate="min",
@@ -130,7 +130,7 @@ _SPECS: tuple[OutputSpec, ...] = (
                help="Human-readable description of the event."),
 
     # ---- thrust -------------------------------------------------------
-    OutputSpec("total_impulse", "Total impulse", "impulse", ("overall", "phase"),
+    OutputSpec("total_impulse", "Total impulse", "impulse", ("overall", "phase", "steady"),
                aggregate="sum", legacy=("total_impulse_Ns",),
                help="Thrust integrated over time."),
     OutputSpec("peak_thrust", "Peak thrust", "force", ("overall", "phase"),
@@ -140,11 +140,12 @@ _SPECS: tuple[OutputSpec, ...] = (
                legacy=("average_thrust_N",),
                help="Total impulse divided by duration. No meaningful total across "
                     "phases: averaging averages is not an average."),
-    OutputSpec("peak_acceleration", "Peak acceleration", "acceleration", ("overall", "phase"),
-               aggregate="max",
-               help="Largest acceleration magnitude while the engine is firing. Excludes "
-                    "recovery: parachute inflation is a bigger number but a recovery-loads "
-                    "one, and it would swamp this every time."),
+    OutputSpec("peak_acceleration", "Peak acceleration", "acceleration",
+               ("overall", "phase", "steady"), aggregate="max",
+               help="Largest acceleration magnitude. Unsteady measures it while the engine "
+                    "is firing and excludes recovery, since parachute inflation is a bigger "
+                    "number but a recovery-loads one; steady measures it over the whole "
+                    "ascent, which has no recovery to exclude."),
     OutputSpec("specific_impulse", "Specific impulse", "time", ("overall",),
                help="Total impulse over g0 times all propellant consumed, oxidizer and "
                     "fuel together. The whole-engine figure, comparable with published "
@@ -183,9 +184,10 @@ _SPECS: tuple[OutputSpec, ...] = (
                help="Peak altitude above sea level."),
     OutputSpec("landing_downrange", "Horizontal distance at landing", "distance", ("overall",),
                help="Downrange distance from the launch site at the last timestep."),
-    OutputSpec("peak_velocity", "Peak velocity", "velocity", ("phase",),
+    OutputSpec("peak_velocity", "Peak velocity", "velocity", ("phase", "steady"),
                aggregate="max", legacy=("peak_velocity_ms",),
-               help="Highest speed reached during this phase."),
+               help="Highest speed reached. Per phase in unsteady; over the whole ascent "
+                    "in steady."),
     OutputSpec("terminal_velocity", "Terminal velocity", "velocity", ("phase",),
                legacy=("terminal_velocity_ms",),
                help="Speed at the end of this phase."),
@@ -281,11 +283,16 @@ _SPECS: tuple[OutputSpec, ...] = (
                     "delivers."),
 
     # CV5 nozzle
-    OutputSpec("nozzle_throat_radius", "Throat diameter", "length", ("static",), display_scale=2.0),
-    OutputSpec("nozzle_exit_radius", "Exit diameter", "length", ("static",), display_scale=2.0),
-    OutputSpec("nozzle_throat_area", "Throat area", "area", ("static",)),
-    OutputSpec("nozzle_exit_area", "Exit area", "area", ("static",)),
-    OutputSpec("nozzle_expansion_ratio", "Expansion ratio", DIMENSIONLESS, ("static",),
+    # Steady sizes its nozzle rather than being given one, so it writes these
+    # same four numbers as results. Same meaning, same units, one spec.
+    OutputSpec("nozzle_throat_radius", "Throat diameter", "length", ("static", "steady"),
+               display_scale=2.0),
+    OutputSpec("nozzle_exit_radius", "Exit diameter", "length", ("static", "steady"),
+               display_scale=2.0),
+    OutputSpec("nozzle_throat_area", "Throat area", "area", ("static", "steady")),
+    OutputSpec("nozzle_exit_area", "Exit area", "area", ("static", "steady")),
+    OutputSpec("nozzle_expansion_ratio", "Expansion ratio", DIMENSIONLESS,
+               ("static", "steady"),
                help="Exit area over throat area."),
 
     # CV6 trajectory
@@ -308,6 +315,138 @@ _SPECS: tuple[OutputSpec, ...] = (
     OutputSpec("ignition_delta_p", "Ignition pressure rise", "pressure", ("static",)),
     OutputSpec("k_amb", "Ambient pressure factor", DIMENSIONLESS, ("static",)),
     OutputSpec("min_thrust_to_weight", "Engine cutoff thrust-to-weight", DIMENSIONLESS, ("static",)),
+
+    # =====================================================================
+    # Steady
+    # =====================================================================
+    #
+    # Steady keeps its own names.  Isp is not specific_impulse, thrust is not
+    # peak_thrust, average_oxidizer_to_fuel_ratio is not average_OF_ratio: the
+    # two programs were written years apart and renaming either side would
+    # break every results file and config already written.  Where a name IS
+    # shared, above, the spec is shared with it.
+    #
+    # Three scopes, because a steady file has three blocks and the coverage
+    # check has to know which is which: "steady" is rocket_parameters, what the
+    # run computed; "steady_input" is rocket_inputs, what it was given;
+    # "steady_setting" is simulation_settings plus metadata.
+
+    # ---- steady: the burn ----------------------------------------------
+    OutputSpec("initial_internal_fuel_radius", "Initial internal fuel diameter", "length",
+               ("steady",), display_scale=2.0,
+               help="Port diameter at ignition. A hotfire is given it; a convergence run "
+                    "solves for it, and it is that run's real answer."),
+    OutputSpec("fuel_mass", "Fuel mass", "mass", ("steady",),
+               help="Mass of the fuel grain. The steady model burns all of it, so this is "
+                    "both what is loaded and what is consumed."),
+    OutputSpec("oxidizer_mass", "Oxidizer mass", "mass", ("steady",),
+               help="Oxidizer flow rate times burn time. There is no tank in the steady "
+                    "model, so this is the mass the run needs, not a mass it was given."),
+    OutputSpec("average_oxidizer_to_fuel_ratio", "Average O/F ratio", DIMENSIONLESS,
+               ("steady",),
+               help="Mean oxidizer-to-fuel mass ratio over the burn."),
+    OutputSpec("average_fuel_mass_flow_rate", "Average fuel mass flow rate", "mass_flow",
+               ("steady",)),
+    OutputSpec("total_propellant_mass_flow_rate", "Total propellant mass flow rate",
+               "mass_flow", ("steady",),
+               help="Oxidizer plus fuel through the nozzle."),
+
+    # ---- steady: the chamber -------------------------------------------
+    OutputSpec("chamber_temperature", "Chamber stagnation temperature", "temperature",
+               ("steady",),
+               help="Flame temperature PROPEP returns for this propellant at this "
+                    "chamber pressure."),
+    OutputSpec("chamber_gas_molar_weight", "Chamber gas molar weight", "molar_mass",
+               ("steady",)),
+    OutputSpec("heat_capacity_ratio", "Heat capacity ratio", DIMENSIONLESS, ("steady",),
+               help="Gamma for the combustion gas, from PROPEP."),
+
+    # ---- steady: the nozzle --------------------------------------------
+    OutputSpec("nozzle_gas_exit_pressure", "Exit pressure", "pressure", ("steady",),
+               help="NOT calculated. Fixed at 0.959 atm in prop_calculations.py, because "
+                    "tuning it there matched test data better than assuming a perfectly "
+                    "expanded nozzle."),
+    OutputSpec("nozzle_gas_exit_mach_number", "Exit Mach number", DIMENSIONLESS, ("steady",)),
+    OutputSpec("nozzle_gas_exit_temperature", "Exit temperature", "temperature", ("steady",)),
+    OutputSpec("nozzle_gas_exit_velocity", "Exit velocity", "velocity", ("steady",)),
+
+    # ---- steady: performance -------------------------------------------
+    OutputSpec("thrust", "Thrust", "force", ("steady",),
+               help="Constant through the burn: that is what makes the model steady."),
+    OutputSpec("Isp", "Specific impulse", "time", ("steady",),
+               help="Thrust over total propellant weight flow at sea level."),
+    OutputSpec("wet_mass", "Wet mass", "mass", ("steady",),
+               help="Dry mass plus fuel plus oxidizer at ignition. Not computed for a "
+                    "hotfire, which never leaves the ground."),
+    OutputSpec("thrust_to_weight_ratio", "Pad thrust-to-weight", DIMENSIONLESS, ("steady",),
+               help="Thrust over wet weight at ignition. Below about 5 the rocket leaves "
+                    "the rail too slowly to stay stable."),
+
+    # ---- steady: the flight --------------------------------------------
+    OutputSpec("reached_apogee_agl", "Apogee (AGL)", "distance", ("steady",),
+               help="Peak altitude above the launch pad. This is what the target apogee "
+                    "means and what the convergence solver aims at."),
+    OutputSpec("reached_apogee", "Apogee (ASL)", "distance", ("steady",),
+               help="The same apogee above sea level. Runs written before the AGL key "
+                    "existed have only this one, and their target was read against it."),
+    OutputSpec("target_apogee_reached", "Target apogee reached", TEXT, ("steady",),
+               help="False when the solver ran out of fuel grain before reaching the "
+                    "target. The run still completes and its numbers are real."),
+
+    # ---- steady inputs --------------------------------------------------
+    OutputSpec("oxidizer_mass_flow_rate", "Oxidizer mass flow rate", "mass_flow",
+               ("steady_input",),
+               help="Held constant for the whole burn."),
+    OutputSpec("chamber_pressure", "Chamber pressure", "pressure", ("steady_input",),
+               help="Held constant for the whole burn, and the number the nozzle is "
+                    "sized around."),
+    OutputSpec("fuel_external_radius", "External diameter", "length", ("steady_input",),
+               display_scale=2.0),
+    OutputSpec("fuel_length", "Length", "length", ("steady_input",)),
+    OutputSpec("fuel_grain_density", "Density", "density", ("steady_input",)),
+    OutputSpec("regression_rate_scaling_coefficient", "Regression rate scaling constant",
+               DIMENSIONLESS, ("steady_input",),
+               help="The 'a' in r_dot = a*G_ox^n. Stored in SI; its units depend on n, "
+                    "so see the regression coefficient appendix in the developer manual."),
+    OutputSpec("regression_rate_exponent", "Regression rate exponent", DIMENSIONLESS,
+               ("steady_input",)),
+    OutputSpec("augmented_regression_rate_exponent", "Augmented regression rate exponent",
+               DIMENSIONLESS, ("steady_input",),
+               help="2n+1. Derived at initialization, not typed in."),
+    OutputSpec("liquid_oxidizer_type", "Oxidizer", TEXT, ("steady_input",)),
+    OutputSpec("solid_fuel_type", "Fuel", TEXT, ("steady_input",)),
+    OutputSpec("dry_mass", "Dry mass", "mass", ("steady_input",)),
+    OutputSpec("rocket_external_radius", "Outer diameter", "length", ("steady_input",),
+               display_scale=2.0),
+    OutputSpec("drag_coefficient", "Drag coefficient", DIMENSIONLESS, ("steady_input",)),
+    OutputSpec("target_apogee", "Target apogee (AGL)", "distance", ("steady_input",),
+               help="Measured above the launch pad, not above sea level."),
+    OutputSpec("launch_site_altitude", "Launch site altitude ASL", "distance",
+               ("steady_input",),
+               help="Sets the air density and the backpressure the flight starts at."),
+    OutputSpec("launch_angle", "Launch angle", "angle", ("steady_input",),
+               help="From vertical."),
+
+    # ---- steady settings and metadata -----------------------------------
+    OutputSpec("simulation_type", "Simulation type", TEXT, ("steady_setting",)),
+    OutputSpec("output_units", "Stored in", TEXT, ("steady_setting",),
+               help="The unit system this file's numbers are written in. Not a display "
+                    "choice: it is what the numbers on disk mean."),
+    OutputSpec("number_of_timesteps", "Timesteps", DIMENSIONLESS, ("steady_setting",),
+               help="Ascent samples per burn time. Only the trajectory uses it."),
+    OutputSpec("tolerated_apogee_difference", "Apogee tolerance", "distance",
+               ("steady_setting",),
+               help="How close to the target counts as converged."),
+    OutputSpec("smallest_allowed_inner_fuel_radius", "Smallest allowed internal fuel diameter",
+               "length", ("steady_setting",), display_scale=2.0,
+               help="The floor the convergence search stops at. Hitting it is what makes "
+                    "a run report that the target cannot be reached."),
+    OutputSpec("save_output_data", "Save output data", TEXT, ("steady_setting",)),
+    OutputSpec("save_simulation_data", "Save simulation data", TEXT, ("steady_setting",)),
+    OutputSpec("show_graphs", "Show graphs", TEXT, ("steady_setting",)),
+    OutputSpec("simulation_name", "Name", TEXT, ("steady_setting",)),
+    OutputSpec("simulation_description", "Description", TEXT, ("steady_setting",)),
+    OutputSpec("expected_output", "Expected output", TEXT, ("steady_setting",)),
 
     # ---- internal -----------------------------------------------------
     # launch_metrics() feeds the launch-capability warning and never reaches a
@@ -516,6 +655,42 @@ def check_registry_covers_results(results: Any) -> list[str]:
     for spec in _SPECS:
         if spec.aggregate not in (None, "sum", "max", "min"):
             problems.append(f"{spec.key!r}: unknown aggregate rule {spec.aggregate!r}")
+
+    return problems
+
+
+def check_registry_covers_steady_results(results: Any) -> list[str]:
+    """The same guard for a steady run, in one direction only.
+
+    One direction because steady writes different keys depending on the mode: a
+    hotfire has no wet mass and no apogee, a parametric file has no top-level
+    rocket_parameters at all. Demanding that every steady spec appear in every
+    steady file would fail on a correct hotfire. What can be demanded is the
+    other way round: nothing lands in a results file without a spec to label it.
+
+    Returns a list of problems, empty when consistent. Pass it a loaded steady
+    results JSON, of any mode.
+    """
+    problems: list[str] = []
+
+    def check(name: str, block: Any) -> None:
+        if not isinstance(block, dict):
+            return
+        for key in block:
+            if not has(key):
+                problems.append(f"{name}: {key!r} is in the file but has no OutputSpec")
+
+    check("metadata", results.get("metadata"))
+    check("simulation_settings", {k: v for k, v in (results.get("simulation_settings") or {}).items()
+                                  if k != "parametric_study_settings"})
+    check("rocket_inputs", results.get("rocket_inputs"))
+    check("rocket_parameters", results.get("rocket_parameters"))
+
+    sweep = results.get("parametric_results") or {}
+    for index, entry in enumerate((sweep.get("rocket_parameters") or [])[:1]):
+        check(f"parametric_results.rocket_parameters[{index}]", entry)
+    for index, entry in enumerate((sweep.get("rocket_inputs") or [])[:1]):
+        check(f"parametric_results.rocket_inputs[{index}]", entry)
 
     return problems
 
