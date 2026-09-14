@@ -1,11 +1,3 @@
-/*
-   EXPECT: Run raises the 'exactly one of these is required' error. A hotfire
-   needs a fuel mass or an initial port diameter and this config has neither.
-
-   Edge case worth checking by hand: type 0 into fuel_mass. Zero counts as
-   FILLED, so the error should go away rather than persist.
-*/
-
 {
     "metadata": {
         "simulation_type": "steady", // can be "steady", "unsteady", "steady_test", "unsteady_test"

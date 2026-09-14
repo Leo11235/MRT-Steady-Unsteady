@@ -1,18 +1,3 @@
-/*
-   EXPECT: the preflight modal opens with two CRITICAL entries,
-   init_low_ullage and init_inner_fuel_radius_exceeds_outer_fuel_radius.
-   Criticals sort above warnings and advisories.
-
-   Cancel returns to the form. Run anyway is allowed to proceed, and the
-   simulation should then fail with a readable error popup rather than a
-   raw traceback.
-*/
-
-/*
-An example of an unsteady config file
-Every physical input is a [value, unit] pair
-*/
-
 {
     "config": {
         "metadata": {

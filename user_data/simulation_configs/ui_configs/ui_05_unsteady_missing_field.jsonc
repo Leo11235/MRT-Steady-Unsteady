@@ -1,13 +1,3 @@
-/*
-   EXPECT: Run raises the validator popup naming nozzle_throat_diameter, and
-   the CV5 nozzle tab highlights that field.
-*/
-
-/*
-An example of an unsteady config file
-Every physical input is a [value, unit] pair
-*/
-
 {
     "config": {
         "metadata": {

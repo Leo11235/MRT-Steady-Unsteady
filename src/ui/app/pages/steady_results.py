@@ -298,10 +298,10 @@ class SteadyResultsPage(ResultsPage):
                 if reached is None:
                     continue                    # a hotfire has nothing to reach
                 if reached:
-                    entries.append(("text", "Run",
+                    entries.append(("text", "Run status",
                                     "Rocket successfully converged to apogee", None))
                 else:
-                    entries.append(("text", "Run",
+                    entries.append(("text", "Run status",
                                     "Rocket could not reach target apogee", theme.ERROR))
                 continue
 

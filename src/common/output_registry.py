@@ -429,6 +429,11 @@ _SPECS: tuple[OutputSpec, ...] = (
 
     # ---- steady settings and metadata -----------------------------------
     OutputSpec("simulation_type", "Simulation type", TEXT, ("steady_setting",)),
+    # Written by both programs, into steady's metadata and unsteady's. Scoped
+    # to steady only so the unsteady coverage check does not demand it of the
+    # files written before it existed.
+    OutputSpec("program_version", "Created with", TEXT, ("steady_setting",),
+               help="The build that wrote this results file."),
     OutputSpec("output_units", "Stored in", TEXT, ("steady_setting",),
                help="The unit system this file's numbers are written in. Not a display "
                     "choice: it is what the numbers on disk mean."),

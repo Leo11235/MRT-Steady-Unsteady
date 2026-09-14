@@ -1,12 +1,3 @@
-/*
-   EXPECT: loading this preset fails cleanly, or Run fails cleanly, with a
-   message naming the unit. 'pascals' is not an alias in
-   src/common/variable_conversions.py ('Pa' is).
-
-   The point is that a bad unit gives a readable error rather than a
-   KeyError traceback in the terminal.
-*/
-
 {
     "metadata": {
         "simulation_type": "steady", // can be "steady", "unsteady", "steady_test", "unsteady_test"

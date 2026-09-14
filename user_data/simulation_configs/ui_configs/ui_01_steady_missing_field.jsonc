@@ -1,11 +1,3 @@
-/*
-   EXPECT: clicking Run raises the validator popup, and the message names
-   chamber_pressure. The simulation must not start.
-
-   Also check: the Oxidizer & Fuel tab highlights the Chamber pressure field
-   in red, and no other field rings by mistake.
-*/
-
 {
     "metadata": {
         "simulation_type": "steady", // can be "steady", "unsteady", "steady_test", "unsteady_test"

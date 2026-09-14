@@ -1,17 +1,3 @@
-/*
-   EXPECT: opening CV2 shows the instant model selected and NO numeric
-   inputs beneath it. Switching the dropdown to linear should reveal one
-   field, and sigmoid two.
-
-   This config still carries the sigmoid values in the file. They must be
-   ignored, not validated: Run should succeed.
-*/
-
-/*
-An example of an unsteady config file
-Every physical input is a [value, unit] pair
-*/
-
 {
     "config": {
         "metadata": {

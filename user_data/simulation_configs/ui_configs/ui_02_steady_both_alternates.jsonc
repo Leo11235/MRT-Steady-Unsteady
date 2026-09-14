@@ -1,11 +1,3 @@
-/*
-   EXPECT: Run raises the 'one or the other, not both' error naming
-   fuel_mass and initial_internal_fuel_diameter.
-
-   Then clear one of the two in the form and Run again: it should proceed.
-   Repeat with the OTHER one cleared. Both ways have to work.
-*/
-
 {
     "metadata": {
         "simulation_type": "steady", // can be "steady", "unsteady", "steady_test", "unsteady_test"

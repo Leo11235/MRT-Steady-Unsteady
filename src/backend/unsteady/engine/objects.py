@@ -7,6 +7,7 @@ from pathlib import Path
 import json, math, numpy as np
 
 from src.common.plotting.unsteady_plots import unsteady_results
+from src.common.version import VERSION
 
 class StateVector:
     """
@@ -343,6 +344,7 @@ class History:
             "terminal_state": self.terminal_state,
             "completed_nominally": self.completed_nominally,
             "terminal_reason": self.terminal_reason,
+            "program_version": VERSION, # for diagnostics
         }
         
         # if no timesteps recorded, return early

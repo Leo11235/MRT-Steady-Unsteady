@@ -26,6 +26,7 @@ from src.backend.steady.simulation_engine import simulate_hotfire, simulate_fuel
 from src.backend.steady.parametric_study import simulate_parametric_study
 
 import src.common.variable_conversions as convert
+from src.common.version import VERSION
 
 
 def run_steady(rocket_inputs_filename: str, 
@@ -79,6 +80,9 @@ def run_steady(rocket_inputs_filename: str,
         if param_results_dict is not None:
             convert_param_results_dict_SI_to_MRT(param_results_dict)
     
+    # for diagnostics
+    metadata["program_version"] = VERSION
+
     # assemble JSON export data
     export_data = {
         "rocket_inputs": rocket_inputs,

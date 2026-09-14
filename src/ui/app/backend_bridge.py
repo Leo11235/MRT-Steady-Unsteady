@@ -554,6 +554,26 @@ def run_timestamp(run: Path) -> datetime:
     return datetime.fromtimestamp(Path(run).stat().st_mtime)
 
 
+def run_program_version(run: Path) -> str | None:
+    """Which build wrote this run, or None for one written before we stamped it.
+
+    Reads the head of the file rather than parsing it. Both programs put their
+    metadata block near the top, and a parametric results file runs to
+    megabytes: parsing one to read a five-character string would make clicking
+    a row in the browser feel slow for no reason.
+    """
+    path = run_json_path(run)
+    if path is None:
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            head = handle.read(64 * 1024)
+    except OSError:
+        return None
+    match = re.search(r'"program_version"\s*:\s*"([^"]{1,32})"', head)
+    return match.group(1) if match else None
+
+
 def load_run(run: Path) -> dict:
     """Parse a saved run's results JSON."""
     path = run_json_path(run)
