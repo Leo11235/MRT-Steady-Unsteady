@@ -136,6 +136,7 @@ def convert_rocket_inputs_SI_to_MRT(rocket_inputs):
     _converted(rocket_inputs, "fuel_length", convert.m_to_in)
     _converted(rocket_inputs, "chamber_pressure", convert.Pa_to_psi)
     _converted(rocket_inputs, "rocket_external_radius", convert.m_to_in)
+    _converted(rocket_inputs, "launch_angle", convert.rad_to_deg)
 
 def convert_rocket_parameters_SI_to_MRT(rocket_parameters):
     _converted(rocket_parameters, "initial_internal_fuel_radius", convert.m_to_in)

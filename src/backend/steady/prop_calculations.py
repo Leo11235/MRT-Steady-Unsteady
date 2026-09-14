@@ -19,10 +19,7 @@ def CV3_calculations(rocket_inputs, rocket_parameters, simulation_settings, cons
     rocket_parameters["nozzle_throat_area"] = calculate_At(rocket_inputs, rocket_parameters, constants_dict)
     rocket_parameters["nozzle_throat_radius"] = calculate_Rt(rocket_inputs, rocket_parameters)
 
-    # rocket_parameters["nozzle_gas_exit_pressure"] = calculate_Pe(rocket_inputs, rocket_parameters, constants_dict)
-    # playing with exit pressure gives better results, very strange
-    # in an ideal nozzle, exit pressure should be the same as 1 atm
-    rocket_parameters["nozzle_gas_exit_pressure"] = 101325 * 0.95926
+    rocket_parameters["nozzle_gas_exit_pressure"] = calculate_Pe(rocket_inputs, rocket_parameters, constants_dict)
 
     rocket_parameters["nozzle_gas_exit_mach_number"] = calculate_Me(rocket_inputs, rocket_parameters)
     rocket_parameters["nozzle_exit_area"] = calculate_Ae(rocket_inputs, rocket_parameters)
@@ -128,14 +125,12 @@ def calculate_Rt(rocket_inputs, rocket_parameters):
 
     return sqrt(At / pi)
 
-# calculate nozzle gas exit pressure
-# this one is a bit unique, no actual calculation because we assume that the nozzle is perfectly expanded
-# this means the exit pressure matches ambient pressure
+# environmental pressure
 def calculate_Pe(rocket_inputs, rocket_parameters, constants_dict):
-    Pinf = constants_dict["ambient_sea_level_atmospheric_pressure"]
-    #Pe = Pinf * .53102492 # no clue why but multiplying by this number solves all my problems
-    Pe = Pinf
-    return Pe
+    h_pad = rocket_inputs.get("launch_site_altitude")
+    if h_pad is None: # for hotfire
+        return constants_dict["ambient_sea_level_atmospheric_pressure"]
+    return calculate_ambient_pressure(h_pad)
 
 # nozzle gas exit mach number
 def calculate_Me(rocket_inputs, rocket_parameters):
@@ -186,7 +181,8 @@ def calculate_F(rocket_inputs, rocket_parameters, constants_dict):
     Mn = rocket_inputs["oxidizer_mass_flow_rate"] + rocket_parameters["average_fuel_mass_flow_rate"] # nozzle total propellant mass flow rate
     Ve = rocket_parameters["nozzle_gas_exit_velocity"]
     Pe = rocket_parameters["nozzle_gas_exit_pressure"]
-    Pinf = constants_dict["ambient_sea_level_atmospheric_pressure"]
+    h_pad = rocket_inputs.get("launch_site_altitude")
+    Pinf = (constants_dict["ambient_sea_level_atmospheric_pressure"] if h_pad is None else calculate_ambient_pressure(h_pad))
     Ae = rocket_parameters["nozzle_exit_area"]
 
     F = Mn * Ve + (Pe - Pinf) * Ae
@@ -227,17 +223,14 @@ def calculate_TtW(rocket_inputs, rocket_parameters, constants_dict):
 
 
 # air density as a function of height
-def calculate_air_density(height):
+def calculate_atmosphere(height):
     """
-    Calculates atmospheric temperature, pressure, and density given current altitude asl
+    Returns (temperature [K], pressure [Pa]) at an altitude above sea level
     Based on NASA atmospheric model constants provided in Joel's report (Section 3.1.5)
     """
     
     # safeguard against negative altitudes
     h = max(height, 0.0)
-    
-    # Dry air specific gas constant [J/(kg*K)]
-    R_air = 287.05 
     
     if h < 11000.0:
         # Troposphere
@@ -251,6 +244,26 @@ def calculate_air_density(height):
         # approximation for h >= 25,000m
         T = 216.69 + 0.00299 * (h - 25000.0)
         p = 2488.0 * (T / 216.6) ** -11.388
+
+    return T, p
+
+# ambient pressure as a function of height
+def calculate_ambient_pressure(height):
+    """
+    Ambient static pressure [Pa] at an altitude above sea level
+    """
+    return calculate_atmosphere(height)[1]
+
+# air density as a function of height
+def calculate_air_density(height):
+    """
+    Calculates air density given current altitude asl, from the same atmosphere
+    the nozzle design point is taken from
+    """
+    # Dry air specific gas constant [J/(kg*K)]
+    R_air = 287.05
+    
+    T, p = calculate_atmosphere(height)
 
     # calculate density using Ideal Gas Law for air
     rho = p / (R_air * T)
