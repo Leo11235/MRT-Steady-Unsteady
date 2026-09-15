@@ -295,8 +295,11 @@ class ResultsBrowserPage(ctk.CTkFrame):
             text=f"{_KIND_TITLES.get(kind, kind.title())} run: "
                  f"{backend_bridge.run_display_name(run)}")
         self._meta_label.configure(text="\n".join(line for line in [
-            size,
-            created,
+            
+            # order to display the two: 
+            created, # date created
+            size, # file size
+            
             ("Also contains " + ", ".join(extras)) if extras else "",
         ] if line))
 

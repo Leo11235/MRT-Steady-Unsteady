@@ -5,11 +5,11 @@
     "metadata": {
         "simulation_type": "steady_test",
         "simulation_name": "Units output defaults to mrt",
-        "simulation_description": "output_units omitted entirely, so the value comes from default_simulation_settings, which says MRT. Every existing config overrides it, meaning the default has never been exercised by a test even though it is what a user gets when they leave the field alone. reached_apogee should come out in feet, near 45000.",
+        "simulation_description": "output_units omitted entirely, so the value comes from default_simulation_settings, which says MRT. Every existing config overrides it, meaning the default has never been exercised by a test even though it is what a user gets when they leave the field alone. reached_apogee_agl should come out in feet, near 45000.",
         "expected_output": "success",
         "checks": {
             "value_within": {
-                "rocket_parameters.reached_apogee": [45000, 328]
+                "rocket_parameters.reached_apogee_agl": [45000, 328]
             },
             "value_between": {
                 "rocket_parameters.fuel_mass": [1, 10]

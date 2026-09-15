@@ -5,11 +5,11 @@
     "metadata": {
         "simulation_type": "steady_test",
         "simulation_name": "Units output imp is a no op",
-        "simulation_description": "Documents current behaviour rather than asserting desired behaviour. steady_main only branches on output_units == 'MRT', so 'IMP' is accepted and silently produces SI. reached_apogee therefore stays near 13716 m rather than becoming 45000 ft. If IMP is ever implemented this test fails, which is the point: it should not be possible to implement it and forget this config exists.",
+        "simulation_description": "Documents current behaviour rather than asserting desired behaviour. steady_main only branches on output_units == 'MRT', so 'IMP' is accepted and silently produces SI. reached_apogee_agl therefore stays near 13716 m rather than becoming 45000 ft. If IMP is ever implemented this test fails, which is the point: it should not be possible to implement it and forget this config exists.",
         "expected_output": "success",
         "checks": {
             "value_within": {
-                "rocket_parameters.reached_apogee": [13716, 100]
+                "rocket_parameters.reached_apogee_agl": [13716, 100]
             },
             "value_between": {
                 "rocket_parameters.fuel_mass": [1, 10]

@@ -115,6 +115,18 @@ class History:
         self.t_terminal = t
     
     # helper functions for performance calculations
+    # a derived series, guaranteed to hold one value per logged timestep
+    def _derived_array(self, key: str, length: int, fill: float) -> np.ndarray:
+        values = self.derived_series.get(key)
+        if not values:
+            return np.full(length, fill, dtype=float)
+        array = np.asarray(values, dtype=float)
+        if len(array) == length:
+            return array
+        if len(array) > length:
+            return array[:length]
+        return np.concatenate([array, np.full(length - len(array), fill, dtype=float)])
+
     # extracts the maximum value from an array using a boolean mask, ignoring NaNs
     def _safe_max(self, array: np.ndarray, mask: np.ndarray) -> float | None:
         valid_values = array[mask]
@@ -203,16 +215,16 @@ class History:
         r_f = np.array(self.time_series["r_f"]) # inner fuel radius
         m_o_c = np.array(self.time_series["m_o"]) # ox mass
         m_f_c = np.array(self.time_series["m_f"]) # fuel mass
-        cstar = np.array(self.derived_series.get("cstar", np.full(len(t), np.nan))) # cstar efficiency
-        F_thrust = np.array(self.derived_series.get("F_thrust", np.zeros(len(t)))) # thrust
-        OF = np.array(self.derived_series.get("OF", np.full(len(t), np.nan))) # OF ratio
-        T_c = np.array(self.derived_series.get("T_c", np.full(len(t), np.nan))) # chamber temp
+        cstar = self._derived_array("cstar", len(t), np.nan) # characteristic velocity
+        F_thrust = self._derived_array("F_thrust", len(t), 0.0) # thrust
+        OF = self._derived_array("OF", len(t), np.nan) # OF ratio
+        T_c = self._derived_array("T_c", len(t), np.nan) # chamber temp
         sx_R = np.array(self.time_series["sx_R"]) # horizontal distance from launchsite
         sy_R = np.array(self.time_series["sy_R"]) # altitude
         vx_R = np.array(self.time_series["vx_R"]) # horizontal velocity
         vy_R = np.array(self.time_series["vy_R"]) # vertical velocity
-        ax_R = np.array(self.derived_series.get("ax_R", np.full(len(t), np.nan))) # horizontal acceleration
-        ay_R = np.array(self.derived_series.get("ay_R", np.full(len(t), np.nan))) # vertical acceleration
+        ax_R = self._derived_array("ax_R", len(t), np.nan) # horizontal acceleration
+        ay_R = self._derived_array("ay_R", len(t), np.nan) # vertical acceleration
         a_mag = np.sqrt(ax_R**2 + ay_R**2) # acceleration magnitude
         
         #### extract initial constants

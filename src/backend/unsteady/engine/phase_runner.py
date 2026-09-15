@@ -165,6 +165,7 @@ def run_unsteady(rocket_inputs_filename: str, # should end in .jsonc
         ld.setdefault("F_thrust", 0.0)
         ld.setdefault("OF", float("nan"))
         ld.setdefault("T_c", float("nan"))
+        ld.setdefault("cstar", float("nan"))
         return ld
 
     while not active_phase.startswith("terminal"):

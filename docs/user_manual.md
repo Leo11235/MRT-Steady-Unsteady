@@ -396,7 +396,16 @@ Download the latest [`MRT-Steady-Unsteady-Setup.exe`](https://github.com/Leo1123
 </details>
 
 
-### End of a run
+### Results
+
+Unsteady's results are spread across different tabs, each serving a different purpose: 
+* **Overall** shows key outputs of the simulation such as apogee and burntime in a blue box, with further outputs in a collapsible section below it. 
+* **Hardware & Parameters** records the rocket's construction and some key calculated constants relating to the combustion and flight processes. 
+* **Per phase** splits the rocket's performance by simulation phase, useful for seeing things such as the average thrust produced during liquid vs. gaseous blowdown. 
+* **Events** shows how the simulation transitioned between each phase. In a nominal run, all events will be of the `PHASE_TRANSITION` type. 
+* **Warnings** document any warnings the program may have about the rocket's construction or performance. See Warning system section below. 
+
+#### Terminal state
 
 Every unsteady run records a terminal state, visible in the results.
 

@@ -13,7 +13,7 @@
             },
             // Whatever it managed is the airframe's ceiling, nowhere near 100 km.
             "value_between": {
-                "rocket_parameters.reached_apogee": [15000, 25000]
+                "rocket_parameters.reached_apogee_agl": [15000, 25000]
             }
         }
     },

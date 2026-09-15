@@ -10,7 +10,7 @@
         "checks": {
             "json_path_exists": ["rocket_parameters.target_apogee_reached", "rocket_parameters.fuel_mass"],
             "value_between": {
-                "rocket_parameters.reached_apogee": [500, 4000]
+                "rocket_parameters.reached_apogee_agl": [500, 4000]
             },
             "files_exist": ["Convergence very low apogee.json"]
         }

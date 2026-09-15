@@ -9,7 +9,7 @@
         "expected_output": "success",
         "checks": {
             "value_within": {
-                "rocket_parameters.reached_apogee": [13716, 500]
+                "rocket_parameters.reached_apogee_agl": [13716, 500]
             },
             "value_between": {
                 "rocket_parameters.fuel_mass": [1, 10]

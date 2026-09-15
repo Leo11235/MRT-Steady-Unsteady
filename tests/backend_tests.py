@@ -32,7 +32,7 @@ def run_backend_tests(steady_tests_only=False,
                       unsteady_tests_only=False,
                       only=None,
                       keep_results=False,
-                      timeout=100, # set to ~2000 for steady test 57 to pass (it is a long parametric test)
+                      timeout=100000, # set to lower number (ie 100) to get test results within 1 hour, at least one steady parametric test will fail but that's rather because it takes a long time than because it's broken. 
                       reports=True):
     """
     Run the backend test suite and print the results

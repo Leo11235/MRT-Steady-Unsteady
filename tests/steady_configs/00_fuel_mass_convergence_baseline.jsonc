@@ -9,7 +9,7 @@
             "json_path_exists": ["rocket_parameters", "flight_dict"],
             // the whole point of convergence: land near the target apogee
             "value_within": {
-                "rocket_parameters.reached_apogee": [13716, 100]
+                "rocket_parameters.reached_apogee_agl": [13716, 100]
             },
             // wide sanity bands, meant to catch nonsense rather than drift
             "value_between": {

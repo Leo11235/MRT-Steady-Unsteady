@@ -319,7 +319,7 @@ def warn_engine_cutoff_thrust_floor(t: float, warning_dict: dict, state_vector: 
 def warn_CEA_envelope_excursions(warning_dict: dict):
     for key, exc in envelope_excursions().items():
         warning_dict[f"cea_envelope_{key.replace(' ', '_').replace('/', '')}"] = {
-            "severity": "caution",
+            "severity": "advisory",
             "message": (f"{exc['axis']} went {exc['limit']} {exc['count']} times; worst was {exc['worst_requested']:.4g} against a table edge of {exc['table_edge']:.4g}. Values were held at the edge for those steps."),
             "axis": exc["axis"],
             "worst_requested": exc["worst_requested"],

@@ -8,7 +8,7 @@
             "files_exist": ["Convergence high apogee.json"],
             "json_path_exists": ["rocket_parameters", "flight_dict"],
             "value_within": {
-                "rocket_parameters.reached_apogee": [20000, 300]
+                "rocket_parameters.reached_apogee_agl": [20000, 300]
             },
             "value_between": {
                 "rocket_parameters.fuel_mass": [1, 20],
