@@ -7,8 +7,8 @@
 1. [Introduction](#1-Introduction)
 2. [The input system](#2-The-input-system)
 3. [Testing suite](#3-Testing-suite)
-4. [Backend: Steady](#4-Backend:-Steady)
-5. [Backend: Unsteady](#4-Backend:-Unsteady)
+4. [Backend: Steady](#4-Backend-Steady)
+5. [Backend: Unsteady](#4-Backend-Unsteady)
 
 ---
 
