@@ -38,6 +38,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from src.common.version import VERSION
+
 
 # =============================================================================
 # Roots
@@ -84,8 +86,9 @@ def _source_layout_root() -> Path:
 _seeded = False
 
 
-# Bumped whenever the shipped example configs change shape. A writable root
-# seeded under an older stamp gets its examples refreshed on next launch.
+# A writable root seeded under an older stamp gets its examples refreshed on
+# next launch, and the stamp is the app version, so every release refreshes
+# them.
 #
 # This exists because the examples are TEMPLATES, not user documents. Seeding
 # them only when absent meant an upgraded install kept the examples from
@@ -94,7 +97,14 @@ _seeded = False
 # "not an unsteady config, no rocket inputs block found" and
 # "ValueError: Unknown unit: 'n'" in the exe, and never in source mode, where
 # the checkout's own files are read directly.
-SEED_STAMP = "1.5"
+#
+# It was a hand-written string, and that is exactly how it failed: the string
+# said 1.5 for the whole of v1.6, through the release that changed the
+# regression coefficient from [0.000132, "."] to [0.132, mm/s]. Every install
+# kept the old example, read the old number as millimetres, and ran the engine
+# at a thousandth of the intended regression rate. Tying it to VERSION means
+# the person who ships a release cannot forget the examples went with it.
+SEED_STAMP = VERSION
 _STAMP_FILE = "user_data/.seeded"
 
 

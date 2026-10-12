@@ -33,13 +33,13 @@ PATCHNOTES: list[dict] = [
             
             "Regression rate constant input now has a unit dropdown. The default value has been changed from 0.000132 m/s to 0.132 mm/s to fit with rocketry standard.",
                         
-            "When using SI units, pressures display in kPa rather than Pa."
+            "When using SI units, pressures display in kPa rather than Pa.",
             
             "Added new warnings (rocket outer diameter is more than 40% larger than outer fuel diameter, or if rocket outer diameter is more than 50% of rocket height; main chute deployment is under 1000 ft AGL; regression rate constant high/low)."
             
             "Upgraded unsteady terminal printout, better for debugging & more intuitive.",
             
-            "Removed dip tube inputs from unsteady model; negligible impact on outputs."
+            "Removed dip tube inputs from unsteady model; negligible impact on outputs.",
 
             "Fixed the 'not responding' greyout that appeared when opening an input page for the first time, starting a simulation, or opening a past run.",
 

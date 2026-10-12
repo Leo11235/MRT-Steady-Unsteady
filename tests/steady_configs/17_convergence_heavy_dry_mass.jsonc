@@ -2,13 +2,13 @@
     "metadata": {
         "simulation_type": "steady_test",
         "simulation_name": "Convergence heavy dry mass",
-        "simulation_description": "Heavy dry mass. Forked from 00_fuel_mass_convergence_baseline: dry_mass raised from 88.89 kg to 150 kg. Lower TWR at ignition and slower acceleration through the atmosphere increase gravity + drag losses; convergence must find a much larger fuel mass. Expected: success with reached_apogee near target and fuel_mass considerably higher than baseline.",
+        "simulation_description": "Heavy dry mass. Forked from 00_fuel_mass_convergence_baseline: dry_mass raised from 88.89 kg to 150 kg. Lower TWR at ignition and slower acceleration through the atmosphere increase gravity + drag losses; convergence must find a much larger fuel mass. Target lowered to 12000 m because 13716 m is beyond this airframe's ceiling at 150 kg dry mass (it tops out around 13370 m with the port at its 10 mm floor), which would test the shortfall path rather than convergence. Expected: success with reached_apogee near target and fuel_mass considerably higher than baseline.",
         "expected_output": "success",
         "checks": {
             "files_exist": ["Convergence heavy dry mass.json"],
             "json_path_exists": ["rocket_parameters", "flight_dict"],
             "value_within": {
-                "rocket_parameters.reached_apogee_agl": [13716, 200]
+                "rocket_parameters.reached_apogee_agl": [12000, 200]
             },
             "value_between": {
                 "rocket_parameters.fuel_mass": [3, 25]
@@ -33,7 +33,7 @@
         "liquid_oxidizer_type": "NITROUS OXIDE",
         "solid_fuel_type": "EICOSANE (PARAFFIN)",
 
-        "target_apogee": [13716, "m"],
+        "target_apogee": [12000, "m"],
         "launch_site_altitude": [364, "m"],
         "dry_mass": [150, "kg"],
         "rocket_external_diameter": [0.20574, "m"],

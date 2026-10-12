@@ -332,7 +332,7 @@ class SteadyPage(InputPage):
 
         # Clear first, so fields absent from this preset don't keep values from
         # whatever was loaded before.
-        for path, field in self.fields.items():
+        for path, field in self.fields_in_load_order():
             key = path.rsplit(".", 1)[-1]
             if key in inputs:
                 field.from_pair(inputs[key])

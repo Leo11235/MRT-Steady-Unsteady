@@ -5,7 +5,7 @@
         "simulation_description": "Parametric study with all parametrizable variables activated, 2 points per variable. Expect 128 points.", // a brief description of the simulation, eg what is being tried for the rocket if it is a regular config or what is being tested+expected output if it is a test config
         "expected_output": "success", // test configs only; see EXPECTED_OUTPUTS in backend_tests_helpers.py
         "checks": { // all values SI, since output_units is SI
-            "files_exist": ["Parametric baseline.json"],
+            "files_exist": ["Parametric all variables (2 points each, 128 total points).json"],
             "json_path_exists": ["parametric_results.combinations", "parametric_results.variable_ranges"],
             "list_length": {
                 "parametric_results.combinations": 128,

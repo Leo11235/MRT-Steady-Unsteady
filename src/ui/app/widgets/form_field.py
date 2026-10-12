@@ -170,6 +170,16 @@ class LabeledField(ctk.CTkFrame):
     def _is_regression(self) -> bool:
         return self.spec.category == vc.REGRESSION_COEFFICIENT
 
+    @property
+    def depends_on_sibling(self) -> bool:
+        """True when converting this field needs another field's value.
+
+        Only the regression coefficient does, and only because its units are a
+        function of the exponent. A loader has to fill this field last, or the
+        conversion runs against whatever exponent the form happened to hold.
+        """
+        return self._exponent_provider is not None
+
     def _exponent(self) -> Optional[float]:
         """The regression exponent n, read live from its own field."""
         if self._exponent_provider is None:
@@ -222,9 +232,17 @@ class LabeledField(ctk.CTkFrame):
     def from_pair(self, pair: Any) -> None:
         """Populate from a config pair, adopting the unit it was saved in.
 
-        Deliberately does NOT convert into whatever unit is currently selected:
+        Deliberately does NOT convert when the field offers the saved unit:
         showing the file's own numbers makes a loaded preset recognisable.
         Accepts a bare number too, for configs written before the pair format.
+
+        When the field does NOT offer the saved unit, the number is converted
+        into the unit the field is showing. It used to be written in as typed,
+        which silently relabelled it: a config holding [0.000132, "."], the
+        pre-v1.6 spelling of the regression coefficient, landed in a box
+        labelled mm/s and ran the engine at a thousandth of the intended
+        regression rate. A number wearing the wrong unit is worse than a number
+        in an unfamiliar one.
         """
         if self.spec.value_type == "text":
             self.var.set("" if pair is None else str(pair))
@@ -232,10 +250,12 @@ class LabeledField(ctk.CTkFrame):
 
         if isinstance(pair, (list, tuple)) and len(pair) == 2:
             value, unit = pair
-            if unit and vc.is_known_unit(unit):
-                canonical = vc._canonical(unit)
+            canonical = vc._canonical(unit) if unit else "."
+            if vc.is_known_unit(canonical):
                 if canonical in self.spec.unit_options:
                     self._set_unit_silently(canonical)
+                else:
+                    value = self._converted_from(value, canonical)
         else:
             value = pair
 
@@ -243,6 +263,31 @@ class LabeledField(ctk.CTkFrame):
             self.var.set("")
         else:
             self.var.set(_format_number(value))
+
+    def _converted_from(self, value: Any, saved_unit: str) -> Any:
+        """`value`, saved in `saved_unit`, expressed in the unit on screen.
+
+        Two cases are worth converting. A unit of the same quantity that this
+        field simply does not offer, millimetres on a field that lists
+        centimetres. And ".", which is how configs written before the units
+        existed said "this number is already SI".
+
+        Anything else is left exactly as it was found: there is no honest
+        conversion from a unit that measures something else, and a wrong number
+        would be harder to notice than a strange one. The run's own validation
+        is what should catch those.
+        """
+        if value is None or value == "":
+            return value
+        current = self.unit
+        if saved_unit != "." and not vc.same_category(saved_unit, current):
+            return value
+        try:
+            in_SI = self._value_to_SI(float(value), saved_unit)
+            shown = self._value_from_SI(in_SI, current) if in_SI is not None else None
+        except (ValueError, KeyError, TypeError):
+            return value
+        return value if shown is None else shown
 
     def get_si(self) -> Optional[float]:
         """This field's value in SI, or None when blank or unparseable.

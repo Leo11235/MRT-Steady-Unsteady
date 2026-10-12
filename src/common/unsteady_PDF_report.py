@@ -495,7 +495,6 @@ def generate_report(run_dir,
     if not figures:
         add(Paragraph("No plots could be built from this run.", st["note"]))
     else:
-        add(Paragraph(f"{len(figures)} plots, one per page, in registry order.", st["note"]))
         for index, (label, buffer) in enumerate(figures):
             add(PageBreak())
             add(Paragraph(f"{index + 1}. {_esc(label)}", st["h2"]))

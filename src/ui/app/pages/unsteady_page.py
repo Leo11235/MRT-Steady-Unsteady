@@ -294,7 +294,7 @@ class UnsteadyPage(InputPage):
             if model in self._models.get(cv, []):
                 self.model_vars[cv].set(registry.model_label(model))
 
-        for path, field in self.fields.items():
+        for path, field in self.fields_in_load_order():
             cv, key = path.split(".", 1)
             cv_block = cv_inputs.get(cv) or {}
             if key in cv_block:

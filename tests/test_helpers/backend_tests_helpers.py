@@ -436,26 +436,29 @@ _MIN_PLOT_BYTES = 2000 # a real plot is tens of KB; anything this small is a stu
 
 def check_graph_files_are_real(ctx: TestContext) -> tuple[bool, str]:
     """
-    run_report.pdf and graphs/*.png are rendered, not empty stubs.
+    the run report PDF and graphs/*.png are rendered, not empty stubs.
 
     save_to_pdf used to write graphs.pdf, a bare stack of plots. It now writes
-    the full run report, so the filename moved with it.
+    the full run report, so the filename moved with it. The name is read from
+    the report module so this check cannot drift away from it again.
     """
     if ctx.output_dir is None:
         return False, "the run produced no output directory"
 
+    from src.common.unsteady_PDF_report import REPORT_FILENAME
+
     problems = []
 
-    pdf = ctx.output_dir / "run_report.pdf"
+    pdf = ctx.output_dir / REPORT_FILENAME
     if not pdf.exists():
-        problems.append("run_report.pdf missing")
+        problems.append(f"{REPORT_FILENAME} missing")
     else:
         size = pdf.stat().st_size
         header = pdf.read_bytes()[:len(_PDF_MAGIC)]
         if header != _PDF_MAGIC:
-            problems.append(f"run_report.pdf does not start with {_PDF_MAGIC!r}")
+            problems.append(f"{REPORT_FILENAME} does not start with {_PDF_MAGIC!r}")
         elif size < _MIN_PLOT_BYTES:
-            problems.append(f"run_report.pdf is only {size} bytes")
+            problems.append(f"{REPORT_FILENAME} is only {size} bytes")
 
     png_dir = ctx.output_dir / "graphs"
     if not png_dir.is_dir():

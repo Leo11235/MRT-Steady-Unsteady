@@ -195,6 +195,17 @@ class InputPage(ctk.CTkFrame):
         self.fields[path] = field
         return field
 
+    def fields_in_load_order(self):
+        """Every field, with the ones that read a neighbour left until last.
+
+        The regression coefficient converts using the regression exponent,
+        which lives in its own field, so filling the coefficient first would
+        convert it against whatever exponent the form happened to be holding.
+        Stable, so everything else keeps the order it was built in.
+        """
+        return sorted(self.fields.items(),
+                      key=lambda item: item[1].depends_on_sibling)
+
     def add_note(self, parent, text: str) -> ctk.CTkLabel:
         """A grey italic aside, indented to sit under the value column.
 
