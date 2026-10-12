@@ -1,307 +1,297 @@
 """
-ParametricList — dynamic add/remove list of variables to sweep.
+ParametricList — the swept-variable editor on the steady page.
 
-Each row owns three text fields (low_end, high_end, step_size).  Variable
-names are shown using PARAM_VAR_DISPLAY from display.py; the wire form
-stays in PARAM_VAR_VALUE for round-tripping.
+    Fuel external diameter   [ m v ]                              x
+        Low end    [                                            ]
+        High end   [                                            ]
+        Step size  [                                            ]
 
-A `on_change` callback is fired whenever rows are added or removed, so
-the parent page can refresh anything that depends on which variables are
-parametrized (e.g. hiding the corresponding field on another tab).
+    Rocket external diameter [ m v ]                              x
+        Low end    [                                            ]
+        ...
+
+    [ +  Add parameter  v ]
+
+One card per swept variable: a bold name, one unit for the whole card, a remove
+button on the right, and the three bounds stacked beneath. A sweep in mixed
+units would be meaningless, so the unit belongs to the card rather than each
+bound, and changing it converts all three together.
+
+The Add-parameter picker sits immediately below the last card and moves with
+them, so it's always the next thing after the list rather than stranded at the
+bottom of the scroll region.
+
+Rows emit the same [value, unit] pairs everything else does:
+
+    {"chamber_pressure": {"low_end": [400, "psi"],
+                          "high_end": [600, "psi"],
+                          "step_size": [100, "psi"]}}
 """
 
 from __future__ import annotations
 
-from typing import Callable, Iterable, Optional
+from typing import Callable, Optional
 
 import customtkinter as ctk
 
-from src.ui.app import theme, display as display_mod
+from src.common import variable_conversions as vc
+from src.ui.app import field_registry as registry
+from src.ui.app import theme
+
+_ADD_PLACEHOLDER = "+  Add parameter"
+_NONE_LEFT = "(every variable is already swept)"
+
+_BOUND_LABELS = (("low_end", "Low end"),
+                 ("high_end", "High end"),
+                 ("step_size", "Step size"))
+
+# The variables a sweep can drive. Everything else on the steady form is either
+# derived by the solver, a propellant species, or a locked constant, none of
+# which make sense to sweep.
+SWEEPABLE: tuple[str, ...] = (
+    "oxidizer_mass_flow_rate",
+    "chamber_pressure",
+    "fuel_length",
+    "fuel_external_diameter",
+    "rocket_external_diameter",
+    "drag_coefficient",
+    "dry_mass",
+)
 
 
-# Variables the user is allowed to parametrize, per the PDF sketch.
-PARAMETRIZABLE_VARS: tuple[str, ...] = tuple(display_mod.PARAM_VAR_DISPLAY.keys())
+def _format_number(value) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "" if value is None else str(value)
+    if number == int(number) and abs(number) < 1e15:
+        return str(int(number))
+    return f"{number:.6g}"
 
 
-# --------------------------------------------------------------------------
-# Row
-# --------------------------------------------------------------------------
+class _Row(ctk.CTkFrame):
+    """One swept variable: a header with its unit, then three bounds."""
 
-def _format_number(v: float) -> str:
-    """Pretty float→string used when the unit dropdown converts entry
-    values in place.  Integers stay integers, floats get up to 6 sig
-    figures then trailing-zero-trimmed."""
-    if v == int(v) and abs(v) < 1e15:
-        return str(int(v))
-    s = f"{v:.6g}"
-    return s
+    _BOUND_LABEL_W = 110
 
+    def __init__(self, master, key: str, *, system: str = "SI",
+                 on_remove: Callable[["_Row"], None],
+                 on_change: Optional[Callable[[], None]] = None) -> None:
+        super().__init__(master, fg_color="transparent")
+        self.key = key
+        self.spec = registry.get(key)
+        self._on_change = on_change
 
-class _ParamRow(ctk.CTkFrame):
-    """One {low, high, step} row inside a ParametricList."""
-
-    def __init__(self, master, *, var_name: str,
-                 on_remove: Callable[["_ParamRow"], None]) -> None:
-        super().__init__(master, fg_color=("gray90", "gray18"), corner_radius=6)
-        self.var_name = var_name             # wire form (snake_case)
-        self._on_remove = on_remove
-
-        # Unit-kind lookup determines whether this row gets a unit
-        # dropdown at all.  Fields like drag_coefficient (dimensionless)
-        # have no kind and render without one.
-        self._kind = display_mod.field_kind(var_name)
-        if self._kind and self._kind in display_mod.UNIT_KINDS:
-            self._internal_unit = display_mod.UNIT_KINDS[self._kind]["internal"]
-            self._unit_options  = list(
-                display_mod.UNIT_KINDS[self._kind]["options"]
-            )
-        else:
-            self._internal_unit = None
-            self._unit_options  = []
-        self._current_unit = self._internal_unit  # entries interpreted in this
-
-        self.low_var  = ctk.StringVar()
-        self.high_var = ctk.StringVar()
-        self.step_var = ctk.StringVar()
-
-        # ---- header: pretty variable name + unit dropdown + remove ----
+        # ---- header: name, unit, remove -------------------------------
         header = ctk.CTkFrame(self, fg_color="transparent")
-        header.pack(fill="x", padx=theme.PAD_S, pady=(theme.PAD_S, 2))
+        header.pack(fill="x", pady=(theme.PAD_S, theme.PAD_XS))
 
-        ctk.CTkLabel(
-            header,
-            text=display_mod.PARAM_VAR_DISPLAY.get(var_name, var_name),
-            anchor="w",
-            font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold"),
-        ).pack(side="left")
+        ctk.CTkLabel(header, text=self.spec.label, anchor="w",
+                     font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold")).pack(
+            side="left", padx=(0, theme.PAD_S))
 
-        # Unit dropdown lives immediately to the right of the label.
-        # Values in low/high/step are interpreted in whatever unit is
-        # currently selected here; to_dict() converts them back to the
-        # internal SI unit so the backend gets consistent numbers.
-        self._unit_var = None
-        if self._unit_options:
-            self._unit_var = ctk.StringVar(value=self._internal_unit)
-            ctk.CTkOptionMenu(
-                header,
-                variable=self._unit_var,
-                values=self._unit_options,
-                command=self._on_unit_change,
-                dynamic_resizing=False,
-                width=80,
-            ).pack(side="left", padx=(theme.PAD_S, 0))
+        # One unit for the whole card. Converting from the cached SI values
+        # rather than the rounded display keeps repeated switches lossless,
+        # same as LabeledField.
+        self._unit_var = ctk.StringVar(value=self.spec.unit_for(system))
+        self._previous_unit = self._unit_var.get()
+        options = self.spec.unit_options
+        if len(options) >= 2:
+            ctk.CTkOptionMenu(header, values=options, variable=self._unit_var,
+                              command=self._on_unit_changed,
+                              width=80, dynamic_resizing=False).pack(side="left")
+        elif options:
+            ctk.CTkLabel(header, text=options[0], width=80,
+                         text_color=theme.TEXT_MUTED).pack(side="left")
 
-        ctk.CTkButton(
-            header, text="✕", width=24, height=24, corner_radius=12,
-            fg_color="transparent",
-            text_color=("#b00020", "#ff6b6b"),
-            hover_color=("gray80", "gray25"),
-            command=lambda: self._on_remove(self),
-        ).pack(side="right")
+        ctk.CTkButton(header, text="✕", width=30, height=28,
+                      fg_color="transparent", text_color=theme.ERROR,
+                      hover_color=theme.CARD_HOVER,
+                      command=lambda: on_remove(self)).pack(side="right")
 
-        # ---- low / high / step grid -----------------------------------
-        grid = ctk.CTkFrame(self, fg_color="transparent")
-        grid.pack(fill="x", padx=theme.PAD_S, pady=(0, theme.PAD_S))
-
-        def _input(label_text: str, var) -> None:
-            row = ctk.CTkFrame(grid, fg_color="transparent")
-            row.pack(fill="x", pady=1)
-            ctk.CTkLabel(row, text=label_text, width=90, anchor="w") \
-                .pack(side="left")
-            ctk.CTkEntry(row, textvariable=var) \
-                .pack(side="left", fill="x", expand=True)
-
-        _input("Low end",   self.low_var)
-        _input("High end",  self.high_var)
-        _input("Step size", self.step_var)
+        # ---- the three bounds -----------------------------------------
+        self.bound_vars: dict[str, ctk.StringVar] = {}
+        for bound, label in _BOUND_LABELS:
+            row = ctk.CTkFrame(self, fg_color="transparent")
+            row.pack(fill="x", pady=theme.PAD_XS)
+            ctk.CTkLabel(row, text=label, width=self._BOUND_LABEL_W,
+                         anchor="w").pack(side="left", padx=(theme.PAD_M, theme.PAD_S))
+            var = ctk.StringVar()
+            if on_change is not None:
+                var.trace_add("write", lambda *_: on_change())
+            self.bound_vars[bound] = var
+            ctk.CTkEntry(row, textvariable=var).pack(
+                side="left", fill="x", expand=True)
 
     # ------------------------------------------------------------------
-    # Unit conversion
-    # ------------------------------------------------------------------
 
-    def _on_unit_change(self, new_unit: str) -> None:
-        """Convert every entry from the old selected unit to the new one
-        so the user sees consistent numbers when they change the unit."""
-        if not self._kind:
+    @property
+    def unit(self) -> str:
+        return self._unit_var.get()
+
+    def set_system(self, system: str) -> None:
+        """Switch this card's unit to the one `system` uses for its category,
+        converting the low/high/step values rather than clearing them."""
+        target = self.spec.unit_for(system)
+        if not target or target == self._unit_var.get():
             return
-        old_unit = self._current_unit
-        if old_unit == new_unit:
-            return
-        internal = self._internal_unit
-        for var in (self.low_var, self.high_var, self.step_var):
+        old = self._unit_var.get()
+        self._unit_var.set(target)
+        self._previous_unit = old
+        self._on_unit_changed(target)
+
+    def _on_unit_changed(self, new_unit: str) -> None:
+        """Convert all three bounds into the new unit at once."""
+        old_unit = self._previous_unit
+        self._previous_unit = new_unit
+        for var in self.bound_vars.values():
             raw = var.get().strip()
-            if raw == "":
+            if not raw:
                 continue
             try:
-                v = float(raw)
-            except ValueError:
-                continue
-            try:
-                v_internal = display_mod.to_internal(v, old_unit, internal)
-                v_new      = display_mod.from_internal(v_internal, internal, new_unit)
-            except Exception:
-                continue
-            var.set(_format_number(v_new))
-        self._current_unit = new_unit
-
-    # ------------------------------------------------------------------
-    # Round-trip
-    # ------------------------------------------------------------------
+                var.set(_format_number(vc.convert(float(raw), old_unit, new_unit)))
+            except (ValueError, KeyError):
+                pass        # leave half-typed text alone
 
     def to_dict(self) -> dict:
-        """Convert whatever's in the entries (interpreted in the current
-        unit) to the internal SI unit so the backend gets a canonical
-        number regardless of what the user picked in the dropdown."""
-        internal = self._internal_unit
-        current  = self._current_unit
-        kind     = self._kind
-
-        def num(s: str):
-            s = s.strip()
-            if s == "":
-                return None
+        unit = self.unit
+        out = {}
+        for bound, _label in _BOUND_LABELS:
+            raw = self.bound_vars[bound].get().strip()
+            if raw == "":
+                out[bound] = [None, unit]
+                continue
             try:
-                v = float(s)
+                out[bound] = [float(raw), unit]
             except ValueError:
-                return s
-            if kind and internal and current and current != internal:
-                try:
-                    v = display_mod.to_internal(v, current, internal)
-                except Exception:
-                    pass
-            return int(v) if float(v).is_integer() else v
-
-        return {
-            "low_end":   num(self.low_var.get()),
-            "high_end":  num(self.high_var.get()),
-            "step_size": num(self.step_var.get()),
-        }
+                out[bound] = [raw, unit]        # let the validator complain
+        return out
 
     def from_dict(self, spec: dict) -> None:
-        """Loaded values live in the internal SI unit.  Snap the
-        dropdown back to internal and drop the values straight in."""
-        if self._unit_var is not None and self._internal_unit is not None:
-            self._current_unit = self._internal_unit
-            self._unit_var.set(self._internal_unit)
-        self.low_var.set("" if spec.get("low_end")   is None else str(spec["low_end"]))
-        self.high_var.set("" if spec.get("high_end")  is None else str(spec["high_end"]))
-        self.step_var.set("" if spec.get("step_size") is None else str(spec["step_size"]))
+        """Load three bounds, adopting whatever unit they were saved in."""
+        unit = None
+        for bound, _label in _BOUND_LABELS:
+            pair = (spec or {}).get(bound)
+            if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                value, pair_unit = pair
+                if unit is None and pair_unit and vc.is_known_unit(pair_unit):
+                    unit = vc._canonical(pair_unit)
+            else:
+                value = pair
+            self.bound_vars[bound].set("" if value is None else _format_number(value))
 
-
-# --------------------------------------------------------------------------
-# List
-# --------------------------------------------------------------------------
-
-_ADD_PLACEHOLDER = "➕  Add parameter"
-_NONE_LEFT_LABEL = "(all variables already added)"
+        if unit and unit in self.spec.unit_options:
+            self._unit_var.set(unit)
+            self._previous_unit = unit
 
 
 class ParametricList(ctk.CTkFrame):
-    """Container for zero or more _ParamRow widgets plus an add-picker."""
+    """The whole editor: cards plus the add-a-parameter picker."""
 
-    def __init__(self, master, *,
-                 allowed_vars: Iterable[str] = PARAMETRIZABLE_VARS,
+    def __init__(self, master, *, system: str = "SI",
+                 sweepable: Optional[list[str]] = None,
                  on_change: Optional[Callable[[], None]] = None) -> None:
         super().__init__(master, fg_color="transparent")
-        self._allowed_vars = tuple(allowed_vars)
         self._on_change = on_change
-        self._rows: list[_ParamRow] = []
+        self._system = system
+        self._rows: list[_Row] = []
+        self._sweepable = list(sweepable if sweepable is not None else SWEEPABLE)
 
-        # Layout: rows pack directly into `self`, each one inserted with
-        # `before=self._footer` so the picker always stays at the bottom.
-        # Earlier versions had a separate `_rows_box` CTkFrame to hold the
-        # rows, but CTkFrame's default height of 200px doesn't collapse to
-        # zero even with no children — that produced a phantom ~one-row gap
-        # whenever there were no parameters added.  Removing the container
-        # fixes the ghost space.
-        self._footer = ctk.CTkFrame(self, fg_color="transparent")
-        self._footer.pack(fill="x", pady=(theme.PAD_S, 0))
-
-        self._add_var = ctk.StringVar(value="")
-        self._add_menu = ctk.CTkOptionMenu(
-            self._footer,
-            variable=self._add_var,
-            values=self._available_display_options(),
-            command=self._on_add_selected,
-            dynamic_resizing=False,
-            width=260,
+        # Rows are packed directly into this frame rather than a container.
+        # An empty CTkFrame keeps its default 200px height, which is what used
+        # to strand the picker at the bottom of the scroll region.
+        self._picker_var = ctk.StringVar(value=_ADD_PLACEHOLDER)
+        self._picker = ctk.CTkOptionMenu(
+            self, values=[_ADD_PLACEHOLDER], variable=self._picker_var,
+            command=self._on_picked, width=260, dynamic_resizing=False,
+            anchor="w",
         )
-        self._add_menu.set(_ADD_PLACEHOLDER)
-        self._add_menu.pack(side="left")
+        self._repack_picker()
+        self._refresh_picker()
 
-    # ----------------------------------------------------------------
-    # Internal
-    # ----------------------------------------------------------------
+    # ------------------------------------------------------------------
 
-    def _used_vars(self) -> set[str]:
-        return {r.var_name for r in self._rows}
+    def _repack_picker(self) -> None:
+        """Keep the picker as the last child, directly under the cards."""
+        try:
+            self._picker.pack_forget()
+        except Exception:                       # noqa: BLE001
+            pass
+        self._picker.pack(anchor="w", pady=(theme.PAD_S, 0))
 
-    def _available_display_options(self) -> list[str]:
-        used = self._used_vars()
-        avail = [v for v in self._allowed_vars if v not in used]
-        if not avail:
-            return [_NONE_LEFT_LABEL]
-        return [display_mod.PARAM_VAR_DISPLAY[v] for v in avail]
+    def _label_to_key(self, label: str) -> Optional[str]:
+        for key in self._sweepable:
+            if registry.get(key).label == label:
+                return key
+        return None
 
     def _refresh_picker(self) -> None:
-        self._add_menu.configure(values=self._available_display_options())
-        self._add_menu.set(_ADD_PLACEHOLDER)
+        """Offer only what isn't already swept."""
+        used = self.used_vars()
+        available = [registry.get(k).label for k in self._sweepable if k not in used]
+        self._picker.configure(
+            values=[_ADD_PLACEHOLDER] + available if available else [_NONE_LEFT])
+        self._picker_var.set(_ADD_PLACEHOLDER if available else _NONE_LEFT)
 
-    def _on_add_selected(self, choice_display: str) -> None:
-        # Translate display name back to wire form
-        choice_wire = display_mod.PARAM_VAR_VALUE.get(choice_display, choice_display)
-        if choice_wire not in self._allowed_vars or choice_wire in self._used_vars():
-            self._add_menu.set(_ADD_PLACEHOLDER)
-            return
-        self.add_row(choice_wire)
-        self._refresh_picker()
-        self._fire_change()
+    def _on_picked(self, label: str) -> None:
+        key = self._label_to_key(label)
+        if key is not None:
+            self.add_row(key)
+        self._picker_var.set(_ADD_PLACEHOLDER)
 
-    def _remove_row(self, row: _ParamRow) -> None:
+    def _remove_row(self, row: _Row) -> None:
         self._rows.remove(row)
         row.destroy()
+        self._repack_picker()
         self._refresh_picker()
         self._fire_change()
 
     def _fire_change(self) -> None:
         if self._on_change is not None:
+            self._on_change()
+
+    # ------------------------------------------------------------------
+
+    def set_system(self, system: str) -> None:
+        """Re-present every card in `system`. New cards inherit it too."""
+        self._system = system
+        for row in self._rows:
             try:
-                self._on_change()
-            except Exception:
-                pass    # don't let consumer errors break the list
+                row.set_system(system)
+            except Exception:                   # noqa: BLE001
+                pass
 
-    # ----------------------------------------------------------------
-    # Public API
-    # ----------------------------------------------------------------
-
-    def add_row(self, var_name: str, spec: Optional[dict] = None) -> _ParamRow:
-        row = _ParamRow(self, var_name=var_name, on_remove=self._remove_row)
-        row.pack(fill="x", pady=theme.PAD_XS, before=self._footer)
+    def add_row(self, key: str, spec: Optional[dict] = None) -> Optional[_Row]:
+        """Add a swept variable. Ignores keys already present or unknown."""
+        if key in self.used_vars() or not registry.has(key):
+            return None
+        row = _Row(self, key, system=self._system,
+                   on_remove=self._remove_row, on_change=self._fire_change)
+        row.pack(fill="x")
         self._rows.append(row)
-        if spec is not None:
+        if spec:
             row.from_dict(spec)
+        # Cards are packed after the picker was, so put it back at the end.
+        self._repack_picker()
+        self._refresh_picker()
+        self._fire_change()
         return row
 
-    def clear(self, fire_change: bool = True) -> None:
+    def clear(self) -> None:
         for row in list(self._rows):
             row.destroy()
         self._rows.clear()
+        self._repack_picker()
         self._refresh_picker()
-        if fire_change:
-            self._fire_change()
 
     def used_vars(self) -> list[str]:
-        """Wire-form names of currently-parametrized variables."""
-        return [r.var_name for r in self._rows]
+        return [row.key for row in self._rows]
 
     def to_dict(self) -> dict:
-        return {row.var_name: row.to_dict() for row in self._rows}
+        return {row.key: row.to_dict() for row in self._rows}
 
-    def from_dict(self, d: dict) -> None:
-        self.clear(fire_change=False)
-        if isinstance(d, dict):
-            for var_name, spec in d.items():
-                if var_name in self._allowed_vars and isinstance(spec, dict):
-                    self.add_row(var_name, spec)
-        self._refresh_picker()
+    def from_dict(self, data: dict) -> None:
+        self.clear()
+        for key, spec in (data or {}).items():
+            self.add_row(key, spec)
         self._fire_change()

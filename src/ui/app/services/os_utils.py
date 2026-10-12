@@ -1,8 +1,9 @@
 """OS-level helpers that don't fit into any specific page.
 
-Right now: opening a path in the native file browser.  The three
-supported platforms use completely different commands, so this file
-paves over the differences with one function the UI can call.
+Right now: opening a path in the native file browser, and opening a URL
+in the default browser.  The three supported platforms use completely
+different commands for the former, so this file paves over the
+differences with one function the UI can call.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import webbrowser
 from pathlib import Path
 
 
@@ -61,3 +63,20 @@ def reveal_in_file_explorer(path) -> None:
     except Exception:
         # Best-effort helper; never bring down the UI over this.
         pass
+
+
+def open_url(url: str) -> None:
+    """Open `url` in the user's default browser.
+
+    Uses webbrowser rather than the per-platform commands above, since every
+    supported OS already resolves http(s) through it.  Failures are swallowed
+    the same way: a machine with no browser configured shouldn't take the UI
+    down over a help link.
+    """
+    if not url:
+        return
+    try:
+        webbrowser.open_new_tab(url)
+    except Exception:
+        pass
+

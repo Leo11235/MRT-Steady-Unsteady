@@ -1,599 +1,444 @@
-"""Modal for building 2D / 3D graphs from a parametric-study result.
+"""
+The parametric graph builder.
 
-Users configure one or both graphs via dropdowns and enable-checkboxes,
-then hit Show to open each in its own matplotlib window.
+A sweep produces a grid of results, and there's no single obvious plot of it,
+so this dialog lets you build one or two:
 
-Extras beyond raw axis selection:
-  - Output-variable dropdowns are grouped into "common" and "other" using
-    in-list header entries (non-selectable — if the user clicks one, the
-    previous value is silently restored).
-  - Each graph row has a "hold picker" underneath the axis dropdowns:
-    the user can pin any non-axis swept variable to a specific value
-    (drawn from the actual grid the sim ran on).  The value combobox
-    supports type-ahead prefix filtering.
+    [x] 2D    x: <swept>   y: <output>            + hold a variable
+    [ ] 3D    x: <swept>   y: <swept>  z: <output> + hold a variable
 
-Usage from steady_results.py:
+    [Cancel]  [Show]
 
-    ParametricGraphDialog(
-        parent=self,
-        swept_vars=[(pretty, wire), ...],
-        output_var_groups=[
-            ("Common outputs",     [(pretty, wire), ...]),
-            ("All other outputs",  [(pretty, wire), ...]),
-        ],
-        default_output="Isp",
-        hold_value_options={wire: [(display_str, si_value), ...], ...},
-        hold_unit_labels={wire: "psi", wire: "kg/s", ...},
-        on_confirm=self._render_parametric_graphs,
-    )
+WHY THE HOLD PICKER EXISTS
+--------------------------
+Sweeping three variables gives a 4D result. A 2D plot can show two dimensions,
+a 3D surface three, so the rest have to be pinned somewhere. The hold picker
+pins them to values drawn from the grid the solver actually ran — not arbitrary
+numbers — because anything off-grid has no data behind it.
 
-`on_confirm` is called with `spec_2d`, `spec_3d`.  Either may be None
-if the user unchecked that row.  Each spec is a dict:
+Holds only offer swept variables that aren't already on an axis, and the list
+updates as the axis dropdowns change.
 
-    spec_2d = {"x": wire, "y": wire, "holds": {wire: si_value, ...}}
-    spec_3d = {"x": wire, "y": wire, "z": wire,
-               "holds": {wire: si_value, ...}}
+OUTPUT GROUPING
+---------------
+A run has dozens of output variables and about six anyone plots. The output
+dropdowns put those first under a header, everything else under a second one.
+CTkOptionMenu has no notion of a non-selectable entry, so headers are marked
+with box-drawing characters and selecting one silently reverts — the same
+approach the old dialog used.
+
+Returns (spec_2d, spec_3d), either of which may be None:
+
+    {"x": wire, "y": wire, "z": wire, "holds": {wire: si_value}}
 """
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Optional
 
 import customtkinter as ctk
 
 from src.ui.app import theme
+from src.ui.app.widgets import grouped_menu
+from src.ui.app.widgets.filter_combo import FilterCombo
+
+# Axis captions. "x-axis" alone doesn't say which of the two kinds of variable
+# belongs there, and picking an output for the x of a 2D plot produces a
+# meaningless graph rather than an error.
+_AXIS_LABELS = {
+    ("2d", "x"): "Parametrized variable (x-axis)",
+    ("2d", "y"): "Output variable (y-axis)",
+    ("3d", "x"): "Parametrized variable 1 (x-axis)",
+    ("3d", "y"): "Parametrized variable 2 (y-axis)",
+    ("3d", "z"): "Output variable (z-axis)",
+}
+_AXIS_LABEL_W = 200
+
+_ADD_HOLD = "+ Hold a swept variable constant"
+_NO_HOLDS_LEFT = "(no other swept variables)"
 
 
-# In-list group-header markers for the output dropdown.  We can't make
-# CTkOptionMenu entries non-clickable, so we detect header selection
-# with these delimiters and silently revert.
-_HEADER_PREFIX = "── "
-_HEADER_SUFFIX = " ──"
-_ADD_HOLD_PLACEHOLDER = "+ Hold parametrized variable constant"
+# The grouping convention lives in widgets/grouped_menu.py, because the steady
+# results page ranks a sweep with the same kind of dropdown and two copies of
+# this would drift.
+_header = grouped_menu.header
+_is_header = grouped_menu.is_header
 
-
-def _is_header(value: str) -> bool:
-    return value.startswith(_HEADER_PREFIX) and value.endswith(_HEADER_SUFFIX)
-
-
-# ---------------------------------------------------------------------------
-# Hold picker (one per graph row)
-# ---------------------------------------------------------------------------
 
 class _HoldPicker(ctk.CTkFrame):
-    """A '+' picker plus a list of per-variable hold rows.
+    """Pin swept variables not on an axis to a value from the grid."""
 
-    Each hold row shows:  <var pretty name>: Hold constant at [ combobox ]  unit  [×]
+    def __init__(self, master, *, hold_options: dict,
+                 axis_vars_getter: Callable[[], set],
+                 label_of: Callable[[str], str]) -> None:
+        super().__init__(master, fg_color="transparent")
+        self._hold_options = hold_options       # {wire: [(display, si_value)]}
+        self._axis_vars = axis_vars_getter
+        self._label_of = label_of
+        self._held: dict[str, ctk.StringVar] = {}
+        self._rows: dict[str, ctk.CTkFrame] = {}
+        self._widgets: dict[str, tuple] = {}     # wire -> (combo, remove button)
+        self._enabled = True
 
-    The combobox is populated from `hold_value_options[wire]` — a list
-    of (display_string, si_value) pairs — and supports type-ahead: as
-    the user types, the dropdown values shrink to items starting with
-    the typed prefix.
-    """
+        self._picker_var = ctk.StringVar(value=_ADD_HOLD)
+        self._picker = ctk.CTkOptionMenu(
+            self, variable=self._picker_var, values=[_ADD_HOLD],
+            command=self._on_pick, width=300, dynamic_resizing=False,
+            font=ctk.CTkFont(size=theme.SIZE_SMALL))
+        self._repack_picker()
+        self.refresh()
 
-    def __init__(
-        self, parent, *,
-        wire_to_pretty: dict[str, str],
-        hold_value_options: dict[str, list[tuple[str, float]]],
-        hold_unit_labels: dict[str, str],
-        axis_vars_provider: Callable[[], set[str]],
-        on_layout_changed: Callable[[], None] | None = None,
-    ) -> None:
-        # height=0 so the picker collapses to just its children when empty.
-        # (CTkFrame's default height of 200 would otherwise leave a fat
-        # empty rectangle below the picker on first open.)
-        super().__init__(parent, fg_color="transparent", height=0)
-        self._wire_to_pretty     = wire_to_pretty
-        self._hold_value_options = hold_value_options
-        self._hold_unit_labels   = hold_unit_labels
-        self._axis_vars_provider = axis_vars_provider
-        self._on_layout_changed  = on_layout_changed
-
-        # {wire: {"row": frame, "var": StringVar, "combo": CTkComboBox}}
-        self._holds: dict[str, dict] = {}
-
-        # ---- picker row (dropdown that ADDS a hold on selection) -----
-        self._picker_row = ctk.CTkFrame(self, fg_color="transparent",
-                                        height=0)
-        self._picker_row.pack(fill="x", pady=(theme.PAD_XS, 0))
-
-        self._picker_var = ctk.StringVar(value=_ADD_HOLD_PLACEHOLDER)
-        self._picker_menu = ctk.CTkOptionMenu(
-            self._picker_row,
-            variable=self._picker_var,
-            values=[_ADD_HOLD_PLACEHOLDER],
-            command=self._on_picker_choice,
-            dynamic_resizing=False,
-            width=280,
-        )
-        self._picker_menu.pack(side="left")
-
-        # Hold rows pack directly into self (below _picker_row) — no
-        # separate wrapper frame, since an empty CTkFrame refuses to
-        # collapse below its default 200-px height.
-        self.refresh_picker_options()
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
-    def refresh_picker_options(self) -> None:
-        """Call whenever axis vars change so the "+" dropdown re-computes
-        which swept vars are still available to hold, and any holds that
-        just became axis vars get auto-removed."""
-        axis = set(self._axis_vars_provider())
-        # Drop holds whose var just became an axis.
-        for w in list(self._holds.keys()):
-            if w in axis:
-                self._remove_hold(w)
-        # Recompute the picker's dropdown values.
-        available = [
-            w for w in self._hold_value_options.keys()
-            if w not in axis and w not in self._holds
-        ]
-        if not available:
-            values = ["(nothing more to hold)"]
-        else:
-            values = [_ADD_HOLD_PLACEHOLDER] + [
-                self._wire_to_pretty.get(w, w) for w in available
-            ]
-        self._picker_menu.configure(values=values)
-        self._picker_var.set(values[0])
-        self._picker_menu.configure(
-            state="disabled" if not available else "normal"
-        )
-
-    def get_holds_si(self) -> dict[str, float]:
-        """Return {wire: si_value} for every hold whose combobox value
-        matches one of the pre-populated grid points.  Values that don't
-        match are silently dropped (safer than partial holds)."""
-        out: dict[str, float] = {}
-        for wire, info in self._holds.items():
-            typed = info["var"].get().strip()
-            if not typed:
-                continue
-            for display, si in self._hold_value_options.get(wire, []):
-                if display == typed:
-                    out[wire] = si
-                    break
-        return out
-
-    # ------------------------------------------------------------------
-    # Internal — add / remove holds
-    # ------------------------------------------------------------------
-
-    def _on_picker_choice(self, choice: str) -> None:
-        if choice == _ADD_HOLD_PLACEHOLDER or _is_header(choice):
-            return
-        # Translate pretty label back to wire.
-        wire = next(
-            (w for w in self._hold_value_options
-             if self._wire_to_pretty.get(w, w) == choice),
-            None,
-        )
-        if wire is None or wire in self._holds:
-            return
-        self._add_hold(wire)
-        self.refresh_picker_options()
-        self._fire_layout_changed()
-
-    def _add_hold(self, wire: str) -> None:
-        pretty = self._wire_to_pretty.get(wire, wire)
-        options   = self._hold_value_options.get(wire, [])
-        unit_lbl  = self._hold_unit_labels.get(wire, "")
-        displays  = [d for d, _ in options]
-
-        # Pack directly into self (no wrapper frame) so removing all
-        # holds leaves no residual empty space.
-        row = ctk.CTkFrame(self, fg_color="transparent", height=0)
-        row.pack(fill="x", pady=1)
-
-        ctk.CTkLabel(
-            row, text=f"{pretty}: Hold constant at",
-            anchor="w",
-            font=ctk.CTkFont(size=theme.SIZE_SMALL),
-        ).pack(side="left", padx=(0, theme.PAD_XS))
-
-        # Store the full option list so the type-ahead trace can restore
-        # it and filter fresh each keystroke.
-        var = ctk.StringVar(value=displays[0] if displays else "")
-        combo = ctk.CTkComboBox(
-            row, variable=var, values=displays,
-            width=120, state="normal",
-        )
-        combo.pack(side="left")
-
-        if unit_lbl:
-            ctk.CTkLabel(
-                row, text=unit_lbl,
-                anchor="w",
-                text_color=theme.TEXT_MUTED,
-                font=ctk.CTkFont(size=theme.SIZE_SMALL),
-            ).pack(side="left", padx=(theme.PAD_XS, 0))
-
-        ctk.CTkButton(
-            row, text="✕", width=22, height=22, corner_radius=11,
-            fg_color="transparent",
-            text_color=("#b00020", "#ff6b6b"),
-            hover_color=("gray80", "gray25"),
-            command=lambda w=wire: self._remove_hold_and_refresh(w),
-        ).pack(side="left", padx=(theme.PAD_XS, 0))
-
-        # Type-ahead: whenever the entry text changes, shrink the
-        # combobox's dropdown to values starting with what's typed.
-        # The full list stays in `displays`; we re-derive on each write.
-        state = {"guard": False}
-
-        def _on_typed(*_):
-            if state["guard"]:
-                return
-            typed = var.get()
-            if not typed:
-                filtered = displays
-            else:
-                filtered = [d for d in displays if d.startswith(typed)]
-            if not filtered:
-                # Show all if nothing matches — avoids an empty dropdown.
-                filtered = displays
-            try:
-                combo.configure(values=filtered)
-            except Exception:
-                pass
-
-        var.trace_add("write", _on_typed)
-
-        self._holds[wire] = {"row": row, "var": var, "combo": combo,
-                             "displays": displays}
-
-    def _remove_hold(self, wire: str) -> None:
-        info = self._holds.pop(wire, None)
-        if info is None:
-            return
+    def _repack_picker(self) -> None:
         try:
-            info["row"].destroy()
-        except Exception:
+            self._picker.pack_forget()
+        except Exception:                       # noqa: BLE001
             pass
+        self._picker.pack(anchor="w", pady=(theme.PAD_XS, 0))
 
-    def _remove_hold_and_refresh(self, wire: str) -> None:
-        self._remove_hold(wire)
-        self.refresh_picker_options()
-        self._fire_layout_changed()
+    def refresh(self) -> None:
+        """Re-offer whatever isn't on an axis and isn't already held.
 
-    def _fire_layout_changed(self) -> None:
-        if self._on_layout_changed is not None:
-            try:
-                self._on_layout_changed()
-            except Exception:
-                pass
+        Also drops holds that have since been promoted onto an axis — pinning
+        a variable you're now plotting against would silently reduce the plot
+        to a single point.
+        """
+        on_axis = self._axis_vars()
+        for wire in list(self._held):
+            if wire in on_axis:
+                self._remove(wire)
 
+        available = [w for w in self._hold_options
+                     if w not in on_axis and w not in self._held]
+        self._picker.configure(
+            values=[_ADD_HOLD] + [self._label_of(w) for w in available]
+            if available else [_NO_HOLDS_LEFT])
+        self._picker_var.set(_ADD_HOLD if available else _NO_HOLDS_LEFT)
 
-# ---------------------------------------------------------------------------
-# Main dialog
-# ---------------------------------------------------------------------------
+    def _on_pick(self, label: str) -> None:
+        for wire in self._hold_options:
+            if self._label_of(wire) == label:
+                self._add(wire)
+                break
+        self._picker_var.set(_ADD_HOLD)
 
-class ParametricGraphDialog(ctk.CTkToplevel):
-    def __init__(
-        self,
-        parent,
-        *,
-        swept_vars: list[tuple[str, str]],
-        output_var_groups: list[tuple[str, list[tuple[str, str]]]],
-        default_output: str,
-        hold_value_options: dict[str, list[tuple[str, float]]] | None = None,
-        hold_unit_labels:   dict[str, str]                        | None = None,
-        on_confirm: Callable[[dict | None, dict | None], None] = lambda a, b: None,
-        title: str = "Choose graph to display",
-    ) -> None:
-        super().__init__(parent)
-        self.title(title)
-        # No fixed geometry: we shrink-wrap to whatever the packed
-        # children need.  _resize_to_content() runs after the initial
-        # layout and again whenever hold rows are added / removed.
-        self.transient(parent.winfo_toplevel())
-        self.grab_set()
-        self.resizable(False, True)
-        self.minsize(760, 100)
-
-        self._on_confirm = on_confirm
-
-        # ---- look-up tables + flat dropdown values -------------------
-        self._swept_pretty_to_wire  = {p: w for p, w in swept_vars}
-        self._swept_wire_to_pretty  = {w: p for p, w in swept_vars}
-        self._output_pretty_to_wire: dict[str, str] = {}
-        output_dropdown_values: list[str] = []
-        for group_header, entries in output_var_groups:
-            if entries:
-                if len(output_var_groups) > 1:
-                    output_dropdown_values.append(
-                        f"{_HEADER_PREFIX}{group_header}{_HEADER_SUFFIX}"
-                    )
-                for pretty, wire in entries:
-                    output_dropdown_values.append(pretty)
-                    self._output_pretty_to_wire[pretty] = wire
-
-        swept_prettys = [p for p, _ in swept_vars]
-
-        default_output_pretty = next(
-            (p for p, w in self._output_pretty_to_wire.items()
-             if w == default_output),
-            next((v for v in output_dropdown_values if not _is_header(v)), ""),
-        )
-
-        self._enable_3d = (len(swept_vars) >= 2)
-
-        # ---- header --------------------------------------------------
-        ctk.CTkLabel(
-            self,
-            text="Construct the graphs you want. Each opens in its own "
-                 "matplotlib window.",
-            font=ctk.CTkFont(size=theme.SIZE_BODY),
-            text_color=theme.TEXT_MUTED,
-            anchor="w", justify="left", wraplength=700,
-        ).pack(fill="x", padx=theme.PAD_L, pady=(theme.PAD_L, theme.PAD_M))
-
-        # Footer is built here but packed at the very end (after both
-        # graph rows) so it always sits right below the 3D row rather
-        # than floating at the bottom of a fixed-size window.
-        self._footer = ctk.CTkFrame(self, fg_color="transparent", height=0)
-
-        ctk.CTkButton(
-            self._footer, text="Cancel", width=100,
-            fg_color="transparent", border_width=1,
-            text_color=("gray25", "gray75"),
-            command=self.destroy,
-        ).pack(side="right")
-
-        ctk.CTkButton(
-            self._footer, text="Show", width=140,
-            font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
-            fg_color=theme.SUCCESS,
-            hover_color=theme.SUCCESS_HOVER,
-            command=self._on_show_click,
-        ).pack(side="right", padx=(0, theme.PAD_S))
-
-        # ---- 2D row --------------------------------------------------
-        row2d = ctk.CTkFrame(self, fg_color=("gray92", "gray17"),
-                             corner_radius=8)
-        row2d.pack(fill="x", padx=theme.PAD_L, pady=theme.PAD_XS)
-
-        self._enable_2d_var = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(
-            row2d, text="2D graph",
-            variable=self._enable_2d_var,
-            font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold"),
-        ).pack(anchor="w", padx=theme.PAD_M, pady=(theme.PAD_M, 2))
-
-        controls_2d = ctk.CTkFrame(row2d, fg_color="transparent")
-        controls_2d.pack(fill="x", padx=theme.PAD_L,
-                         pady=(0, theme.PAD_XS))
-
-        self._y2d_var = ctk.StringVar(value=default_output_pretty)
-        self._x2d_var = ctk.StringVar(
-            value=swept_prettys[0] if swept_prettys else ""
-        )
-        self._labeled_option(
-            controls_2d, "Output variable (y-axis)",
-            self._y2d_var, output_dropdown_values, width=240,
-        )
-        self._labeled_option(
-            controls_2d, "Parametrized variable (x-axis)",
-            self._x2d_var, swept_prettys, width=240,
-            padx=(theme.PAD_L, 0),
-        )
-        self._install_header_filter(self._y2d_var)
-
-        # 2D hold picker
-        self._hold_2d = _HoldPicker(
-            row2d,
-            wire_to_pretty=self._swept_wire_to_pretty,
-            hold_value_options=hold_value_options or {},
-            hold_unit_labels=hold_unit_labels or {},
-            axis_vars_provider=lambda: {
-                self._swept_pretty_to_wire.get(self._x2d_var.get(),
-                                               self._x2d_var.get()),
-            },
-            on_layout_changed=lambda: self._resize_to_content(),
-        )
-        self._hold_2d.pack(fill="x", padx=theme.PAD_L,
-                           pady=(0, theme.PAD_M))
-        # Refresh the hold picker whenever the x-axis changes.
-        self._x2d_var.trace_add(
-            "write", lambda *_: self._hold_2d.refresh_picker_options()
-        )
-
-        # ---- 3D row --------------------------------------------------
-        row3d = ctk.CTkFrame(self, fg_color=("gray92", "gray17"),
-                             corner_radius=8)
-        row3d.pack(fill="x", padx=theme.PAD_L, pady=theme.PAD_XS)
-
-        self._enable_3d_var = ctk.BooleanVar(value=self._enable_3d)
-        self._3d_check = ctk.CTkCheckBox(
-            row3d, text="3D graph",
-            variable=self._enable_3d_var,
-            font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold"),
-        )
-        self._3d_check.pack(anchor="w", padx=theme.PAD_M,
-                            pady=(theme.PAD_M, 2))
-
-        controls_3d = ctk.CTkFrame(row3d, fg_color="transparent")
-        controls_3d.pack(fill="x", padx=theme.PAD_L,
-                         pady=(0, theme.PAD_XS))
-
-        default_x_3d = swept_prettys[0] if swept_prettys else ""
-        default_y_3d = (swept_prettys[1] if len(swept_prettys) > 1
-                        else swept_prettys[0] if swept_prettys else "")
-
-        self._z3d_var = ctk.StringVar(value=default_output_pretty)
-        self._x3d_var = ctk.StringVar(value=default_x_3d)
-        self._y3d_var = ctk.StringVar(value=default_y_3d)
-
-        self._z3d_menu = self._labeled_option(
-            controls_3d, "Output variable (z-axis)",
-            self._z3d_var, output_dropdown_values, width=210,
-        )
-        self._x3d_menu = self._labeled_option(
-            controls_3d, "Parametrized variable 1 (x-axis)",
-            self._x3d_var, swept_prettys, width=210,
-            padx=(theme.PAD_L, 0),
-        )
-        self._y3d_menu = self._labeled_option(
-            controls_3d, "Parametrized variable 2 (y-axis)",
-            self._y3d_var, swept_prettys, width=210,
-            padx=(theme.PAD_L, 0),
-        )
-
-        self._install_header_filter(self._z3d_var)
-
-        # 3D hold picker
-        self._hold_3d = _HoldPicker(
-            row3d,
-            wire_to_pretty=self._swept_wire_to_pretty,
-            hold_value_options=hold_value_options or {},
-            hold_unit_labels=hold_unit_labels or {},
-            axis_vars_provider=lambda: {
-                self._swept_pretty_to_wire.get(self._x3d_var.get(),
-                                               self._x3d_var.get()),
-                self._swept_pretty_to_wire.get(self._y3d_var.get(),
-                                               self._y3d_var.get()),
-            },
-            on_layout_changed=lambda: self._resize_to_content(),
-        )
-        self._hold_3d.pack(fill="x", padx=theme.PAD_L,
-                           pady=(0, theme.PAD_M))
-
-        # Auto-swap: whenever x or y changes to match the other, bump
-        # the other one to a different swept variable (silent).
-        # Also refresh the 3D hold picker on any axis change.
-        self._x3d_var.trace_add(
-            "write",
-            lambda *_: (self._enforce_3d_distinct("x"),
-                        self._hold_3d.refresh_picker_options()),
-        )
-        self._y3d_var.trace_add(
-            "write",
-            lambda *_: (self._enforce_3d_distinct("y"),
-                        self._hold_3d.refresh_picker_options()),
-        )
-
-        if not self._enable_3d:
-            self._set_3d_row_enabled(False)
-
-        # Pack the footer LAST so it sits directly under row3d instead
-        # of at the fixed bottom of the window.
-        self._footer.pack(fill="x", padx=theme.PAD_L,
-                          pady=theme.PAD_M)
-
-        # Size the window to its natural content on first show.
-        self.after_idle(self._resize_to_content)
-
-    def _resize_to_content(self) -> None:
-        """Shrink-wrap the window height to whatever the packed content
-        currently needs.  Called on first show and again whenever a
-        hold row is added or removed."""
-        try:
-            self.update_idletasks()
-            w = max(760, self.winfo_reqwidth())
-            h = self.winfo_reqheight()
-            self.geometry(f"{w}x{h}")
-        except Exception:
-            pass
-
-    # ------------------------------------------------------------------
-    # Small helpers
-    # ------------------------------------------------------------------
-
-    def _labeled_option(self, parent, label_text, variable, values,
-                        width=200, padx=(0, 0)):
-        col = ctk.CTkFrame(parent, fg_color="transparent")
-        col.pack(side="left", padx=padx)
-        ctk.CTkLabel(col, text=label_text, anchor="w",
-                     font=ctk.CTkFont(size=theme.SIZE_SMALL),
-                     text_color=theme.TEXT_MUTED,
-                     ).pack(anchor="w")
-        menu = ctk.CTkOptionMenu(
-            col, variable=variable, values=values or [""],
-            dynamic_resizing=False, width=width,
-        )
-        menu.pack()
-        return menu
-
-    def _install_header_filter(self, var: ctk.StringVar) -> None:
-        """Trace the variable so if the user picks a header row, we
-        silently restore the previous non-header value."""
-        state = {"last": var.get(), "guard": False}
-
-        def _filter(*_):
-            if state["guard"]:
-                return
-            new_val = var.get()
-            if _is_header(new_val):
-                state["guard"] = True
-                try:
-                    var.set(state["last"])
-                finally:
-                    state["guard"] = False
-            else:
-                state["last"] = new_val
-
-        var.trace_add("write", _filter)
-
-    def _set_3d_row_enabled(self, enabled: bool) -> None:
-        state = "normal" if enabled else "disabled"
-        try:
-            self._3d_check.configure(state=state)
-            self._z3d_menu.configure(state=state)
-            self._x3d_menu.configure(state=state)
-            self._y3d_menu.configure(state=state)
-        except Exception:
-            pass
-
-    def _enforce_3d_distinct(self, just_changed: str) -> None:
-        """Silently swap the OTHER axis's variable if x and y collide."""
-        if not self._enable_3d:
-            return
-        x = self._x3d_var.get()
-        y = self._y3d_var.get()
-        if x != y:
-            return
-        options = [p for p in self._swept_pretty_to_wire.keys() if p != x]
+    def _add(self, wire: str) -> None:
+        options = self._hold_options.get(wire) or []
         if not options:
             return
-        replacement = options[0]
-        if just_changed == "x":
-            self._y3d_var.set(replacement)
-        else:
-            self._x3d_var.set(replacement)
+        row = ctk.CTkFrame(self, fg_color="transparent")
+        row.pack(fill="x", pady=1)
+        # No fixed label width: the name and the box should sit together.
+        # A 200 px column left a gulf between "Chamber pressure =" and its
+        # value that read as a layout bug.
+        ctk.CTkLabel(row, text=f"{self._label_of(wire)} =", anchor="w",
+                     font=ctk.CTkFont(size=theme.SIZE_SMALL)).pack(
+            side="left", padx=(0, theme.PAD_S))
 
-    # ------------------------------------------------------------------
-    # Show
-    # ------------------------------------------------------------------
+        var = ctk.StringVar(value=options[0][0])
+        self._held[wire] = var
+        combo = FilterCombo(
+            row, values=[display for display, _value in options],
+            variable=var, width=190,
+            font=ctk.CTkFont(size=theme.SIZE_SMALL))
+        combo.pack(side="left")
+        close = ctk.CTkButton(row, text="✕", width=28, height=24,
+                              fg_color="transparent", text_color=theme.TEXT_MUTED,
+                              hover_color=theme.CARD_HOVER,
+                              command=lambda w=wire: self._remove_and_refresh(w))
+        close.pack(side="left", padx=(theme.PAD_XS, 0))
+        self._widgets[wire] = (combo, close)
 
-    def _on_show_click(self) -> None:
-        spec_2d = None
-        if self._enable_2d_var.get():
-            spec_2d = {
-                "x": self._swept_pretty_to_wire.get(self._x2d_var.get(),
-                                                    self._x2d_var.get()),
-                "y": self._output_pretty_to_wire.get(self._y2d_var.get(),
-                                                     self._y2d_var.get()),
-                "holds": self._hold_2d.get_holds_si(),
-            }
+        self._rows[wire] = row
+        self._repack_picker()
+        self.refresh()
+        # A row added while the card is off must arrive greyed out too.
+        if not self._enabled:
+            self.set_enabled(False)
 
-        spec_3d = None
-        if self._enable_3d and self._enable_3d_var.get():
-            spec_3d = {
-                "x": self._swept_pretty_to_wire.get(self._x3d_var.get(),
-                                                    self._x3d_var.get()),
-                "y": self._swept_pretty_to_wire.get(self._y3d_var.get(),
-                                                    self._y3d_var.get()),
-                "z": self._output_pretty_to_wire.get(self._z3d_var.get(),
-                                                     self._z3d_var.get()),
-                "holds": self._hold_3d.get_holds_si(),
-            }
+    def set_enabled(self, enabled: bool) -> None:
+        """Grey out the picker and every hold row.
 
-        self.destroy()
+        The axis dropdowns already grey out with the row's checkbox; leaving
+        the hold controls live made the card look half-disabled and let you
+        edit a graph you'd just switched off.
+        """
+        self._enabled = enabled
+        state = "normal" if enabled else "disabled"
+        self._picker.configure(state=state)
+        for combo, close in self._widgets.values():
+            combo.configure(state=state)
+            close.configure(state=state)
+
+    def _remove(self, wire: str) -> None:
+        row = self._rows.pop(wire, None)
+        if row is not None:
+            row.destroy()
+        self._held.pop(wire, None)
+        self._widgets.pop(wire, None)
+
+    def _remove_and_refresh(self, wire: str) -> None:
+        self._remove(wire)
+        self._repack_picker()
+        self.refresh()
+
+    def holds(self) -> dict:
+        """{wire: si_value} for everything currently pinned."""
+        result = {}
+        for wire, var in self._held.items():
+            for display, value in self._hold_options.get(wire, []):
+                if display == var.get():
+                    result[wire] = value
+                    break
+        return result
+
+
+class _GraphRow(ctk.CTkFrame):
+    """One configurable graph: an enable box, axis dropdowns, and holds."""
+
+    def __init__(self, master, *, kind: str, title: str, blurb: str, axes: list,
+                 swept_pairs: list, output_groups: list,
+                 hold_options: dict, label_of: Callable[[str], str],
+                 enabled: bool, on_axis_change: Callable[[], None]) -> None:
+        super().__init__(master, fg_color=theme.CARD_BG, corner_radius=8)
+        self._kind = kind                       # "2d" or "3d", for the captions
+        self._axes = axes                       # [("x","swept"), ("y","output")]
+        self._on_axis_change = on_axis_change
+        self._swept_labels = [label for label, _w in swept_pairs]
+        # Guards the auto-move below against re-entering itself: moving y
+        # fires y's own command, which would try to move x straight back.
+        self._resolving = False
+
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.pack(fill="x", padx=theme.PAD_M, pady=(theme.PAD_M, 0))
+        self.enabled_var = ctk.BooleanVar(value=enabled)
+        ctk.CTkCheckBox(header, text=title, variable=self.enabled_var,
+                        command=self._sync_enabled,
+                        font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold")).pack(
+            side="left")
+        ctk.CTkLabel(header, text=blurb, text_color=theme.TEXT_MUTED,
+                     font=ctk.CTkFont(size=theme.SIZE_SMALL)).pack(
+            side="left", padx=(theme.PAD_S, 0))
+
+        body = ctk.CTkFrame(self, fg_color="transparent")
+        body.pack(fill="x", padx=theme.PAD_M, pady=(theme.PAD_XS, theme.PAD_M))
+        self._body = body
+
+        self.axis_vars: dict[str, ctk.StringVar] = {}
+        self._menus: list = []
+        for axis_name, source in axes:
+            pairs = swept_pairs if source == "swept" else None
+            values = ([label for label, _w in swept_pairs] if pairs
+                      else self._grouped_output_values(output_groups))
+            default = values[0]
+            if _is_header(default):
+                default = values[1] if len(values) > 1 else default
+            # Swept axes start on DIFFERENT variables. Both defaulting to the
+            # first one gave a 3D card with the same variable on x and y,
+            # which is a degenerate surface.
+            if source == "swept":
+                taken = {v.get() for a, v in self.axis_vars.items()
+                         if dict(axes).get(a) == "swept"}
+                free = [label for label in values if label not in taken]
+                default = free[0] if free else default
+
+            var = ctk.StringVar(value=default)
+            self.axis_vars[axis_name] = var
+            caption = _AXIS_LABELS.get((kind, axis_name), f"{axis_name}-axis")
+            self._menus.append(self._labelled_menu(
+                body, caption, var, values, source == "output"))
+
+        # Built BEFORE the hold picker: the picker refreshes on construction
+        # and calls straight back into axis_wires(), which needs this map.
+        self._label_to_wire = {label: wire for label, wire in swept_pairs}
+        for _group, pairs in output_groups:
+            self._label_to_wire.update({label: wire for label, wire in pairs})
+
+        self._holds = _HoldPicker(
+            body, hold_options=hold_options,
+            axis_vars_getter=self.axis_wires, label_of=label_of)
+        self._holds.pack(fill="x", pady=(theme.PAD_S, 0))
+
+        self._sync_enabled()
+
+    @staticmethod
+    def _grouped_output_values(output_groups: list) -> list[str]:
+        return grouped_menu.grouped_values(output_groups)
+
+    def _labelled_menu(self, parent, label: str, var, values, guard_headers: bool):
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", pady=1)
+        ctk.CTkLabel(row, text=label, width=_AXIS_LABEL_W, anchor="w",
+                     font=ctk.CTkFont(size=theme.SIZE_SMALL)).pack(side="left")
+        menu = ctk.CTkOptionMenu(row, variable=var, values=values, width=300,
+                                 dynamic_resizing=False,
+                                 command=lambda _v: self._on_menu_changed(var),
+                                 font=ctk.CTkFont(size=theme.SIZE_SMALL))
+        menu.pack(side="left")
+        if guard_headers:
+            self._guard_headers(var, values)
+        return menu
+
+    @staticmethod
+    def _guard_headers(var: ctk.StringVar, values: list[str]) -> None:
+        grouped_menu.guard_headers(var, values)
+
+    def _on_menu_changed(self, changed_var) -> None:
+        self._resolve_duplicates(changed_var)
+        self._holds.refresh()
+        self._on_axis_change()
+
+    def _resolve_duplicates(self, changed_var) -> None:
+        """Keep every swept axis on a different variable.
+
+        Picking x = the variable already on y doesn't refuse the click; it
+        moves y to the next free swept variable. Refusing would leave you
+        unable to swap two axes without a pointless intermediate step.
+
+        Only swept axes take part. Output axes draw from a different list, so
+        they can never collide with a swept one.
+        """
+        if self._resolving:
+            return
+        swept_axes = [name for name, source in self._axes if source == "swept"]
+        if len(swept_axes) < 2:
+            return
+
+        self._resolving = True
         try:
-            self._on_confirm(spec_2d, spec_3d)
-        except Exception:
-            import traceback
-            traceback.print_exc()
+            taken = {changed_var.get()}
+            for axis in swept_axes:
+                var = self.axis_vars[axis]
+                if var is changed_var:
+                    continue
+                if var.get() in taken:
+                    free = [label for label in self._swept_labels
+                            if label not in taken]
+                    if free:
+                        var.set(free[0])
+                taken.add(var.get())
+        finally:
+            self._resolving = False
+
+    def _sync_enabled(self) -> None:
+        """Grey the body out when the row is unchecked."""
+        enabled = bool(self.enabled_var.get())
+        state = "normal" if enabled else "disabled"
+        for menu in self._menus:
+            menu.configure(state=state)
+        self._holds.set_enabled(enabled)
+
+    def axis_wires(self) -> set:
+        return {self._label_to_wire.get(var.get())
+                for var in self.axis_vars.values()} - {None}
+
+    def spec(self) -> Optional[dict]:
+        if not self.enabled_var.get():
+            return None
+        spec = {axis: self._label_to_wire.get(var.get())
+                for axis, var in self.axis_vars.items()}
+        if any(value is None for value in spec.values()):
+            return None
+        spec["holds"] = self._holds.holds()
+        return spec
+
+
+def show_parametric_graph_dialog(
+    parent, *, swept_pairs: list, output_groups: list,
+    hold_options: dict, label_of: Callable[[str], str],
+) -> tuple[Optional[dict], Optional[dict]]:
+    """Build a 2D and/or 3D parametric graph. Returns (spec_2d, spec_3d)."""
+    window = ctk.CTkToplevel(parent)
+    window.title("Parametric graphs")
+    window.transient(parent.winfo_toplevel())
+    window.resizable(False, False)
+
+    width, height = 700, 560
+    window.update_idletasks()
+    try:
+        root = parent.winfo_toplevel()
+        x = root.winfo_rootx() + (root.winfo_width() - width) // 2
+        y = root.winfo_rooty() + (root.winfo_height() - height) // 4
+        window.geometry(f"{width}x{height}+{max(x, 0)}+{max(y, 0)}")
+    except Exception:                           # noqa: BLE001
+        window.geometry(f"{width}x{height}")
+    window.after(10, window.grab_set)
+
+    result: dict = {"specs": (None, None)}
+
+    actions = ctk.CTkFrame(window, fg_color="transparent")
+    actions.pack(side="bottom", pady=(0, theme.PAD_M))
+
+    # No heading: the window title already says "Parametric graphs".
+    ctk.CTkLabel(
+        window,
+        text="A sweep is a grid of results. Choose which slice of it to plot; "
+             "any swept variable not on an axis can be pinned to one of the "
+             "values the solver actually ran.",
+        text_color=theme.TEXT_MUTED, wraplength=560, justify="center",
+        font=ctk.CTkFont(size=theme.SIZE_SMALL)).pack(
+        pady=(theme.PAD_L, theme.PAD_M), padx=theme.PAD_M)
+
+    body = ctk.CTkScrollableFrame(window, fg_color="transparent")
+    body.pack(fill="both", expand=True, padx=theme.PAD_M, pady=(0, theme.PAD_M))
+
+    rows: list[_GraphRow] = []
+
+    def on_axis_change() -> None:
+        for row in rows:
+            row._holds.refresh()                # noqa: SLF001
+
+    row_2d = _GraphRow(
+        body, kind="2d", title="2D plot",
+        blurb="one output against one swept variable",
+        axes=[("x", "swept"), ("y", "output")],
+        swept_pairs=swept_pairs, output_groups=output_groups,
+        hold_options=hold_options, label_of=label_of,
+        enabled=True, on_axis_change=on_axis_change)
+    row_2d.pack(fill="x", pady=(0, theme.PAD_S))
+    rows.append(row_2d)
+
+    # 3D needs two swept variables to have a surface to draw.
+    if len(swept_pairs) >= 2:
+        row_3d = _GraphRow(
+            body, kind="3d", title="3D surface",
+            blurb="one output over two swept variables",
+            axes=[("x", "swept"), ("y", "swept"), ("z", "output")],
+            swept_pairs=swept_pairs, output_groups=output_groups,
+            hold_options=hold_options, label_of=label_of,
+            enabled=False, on_axis_change=on_axis_change)
+        row_3d.pack(fill="x", pady=(0, theme.PAD_S))
+        rows.append(row_3d)
+    else:
+        row_3d = None
+        ctk.CTkLabel(
+            body,
+            text="A 3D surface needs two swept variables. This run swept one.",
+            text_color=theme.TEXT_FAINT, wraplength=560,
+            font=ctk.CTkFont(size=theme.SIZE_SMALL)).pack(
+            fill="x", pady=theme.PAD_S)
+
+    def cancel() -> None:
+        result["specs"] = (None, None)
+        window.destroy()
+
+    def show() -> None:
+        spec_2d = row_2d.spec()
+        spec_3d = row_3d.spec() if row_3d is not None else None
+        # A 3D surface with the same variable on both axes is degenerate.
+        if spec_3d and spec_3d.get("x") == spec_3d.get("y"):
+            spec_3d = None
+        result["specs"] = (spec_2d, spec_3d)
+        window.destroy()
+
+    ctk.CTkButton(actions, text="Cancel", width=140, height=36,
+                  fg_color="transparent", border_width=1,
+                  text_color=theme.TEXT_MUTED, hover_color=theme.CARD_HOVER,
+                  command=cancel).pack(side="left", padx=theme.PAD_S)
+    ctk.CTkButton(actions, text="Show", width=140, height=36,
+                  fg_color=theme.ACCENT_SLATE,
+                  hover_color=theme.ACCENT_SLATE_HOVER,
+                  command=show).pack(side="left", padx=theme.PAD_S)
+    window.protocol("WM_DELETE_WINDOW", cancel)
+
+    window.wait_window()
+    return result["specs"]

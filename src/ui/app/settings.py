@@ -1,15 +1,17 @@
 """
-UI settings — load, save, reset.
+Per-user UI settings: load, save, reset.
 
-Two files live in user_data/:
-  - default_ui_settings.json   (committed; the baseline)
-  - ui_settings.json           (per-user; gitignored; missing on first run)
+Two files, both under user_data/:
 
-Reset-to-defaults copies the former over the latter.
+  default_ui_settings.json    committed, read-only, the baseline
+  ui_settings.json            per-user, gitignored, absent on a fresh checkout
 
-The settings dict is just a flat JSON object.  Add new keys by:
-  1.  adding them to default_ui_settings.json,
-  2.  building a widget for them in pages/settings_page.py.
+Reset-to-defaults copies the first over the second.  Everything is a flat JSON
+object, so adding a setting means adding it to default_ui_settings.json and
+building a widget for it on the settings page.
+
+Keys starting with "_" are treated as comments and stripped on both read and
+write, which lets the committed defaults file document itself.
 """
 
 from __future__ import annotations
@@ -26,76 +28,112 @@ from src.ui.app import backend_bridge
 # =============================================================================
 
 def user_settings_path() -> Path:
-    """The per-user, WRITABLE settings file.  In frozen mode this is
-    under %APPDATA%\\MRT-Steady-Unsteady\\.  In source mode it's the
-    checkout's user_data/ui_settings.json."""
+    """The writable per-user settings file.
+
+    Frozen: %APPDATA%\\MRT-Steady-Unsteady\\user_data\\.
+    Source: the checkout's user_data/.
+    """
     return backend_bridge.project_root() / "user_data" / "ui_settings.json"
 
 
 def default_settings_path() -> Path:
-    """The bundled, READ-ONLY baseline that Reset restores from.  In
-    frozen mode this is inside the exe's resources; in source mode
-    it's the checked-in default_ui_settings.json."""
+    """The read-only baseline that Reset restores from.  Bundled inside the exe
+    when frozen, checked in at user_data/default_ui_settings.json otherwise."""
     return backend_bridge.bundled_root() / "user_data" / "default_ui_settings.json"
 
 
 # =============================================================================
-# Built-in defaults (used only when even default_ui_settings.json is missing)
+# Defaults
 # =============================================================================
+#
+# Last-resort values, used only when default_ui_settings.json is missing too.
+# Keep them in sync with that file; this exists so a corrupted install still
+# opens rather than crashing on startup.
 
-_HARDCODED_DEFAULTS = {
-    "default_output_units": "SI",
+_HARDCODED_DEFAULTS: dict = {
+    # The unit system the whole program presents in: "SI", "MRT" or "IMP".
+    # Input forms open in it and results pages start on it. A loaded preset
+    # still overrides it per field, because a preset carries its own units.
+    "default_program_units": "SI",
+    # Run without prompting for a preset name, auto-saving instead.
+    "default_auto_save_inputs": True,
+    # Keyboard bindings, in Tk event syntax.
+    "shortcuts": {
+        "run": "<Control-r>",
+        "save": "<Control-s>",
+        "load": "<Control-o>",
+        "cancel": "<Escape>",
+    },
 }
+
+
+def load_defaults() -> dict:
+    """Read the committed defaults file, falling back to the hardcoded set."""
+    path = default_settings_path()
+    if not path.exists():
+        return dict(_HARDCODED_DEFAULTS)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return {k: v for k, v in data.items() if not k.startswith("_")}
+    except Exception:                           # noqa: BLE001
+        return dict(_HARDCODED_DEFAULTS)
 
 
 # =============================================================================
 # Load / save / reset
 # =============================================================================
 
-def load_defaults() -> dict:
-    """Read the committed default settings file."""
-    p = default_settings_path()
-    if not p.exists():
-        return dict(_HARDCODED_DEFAULTS)
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-        # strip the "_comment_" key if present
-        return {k: v for k, v in data.items() if not k.startswith("_")}
-    except Exception:
-        return dict(_HARDCODED_DEFAULTS)
-
-
 def load_settings() -> dict:
+    """Read the user's settings, creating the file from defaults if absent.
+
+    Returns a fresh dict every call — mutating it does nothing on its own, pass
+    it to save_settings().  Missing keys are backfilled from the defaults, so
+    the returned dict always has the full set even after an upgrade adds one.
     """
-    Read the user-specific settings file, creating it from defaults if
-    it doesn't yet exist.  Returns a fresh dict (mutating it does NOT
-    write back; use save_settings).
-    """
-    p = user_settings_path()
-    if not p.exists():
+    path = user_settings_path()
+    if not path.exists():
         reset_to_defaults()
     try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:                           # noqa: BLE001
         data = {}
-    # backfill any missing keys from defaults so the schema is always complete
+    # Migrate the USER's dict before merging. Doing it after would be too
+    # late: the defaults already carry the new key, so the renamed value would
+    # lose to the default rather than replacing it.
+    user = _migrate({k: v for k, v in data.items() if not k.startswith("_")})
     merged = load_defaults()
-    merged.update({k: v for k, v in data.items() if not k.startswith("_")})
+    merged.update(user)
     return merged
 
 
+# Old key -> new key, for settings files written by an earlier version. The old
+# value wins only if the new key isn't already set, and the old key is dropped
+# either way so it doesn't linger and confuse the next person reading the file.
+_RENAMED = {
+    "default_output_units": "default_program_units",   # 1.5
+}
+
+
+def _migrate(settings: dict) -> dict:
+    for old, new in _RENAMED.items():
+        if old in settings:
+            value = settings.pop(old)
+            settings.setdefault(new, value)
+    return settings
+
+
 def save_settings(settings: dict) -> None:
-    """Atomically write the user settings file."""
-    p = user_settings_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
+    """Write the user settings file, dropping comment keys."""
+    path = user_settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
     payload = {k: v for k, v in settings.items() if not k.startswith("_")}
-    p.write_text(json.dumps(payload, indent=4), encoding="utf-8")
+    path.write_text(json.dumps(payload, indent=4), encoding="utf-8")
 
 
 def reset_to_defaults() -> dict:
-    """
-    Restore the user settings file from defaults.  Returns the freshly
-    loaded settings dict so the caller can refresh its UI.
+    """Restore the user settings file from the baseline.
+
+    Returns the freshly loaded settings so the caller can refresh its widgets.
     """
     src = default_settings_path()
     dst = user_settings_path()
@@ -108,14 +146,16 @@ def reset_to_defaults() -> dict:
 
 
 # =============================================================================
-# Convenience getters / setters
+# Convenience
 # =============================================================================
 
 def get(key: str, fallback=None):
+    """Read one setting.  Re-reads the file, so don't call it in a tight loop."""
     return load_settings().get(key, fallback)
 
 
-def set(key: str, value) -> None:
-    s = load_settings()
-    s[key] = value
-    save_settings(s)
+def set(key: str, value) -> None:      # noqa: A001 - deliberate, reads well at the call site
+    """Write one setting, leaving the rest untouched."""
+    settings = load_settings()
+    settings[key] = value
+    save_settings(settings)

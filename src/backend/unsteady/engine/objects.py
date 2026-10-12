@@ -1,12 +1,13 @@
 """
-All the main objects of the simulation are created here:
+All the main objects of the simulation are created here
 """
 
 from datetime import datetime
 from pathlib import Path
 import json, math, numpy as np
 
-from src.backend.unsteady.analysis.unsteady_results import unsteady_results
+from src.common.plotting.unsteady_plots import unsteady_results
+from src.common.version import VERSION
 
 class StateVector:
     """
@@ -64,6 +65,12 @@ class History:
         
         # log warnings, phase transitions, etc
         self.events_log = []
+        
+        # how the run ended; filled in by phase_runner once it knows
+        # these values should get updated by the simulation before returning to user, otherwise raises an error
+        self.terminal_state = "unknown"
+        self.completed_nominally = False
+        self.terminal_reason = "Simulation did not report a terminal state."
     
     # for debugging purposes
     def print_self(self):
@@ -93,14 +100,33 @@ class History:
         # PHASE_TRANSITION and any ABORT_* event get logged the same way
         if event_type == "PHASE_TRANSITION" or event_type.startswith("ABORT"): 
             self.events_log.append({
-                "t_s": t,
+                "t": t,
                 "event_type": event_type,
                 "message": message})
 
         else: 
             raise ValueError(f"Unrecognized event type: '{event_type}'.")
     
+    # record how the run ended, from the TERMINAL_STATES entry in transitions.py
+    def set_terminal_state(self, terminal_info: dict, t: float):
+        self.terminal_state = terminal_info["code"]
+        self.completed_nominally = terminal_info["completed_nominally"]
+        self.terminal_reason = terminal_info["message"]
+        self.t_terminal = t
+    
     # helper functions for performance calculations
+    # a derived series, guaranteed to hold one value per logged timestep
+    def _derived_array(self, key: str, length: int, fill: float) -> np.ndarray:
+        values = self.derived_series.get(key)
+        if not values:
+            return np.full(length, fill, dtype=float)
+        array = np.asarray(values, dtype=float)
+        if len(array) == length:
+            return array
+        if len(array) > length:
+            return array[:length]
+        return np.concatenate([array, np.full(length - len(array), fill, dtype=float)])
+
     # extracts the maximum value from an array using a boolean mask, ignoring NaNs
     def _safe_max(self, array: np.ndarray, mask: np.ndarray) -> float | None:
         valid_values = array[mask]
@@ -113,6 +139,22 @@ class History:
         valid_values = valid_values[~np.isnan(valid_values)]
         return float(np.mean(valid_values)) if len(valid_values) > 0 else None
 
+    # time-weighted mean of a series over a window
+    def _time_average(self, time_array: np.ndarray, value_array: np.ndarray, mask: np.ndarray) -> float | None:
+        indices = np.where(mask)[0]
+        if len(indices) < 2:
+            return self._safe_mean(value_array, mask)
+        span = float(time_array[indices[-1]] - time_array[indices[0]])
+        if span <= 0:
+            return self._safe_mean(value_array, mask)
+        return self._integrate_time_series(time_array, value_array, mask) / span
+
+    # average O/F as the ratio of the masses actually consumed
+    def _mass_ratio_OF(self, ox_consumed: float, fuel_consumed: float, OF: np.ndarray, mask: np.ndarray) -> float | None:
+        if fuel_consumed and fuel_consumed > 1e-12 and ox_consumed is not None:
+            return float(ox_consumed / fuel_consumed)
+        return self._safe_mean(OF, mask)
+
     # performs numerical integration for a given set of values over time, used primarily to calculate total impulse from the thrust curve
     def _integrate_time_series(self, time_array: np.ndarray, value_array: np.ndarray, mask: np.ndarray) -> float:
         valid_indices = np.where(mask)[0]
@@ -120,6 +162,42 @@ class History:
             return 0.0
         # np.trapezoid replaces the deprecated np.trapz in NumPy 2.0+
         return float(np.trapezoid(value_array[valid_indices], time_array[valid_indices]))
+    
+    # peak TtW ratio and how far off the pad the rocket got
+    def launch_metrics(self) -> dict:
+        t = self.time_series["time"]
+        if not t:
+            return {
+                "peak_thrust": 0.0, 
+                "peak_thrust_to_weight": None, 
+                "altitude_gain": 0.0,
+                "reached_operating_point": False,
+            }
+
+        ri = self.static_data
+        F = self.derived_series.get("F_thrust", [])
+        peak_thrust = max((v for v in F if v is not None and not math.isnan(v)), default=0.0)
+
+        ox_mass_initial = ri.get("tank_oxidizer_mass", 0.0)
+        r_f = self.time_series["r_f"]
+        fuel_mass_initial = ri.get("chamber_fuel_mass", math.pi * ri.get("chamber_fuel_density", 900.0) * ri.get("chamber_fuel_length", 0.0) * (ri.get("chamber_fuel_external_radius", 0.0) ** 2 - float(r_f[0]) ** 2)) if r_f else 0.0
+        initial_mass = ri.get("rocket_dry_mass", 0.0) + ox_mass_initial + fuel_mass_initial
+
+        sy_R = self.time_series["sy_R"]
+        launch_alt = ri.get("launch_site_altitude_asl", 0.0)
+
+        # anything past phase_1 means ignition succeeded and the engine reached its operating point
+        phases = self.time_series.get("phase", [])
+        reached_operating_point = any(p not in (None, "phase_1") for p in phases)
+
+        return {
+            "peak_thrust": peak_thrust,
+            "initial_mass": initial_mass,
+            "peak_thrust_to_weight": (peak_thrust / (initial_mass * 9.80665)) if (initial_mass > 0 and peak_thrust > 1) else None,
+            "altitude_gain": (max(sy_R) - launch_alt) if sy_R else 0.0,
+            "reached_operating_point": reached_operating_point,
+        }
+    
     
     def compute_performance(self) -> dict:
         """
@@ -131,37 +209,42 @@ class History:
         #### convert time series lists to NumPy arrays for vectorized math
         t = np.array(self.time_series["time"])
         phases = np.array(self.time_series.get("phase", [None] * len(t)))
-        n_v = np.array(self.time_series["n_v"])
-        n_l = np.array(self.time_series["n_l"])
-        p_C = np.array(self.time_series["p_C"])
-        r_f = np.array(self.time_series["r_f"])
-        sy_R = np.array(self.time_series["sy_R"])
-        vx_R = np.array(self.time_series["vx_R"])
-        vy_R = np.array(self.time_series["vy_R"])
+        n_v = np.array(self.time_series["n_v"]) # vapor moles in tank
+        n_l = np.array(self.time_series["n_l"]) # liquid moles 
+        p_C = np.array(self.time_series["p_C"]) # chamber pressure
+        r_f = np.array(self.time_series["r_f"]) # inner fuel radius
+        m_o_c = np.array(self.time_series["m_o"]) # ox mass
+        m_f_c = np.array(self.time_series["m_f"]) # fuel mass
+        cstar = self._derived_array("cstar", len(t), np.nan) # characteristic velocity
+        F_thrust = self._derived_array("F_thrust", len(t), 0.0) # thrust
+        OF = self._derived_array("OF", len(t), np.nan) # OF ratio
+        T_c = self._derived_array("T_c", len(t), np.nan) # chamber temp
+        sx_R = np.array(self.time_series["sx_R"]) # horizontal distance from launchsite
+        sy_R = np.array(self.time_series["sy_R"]) # altitude
+        vx_R = np.array(self.time_series["vx_R"]) # horizontal velocity
+        vy_R = np.array(self.time_series["vy_R"]) # vertical velocity
+        ax_R = self._derived_array("ax_R", len(t), np.nan) # horizontal acceleration
+        ay_R = self._derived_array("ay_R", len(t), np.nan) # vertical acceleration
+        a_mag = np.sqrt(ax_R**2 + ay_R**2) # acceleration magnitude
         
-        F_thrust = np.array(self.derived_series.get("F_thrust", np.zeros(len(t))))
-        OF = np.array(self.derived_series.get("OF", np.full(len(t), np.nan)))
-        T_c = np.array(self.derived_series.get("T_c", np.full(len(t), np.nan)))
-
         #### extract initial constants
         ri = self.static_data
-        launch_alt = ri.get("launch_site_altitude_asl_m", 0.0)
-        ox_mass_initial = ri.get("tank_oxidizer_mass_kg", 0.0)
+        launch_alt = ri.get("launch_site_altitude_asl", 0.0)
+        ox_mass_initial = ri.get("tank_oxidizer_mass", 0.0)
         n_ox_0 = float(n_v[0] + n_l[0]) if len(n_v) > 0 else 0.0
         W_o = ox_mass_initial / n_ox_0 if n_ox_0 > 0 else 0.044013
 
-        R_f = ri.get("chamber_fuel_external_radius_m", 0.0)
-        rho_f = ri.get("chamber_fuel_density_kgm3", 900.0)
-        L_f = ri.get("chamber_fuel_length_m", 0.0)
+        R_f = ri.get("chamber_fuel_external_radius", 0.0)
+        rho_f = ri.get("chamber_fuel_density", 900.0)
+        L_f = ri.get("chamber_fuel_length", 0.0)
         
         if len(r_f) > 0:
-            fuel_mass_initial = ri.get("chamber_fuel_mass_kg", math.pi * rho_f * L_f * (R_f**2 - float(r_f[0])**2))
+            fuel_mass_initial = ri.get("chamber_fuel_mass", math.pi * rho_f * L_f * (R_f**2 - float(r_f[0])**2))
         else:
             fuel_mass_initial = 0.0
 
         #### categorize phase groups
         BURN_PHASES = {"phase_1", "phase_2", "phase_3", "phase_4a", "phase_4c"}
-        DESCENT_PHASES = {"phase_5", "phase_6", "phase_7"}
         ALL_PHASES = ["phase_1", "phase_2", "phase_3", "phase_4a", "phase_4c", "phase_5", "phase_6", "phase_7"]
 
         burn_mask = np.isin(phases, list(BURN_PHASES))
@@ -173,8 +256,7 @@ class History:
         total_impulse = self._integrate_time_series(t, F_thrust, burn_mask)
         peak_thrust = self._safe_max(F_thrust, burn_mask) or 0.0
         
-        initial_rocket_mass = ri.get("rocket_dry_mass_kg", 0.0) + ox_mass_initial + fuel_mass_initial
-        pad_T_W = (peak_thrust / (initial_rocket_mass * 9.80665)) if initial_rocket_mass > 0 else None
+        pad_T_W = self.launch_metrics()["peak_thrust_to_weight"]
 
         n_ox_burnout = float(n_v[burnout_idx] + n_l[burnout_idx]) if burnout_idx >= 0 else n_ox_0
         ox_consumed = (n_ox_0 - n_ox_burnout) * W_o
@@ -182,6 +264,21 @@ class History:
         r_f_burnout = float(r_f[burnout_idx]) if burnout_idx >= 0 else (float(r_f[0]) if len(r_f) > 0 else 0.0)
         fuel_remaining = math.pi * rho_f * L_f * (R_f**2 - r_f_burnout**2)
         fuel_consumed = fuel_mass_initial - fuel_remaining
+
+        # peak acceleration during burn
+        peak_acceleration = self._safe_max(a_mag, burn_mask) or 0.0
+
+        # Isp (total)
+        g0 = 9.80665
+        propellant_consumed = ox_consumed + fuel_consumed
+        specific_impulse = (total_impulse / (g0 * propellant_consumed)) if propellant_consumed > 1e-9 else 0.0
+
+        # c* is only meaningful once there is actually gas in the chamber. ignore portions of the run where CV5 assumes 1000 m/s
+        combusting = burn_mask & (m_o_c >= 1e-4) & (m_f_c >= 1e-4)
+        # logged series is the real c*
+        eta_cstar = ri.get("chamber_cstar_efficiency", 1.0) or 1.0
+        average_cstar_actual = self._time_average(t, cstar, combusting)
+        average_cstar_theoretical = ((average_cstar_actual / eta_cstar) if average_cstar_actual is not None else None)
 
         #### calculate per-phase mtrics
         by_phase = {}
@@ -192,11 +289,15 @@ class History:
         
             idx = np.where(mask)[0]
             phase_duration = float(t[idx[-1]] - t[idx[0]])
-
+            phase_v = np.sqrt(vx_R[mask]**2 + vy_R[mask]**2)
+            
             entry = {
-                "t_start_s": float(t[idx[0]]),
-                "t_end_s": float(t[idx[-1]]),
-                "duration_s": phase_duration,
+                "t_start": float(t[idx[0]]),
+                "t_end": float(t[idx[-1]]),
+                "duration": phase_duration,
+                "peak_velocity": float(np.max(phase_v)) if len(phase_v) > 0 else 0.0,
+                "terminal_velocity": float(phase_v[-1]) if len(phase_v) > 0 else 0.0,
+                "peak_acceleration": self._safe_max(a_mag, mask) or 0.0,
             }
 
             if phase_name in BURN_PHASES:
@@ -205,77 +306,82 @@ class History:
                 phase_fuel_consumed = math.pi * rho_f * L_f * (float(r_f[idx[-1]])**2 - float(r_f[idx[0]])**2)
 
                 entry.update({
-                    "total_impulse_Ns": phase_impulse,
-                    "peak_thrust_N": self._safe_max(F_thrust, mask) or 0.0,
-                    "average_thrust_N": (phase_impulse / phase_duration) if phase_duration > 0 else 0.0,
-                    "peak_chamber_pressure_Pa": self._safe_max(p_C, mask) or 0.0,
-                    "average_OF_ratio": self._safe_mean(OF, mask),
-                    "peak_chamber_temperature_K": self._safe_max(T_c, mask),
-                    "ox_mass_consumed_kg": float(phase_ox_consumed),
-                    "fuel_mass_consumed_kg": float(phase_fuel_consumed),
-                })
-
-            elif phase_name in DESCENT_PHASES:
-                v_mag = np.sqrt(vx_R[mask]**2 + vy_R[mask]**2)
-                entry.update({
-                    "peak_velocity_ms": float(np.max(v_mag)) if len(v_mag) > 0 else 0.0,
-                    "terminal_velocity_ms": float(v_mag[-1]) if len(v_mag) > 0 else 0.0,
+                    "total_impulse": phase_impulse,
+                    "peak_thrust": self._safe_max(F_thrust, mask) or 0.0,
+                    "average_thrust": (phase_impulse / phase_duration) if phase_duration > 0 else 0.0,
+                    "peak_chamber_pressure": self._safe_max(p_C, mask) or 0.0,
+                    "average_OF_ratio": self._mass_ratio_OF(phase_ox_consumed, phase_fuel_consumed, OF, mask),
+                    "peak_chamber_temperature": self._safe_max(T_c, mask),
+                    "ox_mass_consumed": float(phase_ox_consumed),
+                    "fuel_mass_consumed": float(phase_fuel_consumed),
                 })
 
             by_phase[phase_name] = entry
 
         return {
             "overall": {
-                "burntime_s": burntime,
-                "total_impulse_Ns": total_impulse,
-                "peak_thrust_N": peak_thrust,
-                "average_thrust_N": (total_impulse / burntime) if burntime > 0 else 0.0,
-                "peak_chamber_pressure_Pa": self._safe_max(p_C, burn_mask) or 0.0,
-                "peak_chamber_temperature_K": self._safe_max(T_c, burn_mask),
-                "average_OF_ratio": self._safe_mean(OF, burn_mask),
+                "burntime": burntime,
+                "total_impulse": total_impulse,
+                "peak_thrust": peak_thrust,
+                "average_thrust": (total_impulse / burntime) if burntime > 0 else 0.0,
+                "peak_chamber_pressure": self._safe_max(p_C, burn_mask) or 0.0,
+                "peak_chamber_temperature": self._safe_max(T_c, burn_mask),
+                "average_OF_ratio": self._mass_ratio_OF(ox_consumed, fuel_consumed, OF, burn_mask),
+                "peak_acceleration": peak_acceleration,
+                "specific_impulse": specific_impulse,
+                "average_cstar_actual": average_cstar_actual,
+                "average_cstar_theoretical": average_cstar_theoretical,
                 "pad_thrust_to_weight": pad_T_W,
-                "apogee_m_asl": float(np.max(sy_R)) if len(sy_R) > 0 else 0.0,
-                "apogee_m_agl": (float(np.max(sy_R)) - launch_alt) if len(sy_R) > 0 else 0.0,
-                "ox_mass_available_kg": ox_mass_initial,
-                "fuel_mass_available_kg": fuel_mass_initial,
-                "ox_mass_consumed_kg": float(ox_consumed),
-                "fuel_mass_consumed_kg": float(fuel_consumed),
-                "ox_mass_remaining_kg": float(n_ox_burnout * W_o),
-                "fuel_mass_remaining_kg": float(fuel_remaining),
-                "total_propellant_available_kg": ox_mass_initial + fuel_mass_initial,
-                "total_propellant_consumed_kg": float(ox_consumed + fuel_consumed),
+                "apogee_asl": float(np.max(sy_R)) if len(sy_R) > 0 else 0.0,
+                "apogee_agl": (float(np.max(sy_R)) - launch_alt) if len(sy_R) > 0 else 0.0,
+                "landing_downrange": float(abs(sx_R[-1])) if len(sx_R) > 0 else 0.0,
+                "ox_mass_available": ox_mass_initial,
+                "fuel_mass_available": fuel_mass_initial,
+                "ox_mass_consumed": float(ox_consumed),
+                "fuel_mass_consumed": float(fuel_consumed),
+                "ox_mass_remaining": float(n_ox_burnout * W_o),
+                "fuel_mass_remaining": float(fuel_remaining),
+                "total_propellant_available": ox_mass_initial + fuel_mass_initial,
+                "total_propellant_consumed": float(ox_consumed + fuel_consumed),
             },
             "by_phase": by_phase
         }
-    
     
     def compute_metadata(self) -> dict:
         """
         Calculates administrative simulation metrics
         """
-        if not self.time_series["time"]:
-            return {}
-        total_simulation_time = self.time_series["time"][-1]        
-        return {
-            "total_timesteps": len(self.time_series["time"]),
-            "total_simulation_time": total_simulation_time, 
+        # initialize metadata dict
+        metadata = {
+            "terminal_state": self.terminal_state,
+            "completed_nominally": self.completed_nominally,
+            "terminal_reason": self.terminal_reason,
+            "program_version": VERSION, # for diagnostics
         }
+        
+        # if no timesteps recorded, return early
+        if not self.time_series["time"]:
+            return metadata
+        # otherwise, record timestep related info
+        metadata["total_timesteps"] = len(self.time_series["time"])
+        metadata["total_simulation_time"] = self.time_series["time"][-1]
+        return metadata
 
-    def export(self, rocket_inputs: dict, finalized_warnings: dict, rocket_inputs_metadata: dict) -> dict:
+    def export(self, rocket_inputs: dict, finalized_warnings: dict, rocket_inputs_metadata: dict, output_dir_filepath: Path) -> dict:
         """
         Sends results to JSON storage
         """
-        # project anchor & target directory pathing
-        project_root = Path(__file__).resolve().parents[4] 
-        output_dir = project_root / "user_data" / "simulation_results" / "unsteady"
-        output_dir.mkdir(parents=True, exist_ok=True)
         
-        # timestamp name signature: YYYY_MM_DD_HH_MM_SS.json
-        if rocket_inputs.get("metadata", {}).get("simulation_name") != ("" or None):
-            filename = rocket_inputs["metadata"]["simulation_name"]
-        else:
-            filename = f"{datetime.now().strftime("%Y_%m_%d_%H_%M_%S")}.json"
-        file_path = output_dir / filename
+        # YYYY_MM_DD_HH_MM_SS folder houses output data or <simulation_name> if the user gave one
+        foldername = str(rocket_inputs_metadata.get("simulation_name") or "").strip()
+        if not foldername:
+            foldername = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+        
+        # project anchor & target directory pathing
+        output_dir = Path(output_dir_filepath) / foldername
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_json_name = "sim_data.json"
+        file_path = output_dir / output_json_name
         
         # helper to convert NaNs to None for JSON compatibility
         def sanitize_nans(array):
@@ -298,21 +404,34 @@ class History:
             "data": changing_data,
         }
         
+        # build the folder in <output_dir>/<run_name>, then write sim_data.json inside
         # write to JSON
         with open(file_path, "w") as f:
             json.dump(sim_results, f, indent=4)
             
         print(f"\nSimulation data exported")
         
-        # save as pdf/png if requested
-        if rocket_inputs_metadata.get("save_to_pdf") and rocket_inputs_metadata.get("save_to_png"):
-            print(f"\nCreating graphs...")
-            unsteady_results(json_filename=filename, json_filepath=output_dir, display_graphs=False, save_to_pdf=True, save_to_png=True)
-        elif rocket_inputs_metadata.get("save_to_pdf"):
-            print(f"\nCreating graphs...")
-            unsteady_results(json_filename=filename, json_filepath=output_dir, display_graphs=False, save_to_pdf=True, save_to_png=False)
-        elif rocket_inputs_metadata.get("save_to_png"):
-            print(f"\nCreating graphs...")
-            unsteady_results(json_filename=filename, json_filepath=output_dir, display_graphs=False, save_to_pdf=False, save_to_png=True)
-        
+        # optional outputs, both off by default because rendering every plot adds roughly half a minute to a run that is otherwise seconds long
+        save_to_pdf = bool(rocket_inputs_metadata.get("save_to_pdf"))
+        save_to_png = bool(rocket_inputs_metadata.get("save_to_png"))
+
+        if save_to_png:
+            print(f"\nSaving graphs as PNGs...")
+            unsteady_results(
+                json_filename=output_json_name,
+                json_filepath=output_dir,
+                save_to_pdf=False,
+                save_to_png=True
+            )
+
+        if save_to_pdf:
+            # outputs full run report PDF: inputs, performance, phases, events, warnings, graphs, etc
+            # independent of any other graphing stuff
+            print(f"\nGenerating PDF report...")
+            from src.common.unsteady_PDF_report import generate_report
+            generate_report(output_dir, sim_results)
+
         return file_path
+
+
+

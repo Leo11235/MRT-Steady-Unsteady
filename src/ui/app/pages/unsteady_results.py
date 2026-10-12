@@ -1,646 +1,751 @@
 """
-UnsteadyResultsPage — landed on after an unsteady simulation finishes
-(and also when the user opens a saved run from the Browse-saved-results
-page).
+Unsteady results.
 
-Five tabs, each a scrollable panel:
+Five tabs:
 
-  * Rocket inputs      — the flattened CV_inputs block
-  * Metadata           — run metadata (simulation_name, timestamp, ...)
-  * Overall            — performance.overall (headline numbers)
-  * Phase-by-phase     — one row per phase with duration + burn-phase metrics
-  * Warnings           — the triggered_warnings block from history.warnings
+    Overall                 the summary box, and everything else the run measured
+    Hardware & Parameters   the rocket as the physics saw it, one block per CV
+    Per phase               the same numbers broken down by flight phase
+    Events                  the transition log
+    Warnings                runtime range checks, worst first
 
-Sidebar buttons:
+Nothing on this page is computed. Every number comes from the results file, and
+the only arithmetic allowed is unit conversion and the radius-to-diameter
+doubling, which lives in the output registry rather than here.
 
-  * Copy to clipboard          → performance.overall as TSV row
-  * Export to sheets (.csv)    → inputs + metadata + overall + per-phase
-  * Show select graphs         → kinematics + thrust vs time
-  * Show all graphs            → the full display_unsteady_results dashboard
+Graphs are not a tab. "Plot select graphs" in the sidebar opens the ones you
+pick in their own windows, so you can put a figure beside the numbers it came
+from. "Save graphs as PNGs" writes them all to graphs/ instead.
+
+"Generate PDF report" writes the full run report: inputs, performance, phases,
+events, warnings, then every plot. One registry builds all three outputs, so
+the windows, the PNGs and the report cannot drift apart.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
-from pathlib import Path
-from tkinter import filedialog, messagebox
+from typing import Optional
 
 import customtkinter as ctk
 
-from src.ui.app import theme, results_utils, backend_bridge
-from src.ui.app.services import i18n
-from src.ui.app.widgets.graph_picker import GraphPicker
-from src.ui.app.widgets.search_entry import SearchEntry
-from src.ui.app.widgets.help_icon import HelpIcon
+from src.common import output_registry as outputs
+from src.common.unit_labels import pretty_unit
+from src.ui.app import theme
+from src.ui.app.widgets import kv_row
+from src.ui.app.widgets import summary_box
+from src.ui.app import backend_bridge
+from src.ui.app.pages.results_page import ResultsPage
+from src.ui.app.services import os_utils
+from src.ui.app.widgets import figure_window
+from src.ui.app.widgets.graph_picker import show_graph_picker
 
+# Worst first, matching the preflight dialog.
+_SEVERITY_ORDER = ("critical", "caution", "advisory")
+_SEVERITY_COLOR = {
+    "critical": theme.ERROR,
+    "caution": theme.WARNING_STRONG,
+    "advisory": theme.WARNING,
+}
 
-# Every plot toggle understood by display_unsteady_results.  Used to
-# selectively enable a subset of graphs (for "Show select graphs").
-_ALL_PLOT_TOGGLES = (
-    "performance_panel",
-    "events_warnings_panel",
-    "thrust_vs_time",
-    "injector_mass_flow_vs_time",
-    "rocket_kinematics",
-    "of_ratio_vs_time",
-    "chamber_temperature_vs_time",
-    "tank_pressure_vs_time",
-    "tank_temperature_vs_time",
-    "chamber_pressure_vs_time",
-    "oxidizer_inventory_vs_time",
-    "fuel_grain_state_vs_time",
-    "injector_pressure_drop_vs_time",
-    "nozzle_exit_conditions_vs_time",
-    "nozzle_flow_regime_vs_time",
-    "combustion_properties_vs_time",
-    "ambient_atmosphere_vs_time",
-    "isp_vs_time",
-    "rocket_total_mass_vs_time",
-    "trajectory_map",
-    "of_vs_port_radius",
-    "thrust_vs_chamber_pressure",
-    "solver_step_size",
-    "nan_map",
-    "mass_conservation_check",
-    "thrust_with_event_markers",
-    "rocket_cross_section",
-    "nozzle_profile",
-)
-
-
-class UnsteadyResultsPage(ctk.CTkFrame):
-    TITLE = "Unsteady simulation results"
-
-    def __init__(self, master, on_navigate) -> None:
-        super().__init__(master, corner_radius=0, fg_color="transparent")
-        self.on_navigate = on_navigate
-        self._result_path: Path | None = None
-        self._result_dict: dict | None = None
-        self._unit_system: str = "SI"
-        self._unit_buttons: dict = {}
-        # KVRow instances cached so _set_unit_system can update in place.
-        self._rows: list = []
-        self._build()
-
-    # ===================================================================
-    # Layout
-    # ===================================================================
-
-    def _build(self) -> None:
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=0, minsize=220)
-        self.grid_rowconfigure(1, weight=1)   # tabview row expands
-
-        # ---- filter bar (row 0, spans both columns) ---------------------
-        filter_row = ctk.CTkFrame(self, fg_color="transparent")
-        filter_row.grid(row=0, column=0, columnspan=2, sticky="ew",
-                        padx=theme.PAD_M, pady=(theme.PAD_M, 0))
-        self._filter_var = ctk.StringVar()
-        SearchEntry(
-            filter_row, textvariable=self._filter_var,
-            placeholder=i18n.t("filter.placeholder"),
-        ).pack(fill="x", expand=True)
-        self._filter_var.trace_add("write", lambda *_: self._apply_filter())
-
-        self.tabs = ctk.CTkTabview(self, anchor="w")
-        self.tabs.grid(row=1, column=0, sticky="nsew",
-                       padx=(theme.PAD_M, theme.PAD_S), pady=theme.PAD_M)
-
-        self._inputs_tab   = self.tabs.add("Rocket inputs")
-        self._meta_tab     = self.tabs.add("Metadata")
-        self._overall_tab  = self.tabs.add("Overall")
-        self._phases_tab   = self.tabs.add("Phase-by-phase")
-        self._warn_tab     = self.tabs.add("Warnings")
-
-        self._inputs_scroll  = ctk.CTkScrollableFrame(self._inputs_tab, label_text="")
-        self._inputs_scroll.pack(fill="both", expand=True)
-        self._meta_scroll    = ctk.CTkScrollableFrame(self._meta_tab, label_text="")
-        self._meta_scroll.pack(fill="both", expand=True)
-        self._overall_scroll = ctk.CTkScrollableFrame(self._overall_tab, label_text="")
-        self._overall_scroll.pack(fill="both", expand=True)
-        self._phases_scroll  = ctk.CTkScrollableFrame(self._phases_tab, label_text="")
-        self._phases_scroll.pack(fill="both", expand=True)
-        self._warn_scroll    = ctk.CTkScrollableFrame(self._warn_tab, label_text="")
-        self._warn_scroll.pack(fill="both", expand=True)
-
-        # sidebar
-        sidebar = ctk.CTkFrame(self, fg_color="transparent")
-        sidebar.grid(row=1, column=1, sticky="ns",
-                     padx=(theme.PAD_S, theme.PAD_M), pady=theme.PAD_M)
-        self._build_sidebar(sidebar)
-
-        # status line
-        self.status_label = ctk.CTkLabel(
-            self, text="", anchor="w",
-            text_color=("gray35", "gray65"),
-            font=ctk.CTkFont(size=theme.SIZE_SMALL),
-        )
-        self.status_label.grid(row=2, column=0, columnspan=2, sticky="ew",
-                               padx=theme.PAD_M, pady=(0, theme.PAD_S))
-
-    def _build_sidebar(self, parent) -> None:
-        ctk.CTkLabel(parent, text=i18n.t("action.actions"),
-                     font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
-                     anchor="w").pack(fill="x", pady=(0, theme.PAD_S))
-
-        ctk.CTkButton(parent, text=i18n.t("action.copy"),
-                      width=200, height=36,
-                      command=self._on_copy).pack(pady=theme.PAD_XS)
-        ctk.CTkButton(parent, text=i18n.t("action.export_csv"),
-                      width=200, height=36,
-                      command=self._on_export).pack(pady=theme.PAD_XS)
-        ctk.CTkButton(parent, text="Show in folder",
-                      width=200, height=36,
-                      command=self._on_show_in_folder).pack(pady=theme.PAD_XS)
-
-        ctk.CTkLabel(parent, text=i18n.t("action.graphs"),
-                     font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold"),
-                     anchor="w").pack(fill="x", pady=(theme.PAD_L, theme.PAD_XS))
-
-        ctk.CTkButton(parent, text=i18n.t("action.show_graphs"),
-                      width=200, height=36,
-                      command=self._on_open_graph_picker).pack(pady=theme.PAD_XS)
-
-        # Units header + inline help-icon
-        units_row = ctk.CTkFrame(parent, fg_color="transparent")
-        units_row.pack(fill="x", pady=(theme.PAD_L, theme.PAD_XS))
-        ctk.CTkLabel(units_row, text=i18n.t("action.units"),
-                     font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold"),
-                     anchor="w").pack(side="left")
-        HelpIcon(units_row, i18n.t("help.units")).pack(side="left",
-                                                       padx=(theme.PAD_XS, 0))
-        self._unit_buttons = results_utils.build_unit_buttons(
-            parent, self._unit_system, on_change=self._set_unit_system,
-        )
-
-    # ===================================================================
-    # Data-in
-    # ===================================================================
-
-    def load_results(self, path: Path, result_dict: dict) -> None:
-        self._result_path = path
-        self._result_dict = result_dict
-        self._refresh_panels()
-        self._set_status(f"Loaded results from {path.name}")
-
-    def on_show(self) -> None:
-        if self._result_dict is None:
-            self._set_status("No results loaded yet.")
-
-    def reset_to_defaults(self) -> None:
-        self._result_path = None
-        self._result_dict = None
-        for f in (self._inputs_scroll, self._meta_scroll,
-                  self._overall_scroll, self._phases_scroll,
-                  self._warn_scroll):
-            self._clear_scroll(f)
-        self._rows = []
-        self._unit_system = "SI"
-        if self._unit_buttons:
-            results_utils.refresh_unit_buttons(self._unit_buttons, self._unit_system)
-        self._set_status("")
-
-    # ===================================================================
-    # Panel population
-    # ===================================================================
-
-    def _clear_scroll(self, frame) -> None:
-        for w in frame.winfo_children():
-            w.destroy()
-
-    def _refresh_panels(self) -> None:
-        for f in (self._inputs_scroll, self._meta_scroll,
-                  self._overall_scroll, self._phases_scroll,
-                  self._warn_scroll):
-            self._clear_scroll(f)
-        self._rows = []
-        if self._result_dict is None:
-            return
-
-        # ------- Inputs tab -----------------------------------------
-        ri = ((self._result_dict.get("static") or {}).get("rocket_inputs")
-              or self._result_dict.get("rocket_inputs")
-              or {})
-        # rocket_inputs is nested: initial_conditions + CV_inputs.CV*_*
-        ic = ri.get("initial_conditions") or {}
-        if isinstance(ic, dict) and ic:
-            self._render_dict_section(self._inputs_scroll,
-                                      "Initial conditions", ic)
-        cv_inputs = ri.get("CV_inputs") or {}
-        if isinstance(cv_inputs, dict):
-            for cv_name in _CV_ORDER:
-                block = cv_inputs.get(cv_name)
-                if isinstance(block, dict) and block:
-                    self._render_dict_section(
-                        self._inputs_scroll,
-                        _CV_PRETTY.get(cv_name, cv_name),
-                        block,
-                    )
-        # Anything at the top level of rocket_inputs that isn't nested —
-        # render the rows without a section header (per user request).
-        top_level = {k: v for k, v in ri.items()
-                     if k not in ("initial_conditions", "CV_inputs", "metadata")
-                     and not isinstance(v, dict)}
-        if top_level:
-            for key, value in top_level.items():
-                self._render_kv_row(self._inputs_scroll, key, value)
-
-        # ------- Metadata tab ---------------------------------------
-        meta = self._result_dict.get("metadata") or {}
-        if isinstance(meta, dict) and meta:
-            self._render_dict_section(self._meta_scroll, "Run metadata", meta)
-        rocket_meta = ri.get("metadata") or {}
-        if isinstance(rocket_meta, dict) and rocket_meta:
-            self._render_dict_section(self._meta_scroll,
-                                      "Rocket-inputs metadata", rocket_meta)
-        if self._result_path is not None:
-            self._render_dict_section(
-                self._meta_scroll, "File",
-                {"path": str(self._result_path),
-                 "size (KiB)": f"{self._result_path.stat().st_size / 1024:.1f}"
-                 if self._result_path.exists() else "?"},
-            )
-
-        # ------- Overall tab ----------------------------------------
-        perf = self._result_dict.get("performance") or {}
-        overall = perf.get("overall") or {}
-        if overall:
-            self._render_dict_section(self._overall_scroll,
-                                      "Overall performance", overall)
-        else:
-            self._empty_message(self._overall_scroll,
-                                "No overall-performance block in this file.")
-
-        # ------- Phase-by-phase tab ---------------------------------
-        by_phase = perf.get("by_phase") or {}
-        if by_phase:
-            self._render_phase_table(self._phases_scroll, by_phase)
-        else:
-            self._empty_message(self._phases_scroll,
-                                "No per-phase metrics in this file.")
-
-        # ------- Warnings tab ---------------------------------------
-        warnings = self._result_dict.get("warnings")
-        self._render_warnings(self._warn_scroll, warnings)
-
-        # Re-apply any active filter so newly-built rows respect it.
-        self._apply_filter()
-
-    def _render_dict_section(self, parent, title: str, d: dict) -> None:
-        ctk.CTkLabel(parent, text=title,
-                     font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
-                     anchor="w").pack(fill="x", pady=(theme.PAD_S, theme.PAD_XS))
-        for key, value in d.items():
-            self._render_kv_row(parent, key, value)
-
-    def _render_kv_row(self, parent, key: str, value) -> None:
-        """3-column row (name | value | unit) via shared helper — keeps
-        the two results pages visually in sync and unit-aware.  We cache
-        the returned KVRow so unit-system toggles can update it in
-        place rather than tearing the whole panel down."""
-        row = results_utils.render_kv_row(parent, key, value, self._unit_system)
-        self._rows.append(row)
-
-    def _set_unit_system(self, system: str) -> None:
-        if system == self._unit_system:
-            return
-        self._unit_system = system
-        results_utils.refresh_unit_buttons(self._unit_buttons, system)
-        # Fast in-place update — see steady_results._set_unit_system.
-        for row in self._rows:
-            try:
-                row.update_system(system)
-            except AttributeError:
-                pass
-        # Re-apply filter (unit labels just changed).
-        self._apply_filter()
-
-    def _apply_filter(self) -> None:
-        """Show/hide cached KVRow widgets based on the filter query."""
-        try:
-            query = self._filter_var.get()
-        except AttributeError:
-            return
-        for row in self._rows:
-            try:
-                if row.winfo_manager() == "pack":
-                    row.pack_forget()
-            except AttributeError:
-                pass
-        for row in self._rows:
-            try:
-                if row.matches(query):
-                    row.pack(fill="x", pady=1)
-            except AttributeError:
-                pass
-
-    def _render_phase_table(self, parent, by_phase: dict) -> None:
-        # One CTk-drawn "table": one bordered row per phase, with the
-        # metrics listed vertically inside.
-        ctk.CTkLabel(
-            parent, text="Per-phase metrics",
-            font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
-            anchor="w",
-        ).pack(fill="x", pady=(theme.PAD_S, theme.PAD_XS))
-        for phase_name, entry in by_phase.items():
-            if not isinstance(entry, dict):
-                continue
-            group = ctk.CTkFrame(parent,
-                                 fg_color=("gray90", "gray18"),
-                                 corner_radius=6)
-            group.pack(fill="x", pady=theme.PAD_XS)
-            ctk.CTkLabel(
-                group, text=_prettify_phase(phase_name),
-                font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold"),
-                anchor="w",
-            ).pack(fill="x", padx=theme.PAD_S, pady=(theme.PAD_S, 2))
-            inner = ctk.CTkFrame(group, fg_color="transparent")
-            inner.pack(fill="x", padx=theme.PAD_S)
-            for k, v in entry.items():
-                # Route through _render_kv_row so the phase rows also get
-                # cached in self._rows and participate in fast unit-switching.
-                self._render_kv_row(inner, k, v)
-            ctk.CTkFrame(group, height=6, fg_color="transparent") \
-                .pack()   # bottom pad
-
-    def _render_warnings(self, parent, warnings) -> None:
-        if warnings == "disabled" or warnings is None:
-            self._empty_message(parent, "Warnings system was disabled for this run.")
-            return
-        if isinstance(warnings, dict):
-            level = warnings.get("overall_warning_level", "—")
-            triggered = warnings.get("triggered_warnings") or {}
-        else:
-            self._empty_message(parent, f"Unrecognized warnings format: {warnings!r}")
-            return
-
-        # header
-        _level_color = {
-            "none":     ("#2a9d8f", "#5eead4"),
-            "advisory": ("#f4a261", "#f4a261"),
-            "regular":  ("#e76f51", "#ff9e7a"),
-            "critical": ("#b00020", "#ff6b6b"),
-        }.get(str(level).lower(), ("gray35", "gray65"))
-        ctk.CTkLabel(
-            parent, text=f"Overall level:  {level}",
-            font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
-            text_color=_level_color, anchor="w",
-        ).pack(fill="x", pady=(theme.PAD_S, theme.PAD_M))
-
-        if not triggered:
-            self._empty_message(parent, "No warnings triggered.")
-            return
-
-        for name, w in triggered.items():
-            if not isinstance(w, dict):
-                continue
-            severity = w.get("severity", "—")
-            count    = w.get("num_occurences", w.get("num_occurrences", "—"))
-            message  = w.get("message", "")
-            _sev_col = {
-                "debug":    ("gray45", "gray65"),
-                "advisory": ("#f4a261", "#f4a261"),
-                "regular":  ("#e76f51", "#ff9e7a"),
-                "critical": ("#b00020", "#ff6b6b"),
-            }.get(str(severity).lower(), ("gray35", "gray65"))
-
-            box = ctk.CTkFrame(parent, fg_color=("gray90", "gray18"),
-                               corner_radius=6)
-            box.pack(fill="x", pady=theme.PAD_XS)
-
-            top = ctk.CTkFrame(box, fg_color="transparent")
-            top.pack(fill="x", padx=theme.PAD_S, pady=(theme.PAD_S, 2))
-            ctk.CTkLabel(
-                top, text=str(name),
-                font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold"),
-                anchor="w",
-            ).pack(side="left")
-            ctk.CTkLabel(top, text=f"[{severity}]", text_color=_sev_col,
-                        font=ctk.CTkFont(size=theme.SIZE_SMALL, weight="bold"),
-                        ).pack(side="left", padx=(theme.PAD_S, 0))
-            ctk.CTkLabel(top, text=f"× {count}", text_color=("gray45", "gray65"),
-                        ).pack(side="right")
-            ctk.CTkLabel(
-                box, text=str(message)[:400],
-                anchor="w", justify="left",
-                wraplength=800,
-                text_color=("gray20", "gray80"),
-                font=ctk.CTkFont(size=theme.SIZE_SMALL),
-            ).pack(fill="x", padx=theme.PAD_S, pady=(0, theme.PAD_S))
-
-    def _empty_message(self, parent, text: str) -> None:
-        ctk.CTkLabel(parent, text=text,
-                     text_color=("gray45", "gray60"),
-                     font=ctk.CTkFont(size=theme.SIZE_BODY, slant="italic")
-                    ).pack(padx=theme.PAD_L, pady=theme.PAD_L)
-
-    # ===================================================================
-    # Actions
-    # ===================================================================
-
-    def _on_show_in_folder(self) -> None:
-        if self._result_path is None or not self._result_path.exists():
-            messagebox.showinfo(
-                "No file to show",
-                "There's no saved file for this run yet.",
-            )
-            return
-        from src.ui.app.services.os_utils import reveal_in_file_explorer
-        reveal_in_file_explorer(self._result_path)
-
-    def _on_copy(self) -> None:
-        if self._result_dict is None:
-            messagebox.showinfo("Nothing to copy", "No results loaded.")
-            return
-        overall = ((self._result_dict.get("performance") or {}).get("overall")
-                   or {})
-        flat = results_utils.flatten_dict(overall)
-        if not flat:
-            messagebox.showinfo("Nothing to copy",
-                                "This run has no overall-performance block.")
-            return
-        pairs = results_utils.flat_to_display_pairs(flat, self._unit_system)
-        results_utils.copy_pairs_to_clipboard(self, pairs)
-        self._set_status(
-            f"Copied {len(pairs)} overall-performance values "
-            f"(in {self._unit_system})."
-        )
-
-    def _on_export(self) -> None:
-        if self._result_dict is None:
-            messagebox.showinfo("Nothing to export", "No results loaded.")
-            return
-        # Everything critical — inputs + metadata + performance.  Skip
-        # `data` (time series, thousands of numbers) and `event_log`.
-        ri = ((self._result_dict.get("static") or {}).get("rocket_inputs")
-              or self._result_dict.get("rocket_inputs") or {})
-        payload = {
-            "metadata":       self._result_dict.get("metadata") or {},
-            "rocket_inputs":  ri,
-            "performance":    self._result_dict.get("performance") or {},
-        }
-        flat = results_utils.flatten_dict(payload, skip_keys=("data",))
-        if not flat:
-            messagebox.showinfo("Nothing to export",
-                                "No exportable data in this result file.")
-            return
-        pairs = results_utils.flat_to_display_pairs(flat, self._unit_system)
-
-        default_name = self._default_export_name()
-        path = filedialog.asksaveasfilename(
-            title="Export unsteady results (one-row CSV)",
-            initialfile=default_name,
-            defaultextension=".csv",
-            filetypes=[("CSV", "*.csv"), ("All files", "*.*")],
-        )
-        if not path:
-            return
-        try:
-            results_utils.export_pairs_to_csv(Path(path), pairs)
-            self._set_status(f"Exported to {Path(path).name} (in {self._unit_system})")
-        except Exception as exc:
-            messagebox.showerror("Export failed",
-                                 f"{type(exc).__name__}: {exc}")
-
-    # --- Graph picker (replaces the old select/all buttons) -----------
-
-    # Ordered list of (wire_toggle_name, default_checked).  Order maps
-    # 1-to-1 to the backend's unsteady_results() parameters; adding a
-    # new plot in the backend needs a matching entry here.  The initial
-    # "checked" state is a curated shortlist (kinematics + thrust +
-    # thrust-with-events) that keeps the picker useful even for someone
-    # who just hits Show without ticking anything else.
-    _GRAPH_CATALOG: tuple[tuple[str, bool], ...] = (
-        ("performance_panel",              True),
-        ("events_warnings_panel",          False),
-        ("thrust_vs_time",                 True),
-        ("thrust_with_event_markers",      True),
-        ("rocket_kinematics",              True),
-        ("injector_mass_flow_vs_time",     False),
-        ("of_ratio_vs_time",               False),
-        ("chamber_temperature_vs_time",    False),
-        ("tank_pressure_vs_time",          False),
-        ("tank_temperature_vs_time",       False),
-        ("chamber_pressure_vs_time",       False),
-        ("oxidizer_inventory_vs_time",     False),
-        ("fuel_grain_state_vs_time",       False),
-        ("injector_pressure_drop_vs_time", False),
-        ("nozzle_exit_conditions_vs_time", False),
-        ("nozzle_flow_regime_vs_time",     False),
-        ("combustion_properties_vs_time",  False),
-        ("ambient_atmosphere_vs_time",     False),
-        ("isp_vs_time",                    False),
-        ("rocket_total_mass_vs_time",      False),
-        ("trajectory_map",                 False),
-        ("of_vs_port_radius",              False),
-        ("thrust_vs_chamber_pressure",     False),
-        ("solver_step_size",               False),
-        ("nan_map",                        False),
-        ("mass_conservation_check",        False),
-        ("rocket_cross_section",           False),
-        ("nozzle_profile",                 False),
-    )
-
-    def _on_open_graph_picker(self) -> None:
-        if not self._require_result_file():
-            return
-        # (pretty_label, wire_key, default_checked)
-        items = [
-            (i18n.t(f"graph.us.{key}"), key, default)
-            for key, default in self._GRAPH_CATALOG
-        ]
-        GraphPicker(self, items=items, on_confirm=self._render_selected_graphs)
-
-    def _render_selected_graphs(self, selected: list[str]) -> None:
-        if not selected:
-            return
-        if not self._require_result_file():
-            return
-        # Build kwargs — every catalog toggle off except the picked ones.
-        kwargs = {key: (key in selected) for key, _ in self._GRAPH_CATALOG}
-        self._invoke_display(**kwargs)
-
-    def _require_result_file(self) -> bool:
-        if self._result_path is None or not self._result_path.exists():
-            messagebox.showinfo("No results file",
-                                "Can't find the results JSON on disk. "
-                                "Try running the simulation again.")
-            return False
-        return True
-
-    def _invoke_display(self, **kwargs) -> None:
-        """Call the backend's unsteady_results() with per-plot toggles,
-        then lift every freshly-created figure to the foreground."""
-        try:
-            from src.backend.unsteady.analysis.unsteady_results import (
-                unsteady_results as _display,
-            )
-            from src.ui.app.services.mpl_bringup import lift_all_figures
-            _display(
-                json_filename=self._result_path.name,
-                json_filepath=self._result_path.parent,
-                display_graphs=True,
-                **kwargs,
-            )
-            # Backend has already called plt.show(); lift any figures it
-            # opened so they don't slide behind the main UI.
-            lift_all_figures()
-        except Exception as exc:
-            messagebox.showerror("Could not display graphs",
-                                 f"{type(exc).__name__}: {exc}")
-
-    # ===================================================================
-    # Utilities
-    # ===================================================================
-
-    def _default_export_name(self) -> str:
-        if self._result_path is not None:
-            return self._result_path.stem + ".csv"
-        return f"unsteady_export_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.csv"
-
-    def _set_status(self, text: str) -> None:
-        self.status_label.configure(text=text)
-
-
-# ---------------------------------------------------------------------------
-# Static helpers
-# ---------------------------------------------------------------------------
-
-_CV_ORDER = (
-    "CV1_tank", "CV2_valve", "CV3_injector",
-    "CV4_chamber", "CV5_nozzle", "CV6_trajectory",
-)
-_CV_PRETTY = {
-    "CV1_tank":       "Tank (CV1)",
-    "CV2_valve":      "Valve (CV2)",
-    "CV3_injector":   "Injector (CV3)",
-    "CV4_chamber":    "Chamber (CV4)",
-    "CV5_nozzle":     "Nozzle (CV5)",
-    "CV6_trajectory": "Trajectory (CV6)",
+# The overall level is a verdict on the run rather than a group label, so
+# advisory reads as "fine" here and gets the green the group heading doesn't.
+_LEVEL_COLOR = {
+    "critical": theme.ERROR,
+    "caution": theme.WARNING_STRONG,
+    "advisory": theme.SUCCESS,
+    "nominal": theme.SUCCESS,
 }
 
 
-def _prettify_phase(name: str) -> str:
-    """phase_1 → 'Phase 1', phase_4a → 'Phase 4a', phase_4c → 'Phase 4c'.
-    Leaves anything not matching that shape alone."""
-    if not isinstance(name, str):
-        return str(name)
-    if name.startswith("phase_"):
-        return "Phase " + name[len("phase_"):]
-    return name
+# =============================================================================
+# Layout
+# =============================================================================
+#
+# What appears where, as data rather than as code.  Every entry is a key the
+# output registry knows, so the label, the unit and the radius-to-diameter
+# handling all come from there and none of it is repeated here.
+
+# The summary box, in reading order.  Two entries are not plain keys:
+# "__run__" is the terminal state, and "__level__" the overall warning level,
+# both of which are verdicts rather than measurements.  A tuple means one row
+# built from two values, rendered "used / available".
+_MAIN_ROWS: tuple = (
+    "__run__",
+    "__level__",
+    "apogee_agl",
+    "burntime",
+    "peak_thrust",
+    "average_thrust",
+    "total_impulse",
+    "pad_thrust_to_weight",
+    # The registry calls this "Peak acceleration" so the per-phase grid row reads
+    # cleanly. Here it needs the qualifier: the summary figure is burn-only, while
+    # the grid also covers descent, where parachute inflation is much larger.
+    ("peak_acceleration", None, "Peak acceleration under thrust"),
+    ("ox_mass_consumed", "ox_mass_available", "Oxidizer mass used / available"),
+    ("fuel_mass_consumed", "fuel_mass_available", "Fuel mass used / available"),
+    "average_OF_ratio",
+    ("peak_chamber_temperature", None, "Chamber stagnation temperature"),
+    "specific_impulse",
+)
+
+# Everything in the summary box, so the Performance section below it can show
+# the remainder without repeating anything.
+_MAIN_KEYS = frozenset(
+    entry[0] if isinstance(entry, tuple) else entry for entry in _MAIN_ROWS
+) | frozenset(
+    entry[1] for entry in _MAIN_ROWS if isinstance(entry, tuple) and entry[1]
+)
+
+# Hardware & Parameters, one block per control volume.  Sub-sections are
+# ordered the way the oxidizer meets them, which is how anyone tracing a run
+# reads the rocket.  A label after a key overrides the registry's name, for
+# rows whose meaning comes from the heading above them.
+_HARDWARE: tuple = (
+    ("CV1_tank", "CV1: Tank", (
+        ("Geometry", (
+            "tank_internal_radius",
+            "tank_internal_length",
+            "tank_volume",
+        )),
+        ("N₂O parameters", (
+            "tank_temperature",
+            "tank_oxidizer_mass",
+            "tank_ullage_fraction",
+            "tank_liquid_volume",
+            "tank_ullage_volume",
+        )),
+    )),
+    ("CV2_valve", "CV2: Valve", ()),        # model-dependent; see _render_valve
+    ("CV3_injector", "CV3: Injector", (
+        ("Geometry", (
+            "injector_discharge_coefficient",
+            "injector_number_of_holes",
+            "injector_hole_radius",
+            "injector_hole_area",
+        )),
+        (None, (
+            "feed_pressure_loss",
+        )),
+    )),
+    ("CV4_chamber", "CV4: Chamber", (
+        ("Fuel cell", (
+            ("chamber_fuel_external_radius", "External diameter"),
+            ("chamber_fuel_internal_radius", "Initial internal diameter"),
+            ("chamber_fuel_length", "Length"),
+            ("chamber_fuel_mass", "Mass"),
+            ("chamber_fuel_density", "Density"),
+        )),
+        ("Pre chamber", (
+            ("pre_chamber_radius", "Diameter"),
+            ("pre_chamber_length", "Length"),
+            ("pre_chamber_volume", "Volume"),
+        )),
+        ("Post chamber", (
+            ("post_chamber_radius", "Diameter"),
+            ("post_chamber_length", "Length"),
+            ("post_chamber_volume", "Volume"),
+        )),
+        ("Combustion parameters", (
+            "chamber_regression_rate_scaling_constant",
+            "chamber_regression_rate_exponent",
+            "chamber_cstar_efficiency",
+            "average_cstar_actual",
+            "average_cstar_theoretical",
+        )),
+    )),
+    ("CV5_nozzle", "CV5: Nozzle", (
+        ("Geometry", (
+            "nozzle_throat_radius",
+            "nozzle_exit_radius",
+            "nozzle_throat_area",
+            "nozzle_exit_area",
+            "nozzle_expansion_ratio",
+        )),
+    )),
+    ("CV6_trajectory", "CV6: Trajectory", (
+        ("Construction", (
+            "rocket_dry_mass",
+            "rocket_outer_radius",
+            "rocket_frontal_area",
+        )),
+        ("Flight parameters", (
+            "rocket_drag_coefficient",
+            "rocket_launch_angle",
+            "launch_site_altitude_asl",
+            "landing_downrange",
+        )),
+        ("Parachutes", (
+            "drogue_parachute_radius",
+            "drogue_parachute_drag_coefficient",
+            "main_parachute_radius",
+            "main_parachute_drag_coefficient",
+            "main_parachute_deployment_altitude_agl",
+        )),
+    )),
+)
+
+# What each valve model has to say for itself.  "instant" has no parameters at
+# all, and an empty section reads like a bug, so it gets a sentence instead.
+_VALVE_ROWS = {
+    "instant": (),
+    "linear": ("valve_time_constant",),
+    "sigmoid": ("sigmoid_half_time", "sigmoid_steepness"),
+}
+_VALVE_NOTE = {
+    "instant": "Not simulated. Valve opened instantly.",
+}
+
+# Per-phase grid rows, grouped so the burn-only and flight-only blocks do not
+# interleave into a checkerboard of dashes.
+_PHASE_ROW_GROUPS: tuple = (
+    (None, ("t_start", "t_end", "duration")),
+    ("Engine", ("total_impulse", "peak_thrust", "average_thrust",
+                "peak_chamber_pressure", "peak_chamber_temperature",
+                "average_OF_ratio", "ox_mass_consumed", "fuel_mass_consumed")),
+    ("Kinematics", ("peak_velocity", "terminal_velocity", "peak_acceleration")),
+)
+
+# The summary box reads as one object rather than as the top of a list, so its
+# border is heavy and its contents sit well inside it. 38 px is about a centimetre
+# at the 96 dpi these screens report.
+_HARDWARE_TAB = "Hardware & Parameters"
+
+# Terminal states, said in a way a person would say them.
+_RUN_LABELS = {
+    "success_landed": "Success",
+    "liquid_quench": "Liquid quench",
+    "apogee_abort": "Apogee abort",
+    "phase_timeout": "Phase timeout",
+    "failed_to_launch": "Failed to launch",
+    "unknown": "Unknown terminal state",
+}
 
 
-def _format_value(v) -> str:
-    if v is None:
-        return "—"
-    if isinstance(v, bool):
-        return "true" if v else "false"
-    if isinstance(v, float):
-        if v == int(v):
-            return f"{int(v)}"
-        return f"{v:.6g}"
-    if isinstance(v, dict):
-        return f"({len(v)} keys — nested)"
-    if isinstance(v, list):
-        return f"[{len(v)} items]"
-    return str(v)
+class UnsteadyResultsPage(ResultsPage):
+    TITLE = "Unsteady results"
+    KIND = "unsteady"
+
+    def _build_tabs(self) -> None:
+        self._overall = self.add_tab("Overall")
+        self._hardware = self.add_tab(_HARDWARE_TAB)
+        self._phases = self.add_tab("Per phase")
+        self._events = self.add_tab("Events")
+        self._warnings = self.add_tab("Warnings")
+        self._selected_plots: Optional[list[str]] = None
+
+    def _build_report_action(self, parent) -> None:
+        ctk.CTkButton(parent, text="Generate PDF report", width=200, height=36,
+                      command=self._on_generate_report).pack(pady=theme.PAD_XS)
+
+    def _build_extra_actions(self, parent) -> None:
+        ctk.CTkLabel(parent, text="Graphs", anchor="w",
+                     font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold")).pack(
+            fill="x", pady=(theme.PAD_L, theme.PAD_XS))
+        ctk.CTkButton(parent, text="Plot select graphs", width=200, height=36,
+                      command=self._on_choose_graphs).pack(pady=theme.PAD_XS)
+        ctk.CTkButton(parent, text="Save graphs as PNGs", width=200, height=36,
+                      command=self._on_save_pngs).pack(pady=theme.PAD_XS)
+
+    # ==================================================================
+    # Panels
+    # ==================================================================
+
+    def _refresh_panels(self) -> None:
+        for frame in (self._overall, self._hardware, self._phases,
+                      self._events, self._warnings):
+            self.clear(frame)
+        # Loading a different run invalidates whatever is on screen.
+        figure_window.close_all()
+
+        performance = self.results.get("performance") or {}
+        self._render_overall(performance.get("overall") or {})
+        self._render_hardware(performance.get("overall") or {})
+        self._render_phases(performance.get("by_phase") or {})
+        self._render_events(self.results.get("event_log") or [])
+        self._render_warnings(self.results.get("warnings"))
+
+    def _warning_entries(self) -> dict:
+        """The triggered warnings, whatever shape this file uses.
+
+        Two shapes in the wild: the current nested one under
+        'triggered_warnings', and a flat dict of entries from older runs.
+        Both panels need this, and they must agree, or the Overall tab could
+        announce a count the Warnings tab doesn't show.
+        """
+        warnings = self.results.get("warnings")
+        if not isinstance(warnings, dict) or not warnings:
+            return {}
+        triggered = warnings.get("triggered_warnings")
+        return triggered if isinstance(triggered, dict) else warnings
+
+    # ---- shared -------------------------------------------------------
+
+    def _convert(self, value, key: str, system: str):
+        """(number, unit label) for one value in the page's unit system."""
+        return summary_box.convert(value, key, system, self.native_system)
+
+    def _unit_suffix(self, key: str, system: str) -> str:
+        """The unit for a key, as a trailing "  N", or "" when there is none."""
+        return summary_box.unit_suffix(key, system, self.native_system)
+
+    def _add_text_row(self, parent, label: str, text: str, colour=None) -> None:
+        """A row whose value is a word rather than a measurement."""
+        summary_box.add_text_row(parent, label, text, colour)
+
+    # ---- Overall ------------------------------------------------------
+
+    def _render_overall(self, overall: dict) -> None:
+        # Before the early return below: a run with no performance block is
+        # exactly the kind that aborted, so its critical warnings are the most
+        # worth surfacing, not the least.
+        critical = [key for key, entry in self._warning_entries().items()
+                    if isinstance(entry, dict) and entry.get("severity") == "critical"]
+        if critical:
+            count = len(critical)
+            noun = "warning" if count == 1 else "warnings"
+            ctk.CTkLabel(
+                self._overall,
+                text=f"{count} critical simulation {noun} detected.",
+                anchor="w", text_color=theme.ERROR,
+                font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold")).pack(
+                fill="x", pady=(theme.PAD_M, 0))
+            ctk.CTkLabel(
+                self._overall,
+                text="Go to the warnings tab to see more details.",
+                anchor="w",
+                font=ctk.CTkFont(size=theme.SIZE_SMALL)).pack(
+                fill="x", pady=(0, theme.PAD_XS))
+
+        if not overall:
+            self.add_empty(self._overall, "No performance block in this file.")
+            return
+
+        self._render_summary_box(overall)
+        self._render_performance_rest(overall)
+
+    def _render_summary_box(self, overall: dict) -> None:
+        """The dozen numbers an engineer checks first, in one bordered card.
+
+        The card itself is widgets/summary_box.py, shared with the steady page.
+        What belongs in it is _MAIN_ROWS, at the top of this file. Everything
+        here is the translation between the two: a sentinel becomes a verdict,
+        a tuple becomes a pair, a bare key becomes a value.
+        """
+        box = summary_box.SummaryBox(self, self._overall)
+
+        self.set_row_path("Overall")
+        for entry in _MAIN_ROWS:
+            if entry == "__run__":
+                verdict, colour = self._run_verdict()
+                box.text("Run", verdict, colour)
+            elif entry == "__level__":
+                level = self._overall_level().capitalize()
+                box.text("Overall warning level", level,
+                         _LEVEL_COLOR.get(level.lower()))
+            elif isinstance(entry, tuple):
+                used_key, total_key, label = entry
+                box.pair(used_key, outputs.value_of(overall, used_key),
+                         outputs.value_of(overall, total_key) if total_key else None,
+                         label)
+            else:
+                value = outputs.value_of(overall, entry)
+                if value is not None:
+                    box.value(entry, value)
+        self.set_row_path()
+
+    def _render_performance_rest(self, overall: dict) -> None:
+        """Everything the run measured that the summary box does not show.
+
+        Collapsed by default. The point is that no computed result is invisible,
+        not that every result deserves equal billing.
+        """
+        rest = {key: value for key, value in overall.items()
+                if outputs.canonical(key) not in _MAIN_KEYS}
+        metadata = self.results.get("metadata") or {}
+        if not rest and not metadata:
+            return
+
+        section = self.add_section(self._overall, "Performance")
+        section.pack(fill="x", pady=theme.PAD_XS)
+        self.set_row_path("Overall", "Performance")
+        for key, value in rest.items():
+            self.add_row(section.body, key, value)
+        if metadata:
+            self.add_heading(section.body, "Run metadata")
+            self.set_row_path("Overall", "Performance", "Run metadata")
+            for key, value in metadata.items():
+                self.add_row(section.body, key, value)
+        self.set_row_path()
+
+    def _run_verdict(self) -> tuple:
+        """(text, colour) for the Run row.
+
+        A nominal run says so in one word. Anything else names the state and
+        gives the reason with it, because "apogee_abort" on its own tells a
+        reader nothing about what to change.
+        """
+        metadata = self.results.get("metadata") or {}
+        state = str(metadata.get("terminal_state") or "unknown")
+        label = _RUN_LABELS.get(state, state.replace("_", " ").capitalize())
+        if metadata.get("completed_nominally"):
+            return label, theme.SUCCESS
+        reason = str(metadata.get("terminal_reason") or "").strip()
+        return (f"{label}: {reason}" if reason else label), theme.ERROR
+
+    def _overall_level(self) -> str:
+        warnings = self.results.get("warnings")
+        if isinstance(warnings, dict):
+            level = warnings.get("overall_warning_level")
+            if level:
+                return str(level).lower()
+        return "nominal"
+
+    # ---- Hardware & Parameters ----------------------------------------
+
+    def _render_hardware(self, overall: dict) -> None:
+        """The rocket as the physics saw it, one collapsible block per CV.
+
+        Values come from static.rocket_inputs, except the two averaged c*
+        figures, which are performance results but belong beside the combustion
+        parameters they describe. Hence the fallback lookup into `overall`.
+
+        Sub-sections run in the order the oxidizer meets them, which is how
+        anyone tracing a run reads the rocket.
+        """
+        inputs = (self.results.get("static") or {}).get("rocket_inputs") or {}
+        if not inputs:
+            self.add_empty(self._hardware, "No inputs recorded in this file.")
+            return
+        models = inputs.get("CV_models") or {}
+
+        for cv_key, title, groups in _HARDWARE:
+            section = self.add_section(self._hardware, title)
+            section.pack(fill="x", pady=theme.PAD_XS)
+
+            model = models.get(cv_key)
+            if model:
+                self._add_text_row(section.body, "Physics model", str(model))
+
+            if cv_key == "CV2_valve":
+                self.set_row_path(_HARDWARE_TAB, title)
+                self._render_valve(section.body, model, inputs)
+                self.set_row_path()
+                continue
+
+            for heading, keys in groups:
+                rendered = []
+                for item in keys:
+                    key, label = item if isinstance(item, tuple) else (item, None)
+                    value = inputs.get(key)
+                    if value is None:
+                        value = outputs.value_of(overall, key)
+                    if value is None:
+                        continue
+                    rendered.append((key, value, label))
+                if not rendered:
+                    continue
+                if heading:
+                    self.add_heading(section.body, heading)
+                self.set_row_path(_HARDWARE_TAB, title, heading)
+                for key, value, label in rendered:
+                    self.add_row(section.body, key, value, label=label)
+                self.set_row_path()
+
+    def _render_valve(self, parent, model, inputs: dict) -> None:
+        """CV2 is the one block whose contents depend on which model ran.
+
+        An instant valve has no parameters at all, and an empty section reads
+        like a rendering bug, so it says what it did instead.
+        """
+        note = _VALVE_NOTE.get(model)
+        if note:
+            ctk.CTkLabel(parent, text=note, anchor="w",
+                         text_color=theme.TEXT_MUTED,
+                         font=ctk.CTkFont(size=theme.SIZE_SMALL,
+                                          slant="italic")).pack(
+                fill="x", pady=(theme.PAD_XS, 0))
+            return
+        for key in _VALVE_ROWS.get(model, ()):
+            if key in inputs:
+                self.add_row(parent, key, inputs[key])
+
+    # ---- Per phase ----------------------------------------------------
+
+    def _render_phases(self, by_phase: dict) -> None:
+        """Phases across, quantities down, totals on the right.
+
+        Reading along a row shows how one quantity evolved through the flight,
+        which is the question people actually ask of this table. Cells with
+        nothing to say show a dash: a coast phase has no chamber pressure, and
+        that is not a gap in the data.
+        """
+        if not by_phase:
+            self.add_empty(self._phases, "No per-phase breakdown in this file.")
+            return
+
+        try:
+            from src.common.phases import PHASE_ORDER
+            order = [p for p in PHASE_ORDER if p in by_phase]
+            order += [p for p in sorted(by_phase) if p not in order]
+        except Exception:                       # noqa: BLE001
+            order = sorted(by_phase)
+
+        grid = ctk.CTkFrame(self._phases, fg_color="transparent")
+        grid.pack(fill="x", pady=theme.PAD_M)
+
+        headers = ["", *[self._phase_title(p) for p in order], "Total"]
+        for column, text in enumerate(headers):
+            ctk.CTkLabel(grid, text=text, anchor="w",
+                         font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold")).grid(
+                row=0, column=column, sticky="w",
+                padx=(0, theme.PAD_M), pady=(0, theme.PAD_XS))
+
+        line = 1
+        for heading, keys in _PHASE_ROW_GROUPS:
+            present = [k for k in keys
+                       if any(outputs.value_of(by_phase[p], k) is not None
+                              for p in order)]
+            if not present:
+                continue
+            if heading:
+                ctk.CTkLabel(grid, text=heading, anchor="w",
+                             text_color=theme.TEXT_MUTED,
+                             font=ctk.CTkFont(size=theme.SIZE_SMALL,
+                                              weight="bold")).grid(
+                    row=line, column=0, sticky="w", pady=(theme.PAD_S, 0))
+                line += 1
+            for key in present:
+                self._add_grid_row(grid, line, key, order, by_phase)
+                line += 1
+
+    def _add_grid_row(self, grid, line: int, key: str, order: list,
+                      by_phase: dict) -> None:
+        name = ctk.CTkLabel(grid, text="", anchor="w")
+        name.grid(row=line, column=0, sticky="w", padx=(0, theme.PAD_M))
+        label, _unit = kv_row.describe(key)
+        self.add_dynamic_label(
+            name, lambda system, k=key, t=label: t + self._unit_suffix(k, system))
+
+        for column, phase in enumerate(order, start=1):
+            self._add_grid_cell(grid, line, column, key,
+                                outputs.value_of(by_phase[phase], key))
+
+        # The totals column is what makes this table self-checking: phase
+        # impulses summing to the run's total means the phase boundaries line
+        # up. Rows with no meaningful total, the averages, get a dash rather
+        # than a fiction, because the mean of three phase means is not the mean.
+        self._add_grid_cell(grid, line, len(order) + 1, key,
+                            outputs.aggregate_phases(by_phase, key))
+
+    def _add_grid_cell(self, grid, line: int, column: int, key: str, value) -> None:
+        if value is None:
+            ctk.CTkLabel(grid, text="\u2014", anchor="w",
+                         text_color=theme.TEXT_MUTED).grid(
+                row=line, column=column, sticky="w", padx=(0, theme.PAD_M))
+            return
+        cell = ctk.CTkLabel(grid, text="", anchor="w")
+        cell.grid(row=line, column=column, sticky="w", padx=(0, theme.PAD_M))
+        self.add_dynamic_label(
+            cell, lambda system, v=value, k=key:
+            kv_row.format_scalar(self._convert(v, k, system)[0]))
+
+    @staticmethod
+    def _phase_title(phase: str) -> str:
+        try:
+            from src.common.phases import PHASE_LABELS
+            return PHASE_LABELS.get(phase, phase)
+        except Exception:                       # noqa: BLE001
+            return phase
+
+    def _render_events(self, events: list) -> None:
+        if not events:
+            self.add_empty(self._events, "No events logged.")
+            return
+        self.add_heading(self._events, f"Event log ({len(events)})")
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            when = outputs.value_of(event, "t")
+            message = event.get("message", event.get("event", ""))
+            kind = event.get("event_type", "")
+            row = ctk.CTkFrame(self._events, fg_color="transparent")
+            row.pack(fill="x", pady=1)
+            ctk.CTkLabel(row, text=f"{when:.4f} s" if isinstance(when, (int, float))
+                         else str(when), width=110, anchor="w",
+                         text_color=theme.TEXT_MUTED,
+                         font=ctk.CTkFont(family="Consolas",
+                                          size=theme.SIZE_SMALL)).pack(side="left")
+            ctk.CTkLabel(row, text=kind, width=150, anchor="w",
+                         text_color=theme.TEXT_FAINT,
+                         font=ctk.CTkFont(size=theme.SIZE_SMALL)).pack(side="left")
+            ctk.CTkLabel(row, text=str(message), anchor="w", justify="left",
+                         wraplength=520).pack(side="left", fill="x", expand=True)
+
+    def _render_warnings(self, warnings) -> None:
+        if warnings == "disabled":
+            self.add_empty(self._warnings,
+                           "Warnings were switched off for this run.")
+            return
+        if not isinstance(warnings, dict) or not warnings:
+            self.add_empty(self._warnings, "No warnings. The run looked clean.")
+            return
+
+        level = warnings.get("overall_warning_level")
+        entries = self._warning_entries()
+
+        if level:
+            self.add_heading(self._warnings, f"Overall level: {level}",
+                             text_color=_LEVEL_COLOR.get(str(level).lower()))
+
+        def severity_of(entry) -> str:
+            value = entry.get("severity") if isinstance(entry, dict) else None
+            return value if value in _SEVERITY_COLOR else "advisory"
+
+        for severity in _SEVERITY_ORDER:
+            group = {k: v for k, v in entries.items()
+                     if isinstance(v, dict) and severity_of(v) == severity}
+            if not group:
+                continue
+            ctk.CTkLabel(
+                self._warnings, text=f"{severity.capitalize()} ({len(group)})",
+                anchor="w", text_color=_SEVERITY_COLOR[severity],
+                font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold")).pack(
+                fill="x", pady=(theme.PAD_M, theme.PAD_XS))
+            for warning_id, entry in group.items():
+                card = ctk.CTkFrame(self._warnings, fg_color=theme.CARD_BG,
+                                    corner_radius=6)
+                card.pack(fill="x", pady=2)
+                ctk.CTkLabel(card, text=str(entry.get("message", warning_id)),
+                             anchor="w", justify="left", wraplength=620).pack(
+                    fill="x", padx=theme.PAD_S, pady=(theme.PAD_S, 2))
+                ctk.CTkLabel(card, text=warning_id, anchor="w",
+                             text_color=theme.TEXT_FAINT,
+                             font=ctk.CTkFont(family="Consolas",
+                                              size=theme.SIZE_SMALL)).pack(
+                    fill="x", padx=theme.PAD_S, pady=(0, theme.PAD_S))
+
+    # ==================================================================
+    # Graphs
+    # ==================================================================
+
+    def _on_choose_graphs(self) -> None:
+        if not self.results:
+            self._set_status("No run open", error=True)
+            return
+
+        chosen = show_graph_picker(self, preselected=self._selected_plots)
+        if chosen is None:
+            return                              # cancelled
+        self._selected_plots = chosen
+        if not chosen:
+            figure_window.close_all()
+            self._set_status("No graphs selected")
+            return
+
+        self._render_graphs(chosen)
+
+    def _on_generate_report(self) -> None:
+        """Build the run report, then show it in the file explorer.
+
+        Runs on the main thread and blocks: it renders every plot, which takes
+        a few seconds. The status line counts them so the freeze is explained
+        rather than mysterious.
+
+        The report is drawn in whatever unit system the sidebar has selected
+        right now, so what lands in the PDF matches what is on screen.
+        """
+        if not self.results or self.run_path is None:
+            self._set_status("No run open", error=True)
+            return
+
+        from src.common.unsteady_PDF_report import generate_report
+
+        if not self.busy("Generating PDF report…"):
+            return
+
+        def progress(done: int, total: int) -> None:
+            self.pump(f"Generating PDF report…  plot {done} of {total}")
+
+        try:
+            path = generate_report(self.run_path.parent, self.results,
+                                   on_progress=progress, on_stage=self.pump,
+                                   system=self.system)
+        except Exception as exc:                # noqa: BLE001
+            self._set_status(f"Could not write the report: "
+                             f"{type(exc).__name__}: {exc}", error=True)
+            return
+        finally:
+            self.done_busy()
+
+        self._set_status(f"Report written to {path.name}")
+        os_utils.reveal_in_file_explorer(path)
+
+    def _on_save_pngs(self) -> None:
+        """Write every plot as a PNG into graphs/, then open that folder."""
+        if not self.results or self.run_path is None:
+            self._set_status("No run open", error=True)
+            return
+
+        from src.common.plotting import unsteady_plots
+
+        specs = unsteady_plots.plot_specs()
+        if not self.busy(f"Saving graphs…  0 of {len(specs)}"):
+            return
+
+        try:
+            figures, names = [], []
+            for index, spec in enumerate(specs):
+                self.pump(f"Saving graphs…  {index + 1} of {len(specs)}")
+                try:
+                    figure = spec.builder(self.results)
+                except Exception:               # noqa: BLE001
+                    continue                    # one bad plot costs only itself
+                if figure is not None:
+                    figures.append(figure)
+                    names.append(spec.name)
+
+            if not figures:
+                self._set_status("No plots could be built from this run", error=True)
+                return
+
+            out_dir = self.run_path.parent
+            # Writing 15 PNGs is a second or two with no callback of its own.
+            self.pump(f"Writing {len(figures)} PNGs…")
+            try:
+                unsteady_plots._save_figures_to_png(figures, names, out_dir)
+            except Exception as exc:            # noqa: BLE001
+                self._set_status(f"Could not save the PNGs: "
+                                 f"{type(exc).__name__}: {exc}", error=True)
+                return
+        finally:
+            self.done_busy()
+
+        self._set_status(f"{len(figures)} graphs saved to graphs/")
+        os_utils.reveal_in_file_explorer(out_dir / "graphs")
+
+    def _render_graphs(self, names: list[str]) -> None:
+        """Build each figure and open it in its own window."""
+        if not self.busy(f"Rendering graphs…  0 of {len(names)}"):
+            return
+
+        from src.common.plotting import unsteady_plots
+
+        def build():
+            for name in names:
+                try:
+                    yield (unsteady_plots.label_of(name),
+                           unsteady_plots.build_figure(name, self.results))
+                except Exception as exc:        # noqa: BLE001
+                    yield name, exc             # one bad plot costs only itself
+
+        try:
+            self.report_render(*figure_window.show_figures(
+                self, build(), on_progress=self.render_progress(len(names))))
+        finally:
+            self.done_busy()
+
+    def reset_to_defaults(self) -> None:
+        """Close the graph windows when leaving. Figures are expensive to hold
+        onto, and a window whose run is no longer open is just confusing."""
+        figure_window.close_all()

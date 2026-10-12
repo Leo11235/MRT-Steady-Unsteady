@@ -2,7 +2,7 @@ import itertools
 import numpy as np
 
 from src.backend.steady import simulation_engine
-
+from src.common.variable_conversions import pair_to_SI
 
 def simulate_parametric_study(rocket_inputs, rocket_parameters, simulation_settings, constants_dict):
     param_settings = simulation_settings.get("parametric_study_settings", {})
@@ -13,9 +13,10 @@ def simulate_parametric_study(rocket_inputs, rocket_parameters, simulation_setti
     # generate ranges for each variable
     var_ranges = {}
     for var_name, var_values in param_settings.items():
-        low = var_values.get("low_end", 0.0)
-        high = var_values.get("high_end", 0.0)
-        step = var_values.get("step_size", 1.0)
+        # bounds are [value, unit] pairs in the config; pair_to_SI also accepts config; pair_to_SI also accepts a bare number, so older configs keep working
+        low = pair_to_SI(var_values.get("low_end", 0.0))
+        high = pair_to_SI(var_values.get("high_end", 0.0))
+        step = pair_to_SI(var_values.get("step_size", 1.0))
         
         # add a tiny epsilon
         var_ranges[var_name] = np.arange(low, high + (step * 0.01), step).tolist()

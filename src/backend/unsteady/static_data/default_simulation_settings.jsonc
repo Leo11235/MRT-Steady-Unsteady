@@ -2,7 +2,11 @@
 
 {
     "simulation_settings": {
-        "transition_events": {},
+        "transition_events": {
+            "min_thrust_to_weight": 0.02, // ends phase 3 when the thrust being produced is too low to matter. Going below the current value (0.02) costs a few additional seconds of integration and buys very little. 
+            "k_amb": 1.05, // local ambient pressure * k_amb = chamber pressure floor at which phase 3 exits
+            "ignition_delta_p": 500000.0 // how far above ambient the chamber has to climb before ignition is considered achieved and phase_1 hands over to phase_2
+        },
         "phase_max_times": {
             "phase_1":  5.0,
             "phase_2":  30.0,
@@ -18,26 +22,30 @@
             "initialization_near_limits": {},
             "near_critical_tank_temperature": {
                 "advisory_k": 290.0,
-                "warning_k": 300.0,
+                "caution_k": 300.0,
                 "critical_k": 309.52
             },
             "poor_tank_matrix_conditioning": { // for liquid tank blowdown, detects when calculated values are unstable
                 "advisory": 100000.0,
-                "warning": 10000000.0,
+                "caution": 10000000.0,
                 "critical": 100000000.0
             },
             "OF_ranges": { // for CEA, OF ratio should optimally be within a certain range for CEA to be reliable
                 "advisory_min": 5.5,
                 "advisory_max": 8.5,
-                "warning_min": 4.0,
-                "warning_max": 12.0
+                "caution_min": 4.0,
+                "caution_max": 12.0
             },
             "mach_or_drag_model_outside_trusted_range": {
-                "warning_min": 0.8,
-                "warning_max": 1.2
+                "caution_min": 0.8,
+                "caution_max": 1.2
             },
             "multiple_transition_events_detected": {
                 "enabled": true
+            }, 
+            "launch_capability": {
+                "min_peak_thrust_to_weight": 5.0, // peak TtW ratio, below this the rocket is too slow to launch safely
+                "min_altitude_gain": 10.0 // altitude above launch pad, below this the rocket flight is treated as a failure
             }
         },
         "epsilons": {}, // define the 0-crossing thresholds for phase transitions
@@ -52,10 +60,7 @@
             "return_partial_results_on_abort": true,
             "include_warning_summaries": true,
             "include_event_log": true,
-            "include_state_history": true,
-            "success_return_code": "001",
-            "partial_abort_return_code": "002",
-            "invalid_initialization_return_code": "003"
+            "include_state_history": true
         }
     }
 }

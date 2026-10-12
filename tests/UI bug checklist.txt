@@ -1,0 +1,78 @@
+UI BUG CHECKLIST
+last updated Aug. 2026
+
+Work through this checklist before cutting a release to cover scenarios automated backend tests cannot cover.
+Launch command: 
+    .venv\Scripts\activate
+    python -m src.ui.main
+Build command: 
+    build_tools\build.bat
+
+GENERAL/MOST IMPORTANT
+- Verify docs/{user_manual, developer_manual} and update anything that no longer fits with the program's new state. 
+- Run all the files in user_data\simulation_configs\ui_configs. Expected output is written in simulation description block. 
+- Move some of the configs from tests/(un)steady_configs into C:\Users\<user>\AppData\Roaming\MRT-Steady-Unsteady\user_data\simulation_configs (or Mac/Linux equivalent) and run them. Each config file contains the expected outcome in its description. 
+
+UNITS
+- Enter 32 in a length field set to mm, switch to in, switch back to mm. It reads 32, not 31.9999. Switch a dozen more times; still 32.
+- Every field's unit dropdown opens on the SI unit by default (or whatever Settings -> Default output units is set to), not on a random one.
+- Angle fields default to deg, never rad, in all three unit systems.
+- Set launch angle to 6 deg, run unsteady, check the trajectory. A near-vertical flight means the deg->rad conversion is being applied twice.
+- In SI, all short inputs that expect short lengths should be in cm. In MRT/IMP, should be in inches. 
+
+INPUT FORM
+- Open a fresh Unsteady page. CV2 valve starts with the right number of fields for its model: instant 0, linear 1, sigmoid 2. Switch models and the fields appear and disappear in the right places, keeping form order.
+- Same check for every other CV that has a model dropdown (as of now, none)
+- Advanced (propellant chemistry & regression law) starts locked, reads 900 kg/m3 / 0.000132 / 0.555, and the padlock toggles editability.
+- Rocket Body tab renders its placeholder rather than an empty tab.
+- Parametric study: "+ Add parameter" stays glued directly under the last card, never stranded at the bottom of the panel. Add four, delete the middle two, confirm it's still glued.
+- The sweepable-variable dropdown lists exactly the 7 valid ones.
+
+RUNNING
+- Loading bar appears only after the first terminal line, not instantly.
+- Phase headings are picked up from the backend's "--- PHASE_2 ---" output and shown in the progress line.
+- Cancel: first click arms it, second click within 3 s stops the run and returns to the input page you came from, inputs intact. A second click after 3 s reverts to the armed-off state instead of cancelling.
+- Cancel a run, then start another one. The second run works. (Thread cancellation leaves scipy's LSODA state behind if this is broken.)
+- Halt & report: two-click semantics as above, then lands on the bug page with the terminal output already in the diagnostics box.
+- Make the backend raise -> error popup with a scrollable message, and the Back and Report buttons stay visible no matter how long the traceback is.
+- Run a config that stalls the solver -> SolverStalledError shows as a friendly hint, not a raw exception.
+
+RESULTS
+- After a run finishes, the results page is populated. (It used to come up blank when the page hadn't been built yet.)
+- SI / IMP / MRT buttons: the three together are exactly as wide as the button above them, and clicking one reformats every number on the page, including the labels that aren't simple key/value rows.
+- Unsteady "Choose graphs…": pick a few, each opens in its own window with a working matplotlib toolbar, titled with the plot's name, cascaded rather than stacked. They match what's in graphs.pdf.
+- Pick all 28. Nothing freezes. Close them all, pick again, and confirm the old windows are gone rather than accumulating.
+- Leave the results page -> every graph window closes.
+- One broken plot doesn't take the rest down; it reports as skipped.
+- Steady Graphs button: convergence run says "Show graphs…", parametric says "Parametric graphs…", hotfire is greyed out with the tooltip.
+- Parametric graph dialog: axis dropdowns refuse the "--- X ---" header rows, hold pickers appear for the variables not on an axis, and both 2D and 3D render.
+
+SAVED RUNS
+- Browser lists old-layout (.json) and new-layout (/) runs interleaved and correctly dated.
+- Delete removes the whole run directory, PDFs and PNGs included.
+- Rename renames the directory and the PDF/PNG paths still resolve.
+- The rename dialog is legible: no cramped 200 px box.
+- Show in folder opens the run's own folder, not Documents.
+
+SETTINGS
+- Contains the following: default output units (dropdown), auto-save inputs on run (checkbox), keyboard shortcuts (run sim, save preset, load preset, cancel run)
+- Rebind a shortcut, save, and the new key works. Rebinding onto a key another action already owns is refused with a message naming that action.
+- Cancel discards edits. Reset all to defaults restores Ctrl+R / Ctrl+S / Ctrl+O / Esc.
+- No "main thread is not in main loop" spam in the console after a run.
+- Default output units change is picked up by the next results page opened.
+- Auto-save on: Run writes a preset without prompting. Off: Run prompts.
+
+BUG REPORT
+- Manual report from Home sends and arrives.
+- Report from a failed run carries the traceback, terminal output and the config as separate fields.
+- Paste more than 20 KB of terminal output -> truncated from the FRONT with the "[... N earlier lines truncated ...]" notice, and it still sends.
+- Pull the nework cable and send -> friendly error plus a working "Copy report to clipboard" fallback.
+
+FROZEN BUILD
+- First launch seeds %APPDATA%\MRT-Steady-Unsteady\ with the three example configs and default settings.
+- Version chip on Home matches the VERSION file, and the patch notes open.
+- A steady run completes: proves rocketcea and pypropep data got bundled.
+- An unsteady run completes: proves the N2O and CEA tables got bundled.
+- Advanced propellant defaults are filled in: proves src/common/static_data/default_inputs.jsonc got bundled.
+- Results write to %APPDATA%, not into the read-only install directory.
+- Installing over an older version keeps presets and past runs.

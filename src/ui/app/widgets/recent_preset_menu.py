@@ -1,115 +1,70 @@
-"""Sidebar recent-presets dropdown.
+"""
+RecentPresetMenu — a dropdown of recently-loaded presets.
 
-A wider-than-normal `CTkOptionMenu` that lists the last N loaded/saved
-preset filenames, with a "More presets…" tail entry that falls back to
-the OS file dialog.  Selecting a filename calls `on_pick(path)`;
-selecting the tail entry calls `on_more()`.
+Sits under Load preset in the action sidebar. Loading a preset you were working
+on yesterday is the single most common way a session starts, and going through
+a file dialog for it every time is friction for no reason.
 
-Kept as a small reusable widget so both SteadyPage and UnsteadyPage
-sidebars can drop it in with two lines of setup.
+Shows file stems rather than full paths, since the folder is almost always the
+same one. Duplicate stems from different folders get their parent appended so
+they stay distinguishable.
 """
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
-from typing import Callable, Literal
+from typing import Callable
 
 import customtkinter as ctk
 
 from src.ui.app import theme
-from src.ui.app.services import i18n
 from src.ui.app.services import recent_presets
 
-
-Kind = Literal["steady", "unsteady"]
+_PLACEHOLDER = "Recent presets…"
+_EMPTY = "(nothing loaded yet)"
 
 
 class RecentPresetMenu(ctk.CTkOptionMenu):
-    """Dropdown with recent presets + a 'More presets…' tail entry.
+    """Pick a recent preset. Calls `on_pick(path)` with the chosen one."""
 
-    The dropdown text always shows a static "Recent presets"
-    placeholder — picking never leaves the variable set to a filename,
-    so the widget is visually consistent between openings.
-    """
-
-    # Width tuned so long timestamped filenames fit without ellipsis.
-    _WIDTH = 320
-
-    def __init__(
-        self,
-        parent,
-        *,
-        kind: Kind,
-        on_pick: Callable[[Path], None],
-        on_more: Callable[[], None],
-    ) -> None:
-        # Initial values populated in _refresh(); ctor just needs
-        # something non-empty to satisfy CTkOptionMenu.
-        super().__init__(
-            parent,
-            values=[i18n.t("action.more_presets")],
-            command=self._on_choice,
-            dynamic_resizing=False,
-            width=self._WIDTH,
-        )
-        self._kind    = kind
+    def __init__(self, master, kind: str, on_pick: Callable[[Path], None],
+                 *, width: int = 180) -> None:
+        self._kind = kind
         self._on_pick = on_pick
-        self._on_more = on_more
-        # We map the pretty display string back to a Path here.
-        self._label_to_path: dict[str, Path] = {}
+        self._by_label: dict[str, Path] = {}
+        self._var = ctk.StringVar(value=_PLACEHOLDER)
 
-        self._refresh()
-
-    # ------------------------------------------------------------------
-    # Public
-    # ------------------------------------------------------------------
+        super().__init__(
+            master, variable=self._var, values=[_PLACEHOLDER],
+            command=self._on_selected, width=width, dynamic_resizing=False,
+            fg_color=theme.CARD_BG, button_color=theme.CARD_BG,
+            button_hover_color=theme.CARD_HOVER,
+            text_color=theme.TEXT_MUTED,
+            font=ctk.CTkFont(size=theme.SIZE_SMALL),
+        )
+        self.refresh()
 
     def refresh(self) -> None:
-        """Reload from disk.  Call after Load / Save preset so the new
-        entry appears at the top of the menu."""
-        self._refresh()
+        """Re-read the list. Call after loading or saving a preset."""
+        paths = recent_presets.recent(self._kind)
+        self._by_label = {}
 
-    # ------------------------------------------------------------------
-    # Internals
-    # ------------------------------------------------------------------
+        # Disambiguate only where two files share a stem, so the common case
+        # stays short.
+        stems = Counter(p.stem for p in paths)
+        for path in paths:
+            label = path.stem if stems[path.stem] == 1 else f"{path.stem}  ({path.parent.name})"
+            self._by_label[label] = path
 
-    def _placeholder(self) -> str:
-        return i18n.t("action.recent_presets")
+        labels = list(self._by_label)
+        self.configure(values=[_PLACEHOLDER] + labels if labels else [_EMPTY])
+        self._var.set(_PLACEHOLDER if labels else _EMPTY)
 
-    def _more_label(self) -> str:
-        return i18n.t("action.more_presets")
-
-    def _refresh(self) -> None:
-        recents = recent_presets.list_recent(self._kind)
-        self._label_to_path = {}
-        values: list[str] = []
-        for p in recents:
-            label = p.name
-            # In the (rare) case two files share the same basename in
-            # different folders, disambiguate with parent's name.
-            if label in self._label_to_path:
-                label = f"{p.parent.name}/{p.name}"
-            self._label_to_path[label] = p
-            values.append(label)
-        # Tail entry — always present.
-        values.append(self._more_label())
-        self.configure(values=values)
-        # Keep the placeholder visible so users always see the same text.
-        self.set(self._placeholder())
-
-    def _on_choice(self, chosen: str) -> None:
-        if chosen == self._more_label():
-            self.set(self._placeholder())
-            try:
-                self._on_more()
-            except Exception:
-                pass
-            return
-        path = self._label_to_path.get(chosen)
-        self.set(self._placeholder())
-        if path is None:
-            return
-        try:
+    def _on_selected(self, label: str) -> None:
+        path = self._by_label.get(label)
+        # Snap back immediately: this is an action, not a persistent choice,
+        # and leaving the last-loaded name in the box implies otherwise.
+        self._var.set(_PLACEHOLDER if self._by_label else _EMPTY)
+        if path is not None:
             self._on_pick(path)
-        except Exception:
-            pass

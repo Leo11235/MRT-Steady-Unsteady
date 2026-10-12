@@ -1,714 +1,940 @@
 """
-SteadyResultsPage — the page users land on after a steady simulation
-finishes.
+Steady results.
 
-Two tabs on the left (Rocket inputs, Sim outputs), a sidebar on the
-right with four buttons:
+Two tabs, whatever the run:
 
-    - Copy to clipboard         → overall performance as one TSV row
-    - Export to sheets (.csv)   → all critical data as one CSV row
-    - Show select graphs        → altitude / velocity / thrust vs time
-    - Show all graphs           → same as above for now — steady only has
-                                  the flight_dict time series to work with
+    Overall               what the run produced
+    Hardware & Parameters the rocket it produced it with, one block per CV
 
-For hotfire (no flight_dict) the graph buttons fall back to a "no
-time-series available" message.
+A steady run comes in three shapes and the page follows them. A HOTFIRE burns
+at one operating point and never flies, so everything downstream of the nozzle
+is absent: no apogee, no thrust-to-weight, no wet mass. Those rows do not
+appear at all rather than appearing empty, which falls out of the layout on its
+own, since a row whose key is missing is skipped. A CONVERGENCE run flies, and
+its real answer is the fuel port diameter it solved for. A PARAMETRIC study is
+many convergence runs, so its Overall tab ranks them, says what was swept, and
+gives each one its own card.
+
+WHERE THE NUMBERS COME FROM
+---------------------------
+rocket_parameters is what the run computed, rocket_inputs is what it was given,
+and the page reads both: chamber pressure is an input, apogee is a result, and
+a reader looking at the summary does not care which is which. Every key is
+looked up with .get, so a file written before a key existed loses that row and
+nothing else.
+
+Apogee is above the launch pad. Runs written before v1.6 pt. 14 have only the
+sea-level number, and rather than relabel it, the box says ASL when that is
+what it is showing.
+
+WHAT IS NOT HERE
+----------------
+No Inputs tab: Hardware & Parameters is the inputs, arranged the way the
+oxidizer meets them instead of in file order. No Trajectory tab: the ascent is
+a 455-point series that belongs in the graphs, and the two numbers worth
+reading off it, peak velocity and peak acceleration, are computed in the
+backend and shown under Performance.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
-from pathlib import Path
-from tkinter import filedialog, messagebox
+from typing import Optional
 
 import customtkinter as ctk
 
-from src.ui.app import theme, results_utils
-from src.ui.app.services import i18n
-from src.ui.app.widgets.graph_picker import GraphPicker
-from src.ui.app.widgets.search_entry import SearchEntry
-from src.ui.app.widgets.help_icon import HelpIcon
+from src.common import variable_conversions as vc
+from src.ui.app import theme
+from src.ui.app.pages.results_page import ResultsPage
+from src.ui.app.widgets import figure_window, grouped_menu, summary_box
+from src.ui.app.widgets.graph_picker import show_graph_picker, steady_specs
+from src.ui.app.widgets.kv_row import category_of_key, describe, format_scalar
+from src.ui.app.widgets.parametric_graph_dialog import show_parametric_graph_dialog
+from src.ui.app.widgets.tooltip import Tooltip
+
+_OVERALL_TAB = "Overall"
+_HARDWARE_TAB = "Hardware & Parameters"
+
+# The handful of outputs anyone actually plots against a swept variable, or
+# ranks a sweep by. They go at the top of both dropdowns; everything else
+# follows under a second header.
+_COMMON_OUTPUTS = (
+    "Isp", "thrust", "burntime", "total_impulse",
+    "average_oxidizer_to_fuel_ratio", "thrust_to_weight_ratio",
+)
+
+# A swept list this long or longer is elided in the middle: three, gap, three.
+_ELIDE_SWEPT_FROM = 8
+# How many runs the ranking names before it stops and counts the rest.
+_RANKED_SHOWN = 3
+_RANK_NAMES = ("Best", "Second best", "Third best")
 
 
-class SteadyResultsPage(ctk.CTkFrame):
-    TITLE = "Steady simulation results"
+# =============================================================================
+# Layout
+# =============================================================================
+#
+# What appears where, as data. Every entry is a key the output registry knows,
+# so the label, the unit and the radius-to-diameter handling all come from
+# there and none of it is repeated here.
 
-    def __init__(self, master, on_navigate) -> None:
-        super().__init__(master, corner_radius=0, fg_color="transparent")
-        self.on_navigate = on_navigate
-        self._result_path: Path | None = None
-        self._result_dict: dict | None = None
-        self._unit_system: str = "SI"     # SI / IMP / MRT
-        self._unit_buttons: dict = {}
-        # Cached row widgets — populated by _refresh_panels(), iterated by
-        # _set_unit_system() so we can update in place instead of rebuilding.
-        self._rows: list = []
-        self._build()
+# Two entries are verdicts rather than measurements, and are built by hand.
+_VERDICT = "__verdict__"
+_SIM_TYPE = "__simtype__"
 
-    # ===================================================================
-    # Layout
-    # ===================================================================
+# The summary box, in reading order. A tuple is one row built from two keys,
+# rendered "left / right", or from one key with a label the layout supplies.
+_MAIN_ROWS: tuple = (
+    _VERDICT,
+    _SIM_TYPE,
+    ("reached_apogee_agl", "target_apogee", "Apogee achieved / target"),
+    ("initial_internal_fuel_radius", None, "Fuel initial internal diameter"),
+    "burntime",
+    "thrust",
+    "total_impulse",
+    "thrust_to_weight_ratio",
+    "chamber_pressure",
+    "oxidizer_mass",
+    "fuel_mass",
+    "average_oxidizer_to_fuel_ratio",
+    "chamber_temperature",
+    "Isp",
+    ("nozzle_throat_radius", None, "Nozzle throat diameter"),
+    ("nozzle_exit_radius", None, "Nozzle exit diameter"),
+)
 
-    def _build(self) -> None:
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=0, minsize=220)
-        self.grid_rowconfigure(1, weight=1)   # tabview row expands
+# A hotfire is given its port diameter rather than solving for it, so showing
+# it as a headline result would be showing the user their own input back.
+_CONVERGED_ONLY = frozenset({_VERDICT, "initial_internal_fuel_radius"})
 
-        # ---- filter bar (row 0, spans both columns) ---------------------
-        filter_row = ctk.CTkFrame(self, fg_color="transparent")
-        filter_row.grid(row=0, column=0, columnspan=2, sticky="ew",
-                        padx=theme.PAD_M, pady=(theme.PAD_M, 0))
-        self._filter_var = ctk.StringVar()
-        SearchEntry(
-            filter_row, textvariable=self._filter_var,
-            placeholder=i18n.t("filter.placeholder"),
-        ).pack(fill="x", expand=True)
-        self._filter_var.trace_add("write", lambda *_: self._apply_filter())
+_SIM_TYPE_LABELS = {
+    "fuel_mass_convergence": "Fuel mass convergence",
+    "hotfire": "Hotfire",
+    "parametric_study": "Parametric study",
+}
 
-        self.tabs = ctk.CTkTabview(self, anchor="w")
-        self.tabs.grid(row=1, column=0, sticky="nsew",
-                       padx=(theme.PAD_M, theme.PAD_S), pady=theme.PAD_M)
+# Hardware & Parameters, one block per control volume, each in the order the
+# oxidizer meets it. A label after a key overrides the registry's name, for
+# rows whose meaning comes from the heading above them.
+_HARDWARE: tuple = (
+    ("CV1: Tank & Injector", (
+        (None, (
+            "oxidizer_mass_flow_rate",
+        )),
+    )),
+    ("CV2: Chamber", (
+        ("Fuel cell", (
+            ("fuel_external_radius", "External diameter"),
+            ("initial_internal_fuel_radius", "Initial internal diameter"),
+            ("fuel_length", "Length"),
+            ("fuel_mass", "Mass"),
+            ("fuel_grain_density", "Density"),
+        )),
+        ("Combustion parameters", (
+            "chamber_pressure",
+            "regression_rate_scaling_coefficient",
+            "regression_rate_exponent",
+            "augmented_regression_rate_exponent",
+            "chamber_temperature",
+            "chamber_gas_molar_weight",
+            "heat_capacity_ratio",
+        )),
+    )),
+    ("CV3: Nozzle", (
+        ("Geometry", (
+            ("nozzle_throat_radius", "Throat diameter"),
+            ("nozzle_exit_radius", "Exit diameter"),
+            "nozzle_throat_area",
+            "nozzle_exit_area",
+            "nozzle_expansion_ratio",
+        )),
+        ("Exit conditions", (
+            "nozzle_gas_exit_pressure",
+            "nozzle_gas_exit_mach_number",
+            "nozzle_gas_exit_temperature",
+            "nozzle_gas_exit_velocity",
+        )),
+    )),
+    ("CV4: Rocket body", (
+        ("Construction", (
+            "dry_mass",
+            ("rocket_external_radius", "Outer diameter"),
+            "wet_mass",
+        )),
+        ("Flight parameters", (
+            "drag_coefficient",
+            "launch_angle",
+            "launch_site_altitude",
+        )),
+    )),
+)
 
-        self._inputs_tab  = self.tabs.add("Rocket inputs")
-        self._outputs_tab = self.tabs.add("Sim outputs")
 
-        # scrollable frames inside each tab, refilled by _refresh_panels
-        self._inputs_scroll  = ctk.CTkScrollableFrame(self._inputs_tab, label_text="")
-        self._inputs_scroll.pack(fill="both", expand=True)
-        self._outputs_scroll = ctk.CTkScrollableFrame(self._outputs_tab, label_text="")
-        self._outputs_scroll.pack(fill="both", expand=True)
+def _hardware_keys() -> frozenset:
+    keys = set()
+    for _title, groups in _HARDWARE:
+        for _heading, items in groups:
+            for item in items:
+                keys.add(item[0] if isinstance(item, tuple) else item)
+    return frozenset(keys)
 
-        # sidebar
-        sidebar = ctk.CTkFrame(self, fg_color="transparent")
-        sidebar.grid(row=1, column=1, sticky="ns",
-                     padx=(theme.PAD_S, theme.PAD_M), pady=theme.PAD_M)
-        self._build_sidebar(sidebar)
 
-        # status line
-        self.status_label = ctk.CTkLabel(
-            self, text="", anchor="w",
-            text_color=("gray35", "gray65"),
-            font=ctk.CTkFont(size=theme.SIZE_SMALL),
-        )
-        self.status_label.grid(row=2, column=0, columnspan=2, sticky="ew",
-                               padx=theme.PAD_M, pady=(0, theme.PAD_S))
+def _main_keys() -> frozenset:
+    keys = set()
+    for entry in _MAIN_ROWS:
+        if isinstance(entry, tuple):
+            keys.add(entry[0])
+            if entry[1]:
+                keys.add(entry[1])
+        elif not entry.startswith("__"):
+            keys.add(entry)
+    return frozenset(keys)
 
-    def _build_sidebar(self, parent) -> None:
-        ctk.CTkLabel(parent, text=i18n.t("action.actions"),
-                     font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
-                     anchor="w").pack(fill="x", pady=(0, theme.PAD_S))
 
-        ctk.CTkButton(parent, text=i18n.t("action.copy"),
-                      width=200, height=36,
-                      command=self._on_copy).pack(pady=theme.PAD_XS)
-        ctk.CTkButton(parent, text=i18n.t("action.export_csv"),
-                      width=200, height=36,
-                      command=self._on_export).pack(pady=theme.PAD_XS)
-        ctk.CTkButton(parent, text="Show in folder",
-                      width=200, height=36,
-                      command=self._on_show_in_folder).pack(pady=theme.PAD_XS)
+# Shown by the box without being one of its keys: the verdict row IS this
+# flag, and repeating it below as "Target apogee reached: True" says nothing.
+_SHOWN_ELSEWHERE = frozenset({"target_apogee_reached"})
 
-        ctk.CTkLabel(parent, text=i18n.t("action.graphs"),
-                     font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold"),
-                     anchor="w").pack(fill="x", pady=(theme.PAD_L, theme.PAD_XS))
+# Everything the box or the hardware tab already shows, so the Performance
+# section below the box can show the remainder without repeating anything.
+_SHOWN_KEYS = _main_keys() | _hardware_keys() | _SHOWN_ELSEWHERE
 
-        ctk.CTkButton(parent, text=i18n.t("action.show_graphs"),
-                      width=200, height=36,
-                      command=self._on_open_graph_picker).pack(pady=theme.PAD_XS)
 
-        # Parametric graph — built once, packed only when the loaded
-        # result actually contains a parametric_results block.
-        self._parametric_btn = ctk.CTkButton(
-            parent, text="Parametric graph",
-            width=200, height=36,
-            command=self._on_open_parametric_dialog,
-        )
-        # NOT packed here; _refresh_panels controls visibility.
+class SteadyResultsPage(ResultsPage):
+    TITLE = "Steady results"
+    KIND = "steady"
 
-        # Units header + inline help-icon.  Saved as an attribute so
-        # dynamically-shown buttons (like the Parametric graph button)
-        # can pack themselves BEFORE it and land in the right slot.
-        units_row = ctk.CTkFrame(parent, fg_color="transparent")
-        self._sidebar_units_row = units_row
-        units_row.pack(fill="x", pady=(theme.PAD_L, theme.PAD_XS))
-        ctk.CTkLabel(units_row, text=i18n.t("action.units"),
-                     font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold"),
-                     anchor="w").pack(side="left")
-        HelpIcon(units_row, i18n.t("help.units")).pack(side="left",
-                                                       padx=(theme.PAD_XS, 0))
-        self._unit_buttons = results_utils.build_unit_buttons(
-            parent, self._unit_system, on_change=self._set_unit_system,
-        )
+    def _build_tabs(self) -> None:
+        self._overall = self.add_tab(_OVERALL_TAB)
+        self._hardware = self.add_tab(_HARDWARE_TAB)
+        self._selected_plots = None
+        # The ranking controls, rebuilt with each parametric run.
+        self._rank_var: Optional[ctk.StringVar] = None
+        self._rank_direction: Optional[ctk.StringVar] = None
+        self._rank_wires: dict = {}
+        self._rank_body = None
 
-    # ===================================================================
-    # Data-in
-    # ===================================================================
+    def _build_extra_actions(self, parent) -> None:
+        ctk.CTkLabel(parent, text="Graphs", anchor="w",
+                     font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold")).pack(
+            fill="x", pady=(theme.PAD_L, theme.PAD_XS))
+        # One button whose label and behaviour follow the simulation type.
+        # Always present, even for a hotfire: graphs may exist there one day,
+        # and a button that vanishes is harder to find than one that explains.
+        self._graphs_btn = ctk.CTkButton(
+            parent, text="Show graphs…", width=200, height=36,
+            command=self._on_graphs)
+        self._graphs_btn.pack(pady=theme.PAD_XS)
+        # A greyed button with no explanation is a dead end; the tooltip says
+        # why it's off.
+        self._graphs_tip = Tooltip(self._graphs_btn, "")
 
-    def load_results(self, path: Path, result_dict: dict) -> None:
-        self._result_path = path
-        self._result_dict = result_dict
-        self._refresh_panels()
-        self._set_status(f"Loaded results from {path.name}")
+    def _sync_graphs_button(self) -> None:
+        sim_type = self._sim_type
+        if sim_type == "parametric_study":
+            self._graphs_btn.configure(text="Parametric graphs…", state="normal")
+            self._graphs_tip.set_text(
+                "Plot an output against the swept variables, as a 2D line or "
+                "a 3D surface.")
+        elif sim_type == "hotfire":
+            # Greyed rather than hidden, so it's visibly a gap rather than a
+            # feature you failed to find.
+            self._graphs_btn.configure(text="Show graphs…", state="disabled")
+            self._graphs_tip.set_text(
+                "No hotfire graphs available. A hotfire computes performance "
+                "at one operating point and produces no time series, so "
+                "there's nothing to plot yet.")
+            return
+        else:
+            self._graphs_btn.configure(text="Show graphs…", state="normal")
+            self._graphs_tip.set_text(
+                "Kinematics, thrust and forces over the flight.")
 
-    def on_show(self) -> None:
-        # If we've been navigated to without load_results having been
-        # called, keep whatever was previously shown.
-        if self._result_dict is None:
-            self._set_status("No results loaded yet.")
+    @property
+    def _sim_type(self) -> str:
+        return ((self.results.get("simulation_settings") or {})
+                .get("simulation_type", ""))
 
-    def reset_to_defaults(self) -> None:
-        self._result_path = None
-        self._result_dict = None
-        self._clear_scroll(self._inputs_scroll)
-        self._clear_scroll(self._outputs_scroll)
-        self._rows = []
-        self._unit_system = "SI"
-        if self._unit_buttons:
-            results_utils.refresh_unit_buttons(self._unit_buttons, self._unit_system)
-        # Hide the Parametric graph button until a parametric result
-        # is loaded again.
-        if hasattr(self, "_parametric_btn") and self._parametric_btn.winfo_ismapped():
-            self._parametric_btn.pack_forget()
-        self._set_status("")
+    @property
+    def _is_parametric(self) -> bool:
+        return self._sim_type == "parametric_study"
 
-    # ===================================================================
-    # Panel population
-    # ===================================================================
-
-    def _clear_scroll(self, frame) -> None:
-        for w in frame.winfo_children():
-            w.destroy()
+    # ==================================================================
 
     def _refresh_panels(self) -> None:
-        self._clear_scroll(self._inputs_scroll)
-        self._clear_scroll(self._outputs_scroll)
-        self._rows = []
-        if self._result_dict is None:
-            return
+        for frame in (self._overall, self._hardware):
+            self.clear(frame)
+        self._rank_body = None
 
-        # Inputs tab
-        self._render_dict_section(
-            self._inputs_scroll, "Rocket inputs",
-            self._result_dict.get("rocket_inputs") or {},
-        )
-        self._render_dict_section(
-            self._inputs_scroll, "Simulation settings",
-            self._result_dict.get("simulation_settings") or {},
-        )
+        # Loading a different run invalidates whatever is on screen.
+        figure_window.close_all()
 
-        # Outputs tab
-        rp = self._result_dict.get("rocket_parameters")
-        if isinstance(rp, dict):
-            self._render_dict_section(
-                self._outputs_scroll, "Simulation outputs (rocket_parameters)",
-                rp,
-            )
-        fd = self._result_dict.get("flight_dict")
-        if isinstance(fd, dict) and fd.get("altitude"):
-            # Only show summary numbers, not the full time series.
-            alts   = fd.get("altitude", [])
-            times  = fd.get("time", [])
-            vels   = fd.get("velocity", [])
-            self._render_dict_section(
-                self._outputs_scroll, "Ascent summary",
-                {
-                    "apogee (m)":         max(alts) if alts else None,
-                    "time to apogee (s)": times[-1] if times else None,
-                    "peak velocity (m/s)": max(vels) if vels else None,
-                    "trajectory samples":  len(times),
-                },
-            )
-        param = self._result_dict.get("parametric_results")
-        is_parametric = isinstance(param, dict)
-        if is_parametric:
-            combos = param.get("combinations") or []
-            self._render_dict_section(
-                self._outputs_scroll, "Parametric study summary",
-                {
-                    "combinations simulated": len(combos),
-                    "variables swept":        ";".join(
-                        list((param.get("variable_ranges") or {}).keys())
-                    ),
-                },
-            )
-
-        # Show / hide the Parametric graph button depending on whether
-        # this run is a parametric study.  pack_forget when non-parametric
-        # so the button vanishes cleanly; pack when it is.
-        if is_parametric:
-            if not self._parametric_btn.winfo_ismapped():
-                # Pack BEFORE the units row so it lands right under the
-                # "Show graphs..." button instead of at the bottom.
-                self._parametric_btn.pack(
-                    pady=theme.PAD_XS,
-                    before=self._sidebar_units_row,
-                )
+        if self._is_parametric:
+            self._render_sweep_overall()
         else:
-            if self._parametric_btn.winfo_ismapped():
-                self._parametric_btn.pack_forget()
+            self._render_single_overall()
+        self._render_hardware()
+        self._sync_graphs_button()
 
-    def _render_dict_section(self, parent, title: str, d: dict) -> None:
-        """A titled section with a two-column label:value grid."""
-        if not d:
-            return
-        ctk.CTkLabel(parent, text=title,
-                     font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
-                     anchor="w").pack(fill="x", pady=(theme.PAD_S, theme.PAD_XS))
-        for key, value in d.items():
-            self._render_kv_row(parent, key, value)
+    # ==================================================================
+    # The summary box
+    # ==================================================================
+    #
+    # Built twice over, from one description. _box_entries() says what the box
+    # holds; _draw_box() turns that into widgets and _index_entries() turns the
+    # same thing into search entries without widgets. A parametric point uses
+    # both halves separately: indexed when the file loads, drawn only if
+    # someone opens that point.
 
-    def _render_kv_row(self, parent, key: str, value) -> None:
-        """3-column row: pretty-name | value (converted to current unit
-        system) | unit label.  Delegates to the shared helper and caches
-        the widget so unit-system toggles can update it in place."""
-        row = results_utils.render_kv_row(parent, key, value, self._unit_system)
-        self._rows.append(row)
+    def _box_entries(self, params: dict, inputs: dict) -> list:
+        """What the box shows, as (kind, ...) tuples, in reading order."""
+        entries = []
+        for entry in _MAIN_ROWS:
+            if not isinstance(entry, tuple) and entry in _CONVERGED_ONLY \
+                    and self._sim_type == "hotfire":
+                continue
 
-    def _set_unit_system(self, system: str) -> None:
-        if system == self._unit_system:
-            return
-        self._unit_system = system
-        results_utils.refresh_unit_buttons(self._unit_buttons, system)
-        # Fast path: iterate the cached KVRow widgets and re-configure
-        # their value/unit labels rather than destroying and rebuilding
-        # every panel.  Roughly 10× faster than _refresh_panels() and
-        # eliminates the visible relayout flicker.
-        for row in self._rows:
-            try:
-                row.update_system(system)
-            except AttributeError:
-                # non-KVRow row (shouldn't happen, but stay safe)
-                pass
-        # Unit-label text just changed — re-apply the filter so rows
-        # containing e.g. "psi" still match after switching to IMP.
-        self._apply_filter()
+            if entry == _VERDICT:
+                reached = params.get("target_apogee_reached")
+                if reached is None:
+                    continue                    # a hotfire has nothing to reach
+                if reached:
+                    entries.append(("text", "Run status",
+                                    "Rocket successfully converged to apogee", None))
+                else:
+                    entries.append(("text", "Run status",
+                                    "Rocket could not reach target apogee", theme.ERROR))
+                continue
 
-    def _apply_filter(self) -> None:
-        """Show/hide cached KVRow widgets based on the current filter
-        query.  Two passes: first pack_forget everything, then re-pack
-        matching rows in original creation order.  Full re-pack keeps
-        the sibling ordering correct as the filter narrows and widens."""
-        try:
-            query = self._filter_var.get()
-        except AttributeError:
-            return
-        # Pass 1 — hide everything (cheap, just pack manager state).
-        for row in self._rows:
-            try:
-                if row.winfo_manager() == "pack":
-                    row.pack_forget()
-            except AttributeError:
-                pass
-        # Pass 2 — re-pack matches in creation order.
-        for row in self._rows:
-            try:
-                if row.matches(query):
-                    row.pack(fill="x", pady=1)
-            except AttributeError:
-                pass
+            if entry == _SIM_TYPE:
+                # A point inside a sweep is not its own kind of run, and saying
+                # "parametric study" fifteen times says nothing.
+                if self._is_parametric:
+                    continue
+                entries.append(("text", "Simulation type",
+                                _SIM_TYPE_LABELS.get(self._sim_type,
+                                                     self._sim_type or "Unknown"),
+                                None))
+                continue
 
-    # ===================================================================
-    # Actions
-    # ===================================================================
+            if isinstance(entry, tuple):
+                key, second, label = entry
+                if self._sim_type == "hotfire" and key in _CONVERGED_ONLY:
+                    continue
+                value = params.get(key, inputs.get(key))
+                if key == "reached_apogee_agl" and value is None:
+                    # Written before the AGL key existed. Show what the file
+                    # actually holds and say which datum it is.
+                    value = params.get("reached_apogee")
+                    if value is not None:
+                        key, label = "reached_apogee", f"{label} (ASL)"
+                if value is None:
+                    continue
+                total = inputs.get(second, params.get(second)) if second else None
+                entries.append(("pair", key, value, total, label))
+                continue
 
-    def _on_show_in_folder(self) -> None:
-        if self._result_path is None or not self._result_path.exists():
-            messagebox.showinfo(
-                "No file to show",
-                "There's no saved file for this run yet.",
-            )
-            return
-        from src.ui.app.services.os_utils import reveal_in_file_explorer
-        reveal_in_file_explorer(self._result_path)
+            value = params.get(entry, inputs.get(entry))
+            if value is not None:
+                entries.append(("value", entry, value, None))
+        return entries
 
-    def _on_copy(self) -> None:
-        if self._result_dict is None:
-            messagebox.showinfo("Nothing to copy", "No results loaded.")
-            return
-        rp = self._result_dict.get("rocket_parameters") or {}
-        flat = results_utils.flatten_dict(rp)
-        if not flat:
-            messagebox.showinfo("Nothing to copy",
-                                "This run has no rocket_parameters block.")
-            return
-        pairs = results_utils.flat_to_display_pairs(flat, self._unit_system)
-        results_utils.copy_pairs_to_clipboard(self, pairs)
-        self._set_status(
-            f"Copied {len(pairs)} performance values "
-            f"(in {self._unit_system}) to clipboard."
-        )
-
-    def _on_export(self) -> None:
-        if self._result_dict is None:
-            messagebox.showinfo("Nothing to export", "No results loaded.")
-            return
-        payload = {
-            "rocket_inputs":        self._result_dict.get("rocket_inputs")        or {},
-            "simulation_settings":  self._result_dict.get("simulation_settings")  or {},
-            "rocket_parameters":    self._result_dict.get("rocket_parameters")    or {},
-        }
-        flat = results_utils.flatten_dict(payload)
-        if not flat:
-            messagebox.showinfo("Nothing to export",
-                                "No exportable data in this result file.")
-            return
-        pairs = results_utils.flat_to_display_pairs(flat, self._unit_system)
-
-        default_name = self._default_export_name()
-        path = filedialog.asksaveasfilename(
-            title="Export steady results (one-row CSV)",
-            initialfile=default_name,
-            defaultextension=".csv",
-            filetypes=[("CSV", "*.csv"), ("All files", "*.*")],
-        )
-        if not path:
-            return
-        try:
-            results_utils.export_pairs_to_csv(Path(path), pairs)
-            self._set_status(f"Exported to {Path(path).name} (in {self._unit_system})")
-        except Exception as exc:
-            messagebox.showerror("Export failed",
-                                 f"{type(exc).__name__}: {exc}")
-
-    def _on_open_graph_picker(self) -> None:
-        if self._result_dict is None:
-            messagebox.showinfo("No results", "No results loaded.")
-            return
-        fd = self._result_dict.get("flight_dict")
-        if not isinstance(fd, dict) or not fd.get("time"):
-            messagebox.showinfo(
-                "No time-series available",
-                "This simulation type doesn't produce a "
-                "trajectory time series. Nothing to plot.",
-            )
-            return
-        # (pretty_label, wire_key, default_checked)
-        items = [
-            (i18n.t("graph.st.kinematics"), "kinematics", True),
-            (i18n.t("graph.st.thrust"),     "thrust",     True),
-            (i18n.t("graph.st.forces"),     "forces",     False),
-        ]
-        GraphPicker(self, items=items, on_confirm=self._render_steady_graphs)
-
-    def _render_steady_graphs(self, selected: list[str]) -> None:
-        if not selected:
-            return
-        fd = self._result_dict.get("flight_dict") or {}
-        # Lazy-import matplotlib so cold startup stays fast.
-        import matplotlib.pyplot as plt
-        from src.ui.app.services.mpl_bringup import lift_all_figures
-
-        t   = fd.get("time", [])
-        alt = fd.get("altitude", [])
-        vel = fd.get("velocity", [])
-        acc = fd.get("acceleration", [])
-        thr = fd.get("thrust", [])
-        drag= fd.get("drag_force", [])
-        grv = fd.get("grav_force", [])
-
-        if "kinematics" in selected:
-            fig, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=True,
-                                     num="Kinematics")
-            axes[0].plot(t, alt); axes[0].set_ylabel("Altitude [m]")
-            axes[1].plot(t, vel); axes[1].set_ylabel("Velocity [m/s]")
-            axes[2].plot(t, acc); axes[2].set_ylabel("Accel [m/s²]")
-            axes[2].set_xlabel("Time [s]")
-            for a in axes:
-                a.grid(True, linestyle="--", alpha=0.5)
-            fig.suptitle("Rocket kinematics", fontweight="bold")
-            fig.tight_layout(rect=[0, 0, 1, 0.96])
-
-        if "thrust" in selected:
-            fig2, ax2 = plt.subplots(figsize=(10, 5), num="Thrust curve")
-            ax2.plot(t, thr, color="#e63946")
-            ax2.set_xlabel("Time [s]"); ax2.set_ylabel("Thrust [N]")
-            ax2.grid(True, linestyle="--", alpha=0.5)
-            fig2.suptitle("Thrust curve", fontweight="bold")
-            fig2.tight_layout(rect=[0, 0, 1, 0.96])
-
-        if "forces" in selected:
-            fig3, ax3 = plt.subplots(figsize=(10, 5), num="Forces")
-            if thr:  ax3.plot(t, thr,  label="Thrust",  color="#e63946")
-            if drag: ax3.plot(t, drag, label="Drag",    color="#118ab2")
-            if grv:  ax3.plot(t, grv,  label="Gravity", color="#2a9d8f")
-            ax3.axhline(0, color="black", linewidth=0.5)
-            ax3.set_xlabel("Time [s]"); ax3.set_ylabel("Force [N]")
-            ax3.grid(True, linestyle="--", alpha=0.5)
-            ax3.legend(loc="best")
-            fig3.suptitle("Forces vs. time", fontweight="bold")
-            fig3.tight_layout(rect=[0, 0, 1, 0.96])
-
-        # `plt.show(block=False)` returns immediately so we can lift the
-        # freshly-created windows to the front (Windows sometimes lets
-        # them slip behind the main UI during initial paint).
-        plt.show(block=False)
-        lift_all_figures()
-
-    # ===================================================================
-    # Parametric graph
-    # ===================================================================
-
-    # Output wire keys we consider "common" / most likely to be plotted.
-    # These bubble to the top of the output-variable dropdown.  Any other
-    # output variable falls into the second group.
-    _COMMON_OUTPUT_WIRES = (
-        "Isp",
-        "average_oxidizer_to_fuel_ratio",
-        "burntime",
-        "thrust",
-        "total_impulse",
-        "thrust_to_weight_ratio",
-    )
-
-    def _on_open_parametric_dialog(self) -> None:
-        """Open the modal for building 2D / 3D parametric graphs."""
-        if self._result_dict is None:
-            messagebox.showinfo("No results", "No results loaded.")
-            return
-        param = self._result_dict.get("parametric_results")
-        if not isinstance(param, dict):
-            messagebox.showinfo(
-                "Not a parametric run",
-                "This isn't a parametric-study result, so there's nothing "
-                "to plot.",
-            )
-            return
-
-        # Lazy imports so cold startup isn't slowed by matplotlib.
-        from src.backend.steady.parametric_plots import (
-            swept_variables, available_output_variables,
-        )
-        from src.ui.app.services.pretty_names import get_field_info
-        from src.ui.app.widgets.parametric_graph_dialog import (
-            ParametricGraphDialog,
-        )
-
-        swept_wire = swept_variables(param)
-        if not swept_wire:
-            messagebox.showinfo(
-                "No swept variables",
-                "The parametric result doesn't list any swept variables.",
-            )
-            return
-
-        output_wire = available_output_variables(param)
-        if not output_wire:
-            messagebox.showinfo(
-                "No output variables",
-                "The parametric result doesn't contain any output values.",
-            )
-            return
-
-        def _pretty(wire: str) -> str:
-            try:
-                pretty, _kind, _si = get_field_info(wire)
-                return pretty or wire
-            except Exception:
-                return wire
-
-        swept_pairs = [(_pretty(w), w) for w in swept_wire]
-
-        # Split output vars into the two dropdown groups, preserving the
-        # order defined in _COMMON_OUTPUT_WIRES for the top group.
-        common_wires = [w for w in self._COMMON_OUTPUT_WIRES if w in output_wire]
-        other_wires  = [w for w in output_wire if w not in self._COMMON_OUTPUT_WIRES]
-        output_var_groups = [
-            ("Common outputs",    [(_pretty(w), w) for w in common_wires]),
-            ("All other outputs", [(_pretty(w), w) for w in other_wires]),
-        ]
-
-        # Build the hold picker's per-var data: for each swept variable,
-        # a list of (display_string, si_value) pairs drawn from the actual
-        # grid the sim ran on, formatted in the current unit system.
-        from src.ui.app.services.pretty_names import (
-            unit_for_system, format_unit_label,
-        )
-        from src.ui.app import display as display_mod
-        variable_ranges = param.get("variable_ranges") or {}
-        system = self._unit_system
-
-        def _format_grid_value(v):
-            if isinstance(v, float) and v == int(v) and abs(v) < 1e15:
-                return str(int(v))
-            try:
-                return f"{float(v):.6g}"
-            except Exception:
-                return str(v)
-
-        hold_value_options: dict[str, list] = {}
-        hold_unit_labels:   dict[str, str]  = {}
-        for wire in swept_wire:
-            raw_values = list(variable_ranges.get(wire) or [])
-            try:
-                _p, kind, si_unit = get_field_info(wire)
-            except Exception:
-                kind, si_unit = None, None
-            if kind and si_unit:
-                target = unit_for_system(wire, kind, system)
-                hold_unit_labels[wire] = format_unit_label(target)
-                pairs = []
-                for raw in raw_values:
-                    try:
-                        display_val = display_mod.convert(
-                            float(raw), si_unit, target, kind,
-                        )
-                    except Exception:
-                        display_val = raw
-                    pairs.append((_format_grid_value(display_val), float(raw)))
-                hold_value_options[wire] = pairs
+    def _draw_box(self, parent, entries: list, *, logo: bool) -> None:
+        box = summary_box.SummaryBox(self, parent, logo=logo)
+        for entry in entries:
+            kind = entry[0]
+            if kind == "text":
+                box.text(entry[1], entry[2], entry[3])
+            elif kind == "pair":
+                _kind, key, value, total, label = entry
+                box.pair(key, value, total, label)
             else:
-                # Unitless swept var — display raw values, no unit label.
-                hold_unit_labels[wire] = ""
-                hold_value_options[wire] = [
-                    (_format_grid_value(v), float(v)) for v in raw_values
-                ]
+                _kind, key, value, label = entry
+                box.value(key, value, label=label)
 
-        ParametricGraphDialog(
-            self,
-            swept_vars=swept_pairs,
-            output_var_groups=output_var_groups,
-            default_output="Isp",
-            hold_value_options=hold_value_options,
-            hold_unit_labels=hold_unit_labels,
-            on_confirm=self._render_parametric_graphs,
-        )
+    def _index_entries(self, entries: list) -> None:
+        """The same rows, findable by search without being on screen yet."""
+        for entry in entries:
+            kind = entry[0]
+            if kind == "text":
+                self.add_searchable_text(entry[1], lambda _system, t=entry[2]: t)
+            elif kind == "pair":
+                _kind, key, value, total, label = entry
+                if total is None:
+                    self.add_searchable_value(key, value, label=label)
+                else:
+                    self.add_searchable_text(
+                        label,
+                        lambda system, u=value, v=total, k=key:
+                        summary_box.pair_text(u, v, k, system, self.native_system),
+                        key=key)
+            else:
+                _kind, key, value, label = entry
+                self.add_searchable_value(key, value, label=label)
 
-    def _render_parametric_graphs(self, spec_2d, spec_3d) -> None:
-        """Callback from the parametric dialog.  Opens each requested
-        graph in its own matplotlib window (with values + axis labels
-        converted into the results page's current SI/IMP/MRT system)
-        and lifts them to the front."""
+    # ==================================================================
+    # Overall: convergence and hotfire
+    # ==================================================================
+
+    def _render_single_overall(self) -> None:
+        params = self.results.get("rocket_parameters") or {}
+        inputs = self.results.get("rocket_inputs") or {}
+        if not params:
+            self.add_empty(self._overall, "This run produced no results block.")
+            return
+
+        self.set_row_path(_OVERALL_TAB)
+        self._draw_box(self._overall, self._box_entries(params, inputs), logo=True)
+        self.set_row_path()
+        self._render_rest(self._overall, params, path=(_OVERALL_TAB,), extras=True)
+
+    def _render_rest(self, parent, params: dict, *, path: tuple,
+                     extras: bool) -> None:
+        """Everything the run measured that the box and Hardware do not show.
+
+        Collapsed by default. The point is that no computed result is
+        invisible, not that every result deserves equal billing. `extras` adds
+        the run-level settings and metadata, which belong to the file rather
+        than to any one point of a sweep.
+        """
+        rest = {key: value for key, value in params.items()
+                if key not in _SHOWN_KEYS}
+        settings = {key: value
+                    for key, value in (self.results.get("simulation_settings") or {}).items()
+                    if key != "parametric_study_settings"} if extras else {}
+        metadata = (self.results.get("metadata") or {}) if extras else {}
+        if not (rest or settings or metadata):
+            return
+
+        section = self.add_section(parent, "Performance")
+        section.pack(fill="x", pady=theme.PAD_XS)
+        self.set_row_path(*path, "Performance")
+        for key, value in rest.items():
+            self.add_row(section.body, key, value)
+        if settings:
+            self.add_heading(section.body, "Simulation settings")
+            self.set_row_path(*path, "Performance", "Simulation settings")
+            for key, value in settings.items():
+                self.add_row(section.body, key, value)
+        if metadata:
+            self.add_heading(section.body, "Run metadata")
+            self.set_row_path(*path, "Performance", "Run metadata")
+            for key, value in metadata.items():
+                self.add_row(section.body, key, value)
+        self.set_row_path()
+
+    def _rest_keys(self, params: dict) -> list:
+        return [(key, value) for key, value in params.items()
+                if key not in _SHOWN_KEYS]
+
+    # ==================================================================
+    # Overall: parametric
+    # ==================================================================
+
+    def _render_sweep_overall(self) -> None:
+        sweep = self.results.get("parametric_results") or {}
+        if not sweep:
+            self.add_empty(self._overall,
+                           "This file says it is a parametric study but holds no sweep.")
+            return
+        self._render_best_runs(sweep)
+        self._render_swept_variables(sweep)
+        self._render_points(sweep)
+
+    # ---- best runs ----------------------------------------------------
+
+    def _render_best_runs(self, sweep: dict) -> None:
+        """Rank every point by one output, and name the top few.
+
+        The dropdown is the one from the parametric graph dialog, headers and
+        all, because "which output" is the same question in both places.
+        """
+        from src.common.plotting import parametric_plots
+
+        params = sweep.get("rocket_parameters") or []
+        if not params:
+            return
+
+        available = parametric_plots.available_output_variables(sweep)
+        common = [wire for wire in _COMMON_OUTPUTS if wire in available]
+        other = [wire for wire in available if wire not in common]
+        groups = [("Common outputs", [(describe(w)[0], w) for w in common]),
+                  ("All other outputs", [(describe(w)[0], w) for w in other])]
+        values = grouped_menu.grouped_values(groups)
+        self._rank_wires = {label: wire
+                            for _name, pairs in groups for label, wire in pairs}
+        if not self._rank_wires:
+            return
+
+        self.add_heading(self._overall, "Best run")
+
+        preferred = describe("Isp")[0] if "Isp" in available else ""
+        self._rank_var = ctk.StringVar(
+            value=grouped_menu.first_selectable(values, preferred))
+        self._rank_direction = ctk.StringVar(value="highest")
+        grouped_menu.guard_headers(self._rank_var, values)
+
+        row = ctk.CTkFrame(self._overall, fg_color="transparent")
+        row.pack(fill="x", pady=(0, theme.PAD_S))
+        ctk.CTkLabel(row, text="Rank runs based on", anchor="w").pack(side="left")
+        ctk.CTkOptionMenu(row, variable=self._rank_direction,
+                          values=["highest", "lowest"], width=110,
+                          dynamic_resizing=False,
+                          command=lambda _v: self._refresh_ranking()).pack(
+            side="left", padx=theme.PAD_XS)
+        ctk.CTkOptionMenu(row, variable=self._rank_var, values=values, width=280,
+                          dynamic_resizing=False,
+                          command=lambda _v: self._refresh_ranking()).pack(
+            side="left", padx=(0, theme.PAD_XS))
+        ctk.CTkLabel(row, text="performance", anchor="w").pack(side="left")
+
+        self._rank_body = ctk.CTkFrame(self._overall, fg_color="transparent")
+        self._rank_body.pack(fill="x", pady=(0, theme.PAD_M))
+        self._refresh_ranking()
+
+    def _refresh_ranking(self) -> None:
+        """Rebuild the ranked list. Cheap: at most four lines."""
+        if self._rank_body is None or self._rank_var is None:
+            return
+        # Resolved before anything is destroyed. Clicking a group header is a
+        # selection the guard is about to undo, and blanking the list on the
+        # way through would make the menu flicker for no reason.
+        wire = self._rank_wires.get(self._rank_var.get())
+        if not wire:
+            return
+
+        for child in list(self._rank_body.winfo_children()):
+            child.destroy()
+        self._dynamic_labels = [(widget, build) for widget, build in self._dynamic_labels
+                                if widget.winfo_exists()]
+
+        sweep = self.results.get("parametric_results") or {}
+        params = sweep.get("rocket_parameters") or []
+        combinations = sweep.get("combinations") or []
+        variables = list((sweep.get("variable_ranges") or {}).keys())
+
+        scored = [(index, point.get(wire)) for index, point in enumerate(params)
+                  if isinstance(point, dict)
+                  and isinstance(point.get(wire), (int, float))]
+        if not scored:
+            summary_box.add_text_row(
+                self._rank_body, "", "No run reports that output.")
+            return
+        scored.sort(key=lambda pair: pair[1],
+                    reverse=self._rank_direction.get() != "lowest")
+
+        native = self.native_system
+        for rank, (index, value) in enumerate(scored[:_RANKED_SHOWN]):
+            coords = combinations[index] if index < len(combinations) else []
+            coords = coords if isinstance(coords, (list, tuple)) else [coords]
+            failed = params[index].get("target_apogee_reached") is False
+            label = ctk.CTkLabel(self._rank_body, anchor="w", justify="left",
+                                 wraplength=900,
+                                 text_color=theme.ERROR if failed else None)
+            label.pack(fill="x", pady=1)
+            self.add_dynamic_label(
+                label, self._ranked_text(_RANK_NAMES[rank], variables, coords,
+                                         wire, value, native))
+
+        remaining = len(scored) - _RANKED_SHOWN
+        if remaining > 0:
+            plural = "s" if remaining != 1 else ""
+            ctk.CTkLabel(self._rank_body, anchor="w",
+                         text=f"… and {remaining} more run{plural}.",
+                         text_color=theme.TEXT_MUTED).pack(fill="x", pady=1)
+
+    @staticmethod
+    def _ranked_text(rank_name: str, variables, coords, wire: str, value,
+                     native: str):
+        """"Best: Oxidizer mass flow rate = 5 kg/s; …  ·  Isp = 239.3 s"."""
+        def build(system: str) -> str:
+            parts = []
+            for name, coordinate in zip(variables, coords):
+                shown, unit = summary_box.convert(coordinate, name, system, native)
+                parts.append(f"{describe(name)[0]} = {format_scalar(shown)}"
+                             + (f" {unit}" if unit else ""))
+            shown, unit = summary_box.convert(value, wire, system, native)
+            scored = (f"{describe(wire)[0]} = {format_scalar(shown)}"
+                      + (f" {unit}" if unit else ""))
+            return f"{rank_name}: " + "; ".join(parts) + f"   ·   {scored}"
+
+        return build
+
+    # ---- what was swept -----------------------------------------------
+
+    def _render_swept_variables(self, sweep: dict) -> None:
+        ranges = sweep.get("variable_ranges") or {}
+        combinations = sweep.get("combinations") or []
+        if not ranges:
+            return
+
+        self.add_heading(self._overall, "Swept variables")
+        native = self.native_system
+        for name, values in ranges.items():
+            # Each swept range is a list of stored numbers. Rendering it as a
+            # string would freeze it in one unit system, so build the text from
+            # a callback the unit toggle can re-run.
+            label = ctk.CTkLabel(self._overall, anchor="w", justify="left",
+                                 wraplength=900)
+            label.pack(fill="x", pady=1)
+            self.add_dynamic_label(label, self._range_text(name, values, native))
+
+        total = len(combinations)
+        plural = "s" if total != 1 else ""
+        ctk.CTkLabel(self._overall, anchor="w",
+                     text=f"Total combinations: {total} point{plural}").pack(
+            fill="x", pady=(theme.PAD_XS, theme.PAD_M))
+
+    @staticmethod
+    def _range_text(name: str, values, native: str = "SI"):
+        """A builder for "<label>: 1, 2, 3 kg/s (3 points)".
+
+        A long sweep is elided in the middle. Twenty numbers on one line is not
+        a list anyone reads; the ends are what say where the sweep starts and
+        stops.
+        """
+        label, si_unit = describe(name)
+        # Explicit category: metres are both "length" and "distance", and only
+        # the key knows which.
+        category = category_of_key(name)
+
+        def build(system: str) -> str:
+            shown, unit = [], ""
+            for value in values:
+                if isinstance(value, (int, float)) and si_unit:
+                    try:
+                        resolved = category or vc.category_of(si_unit)
+                        source = vc.storage_unit(resolved, native)
+                        unit = vc.unit_for_system(resolved, system)
+                        value = vc.convert(float(value), source, unit)
+                    except (ValueError, KeyError):
+                        pass
+                shown.append(format_scalar(value))
+            if len(shown) >= _ELIDE_SWEPT_FROM:
+                shown = shown[:3] + ["…"] + shown[-3:]
+            plural = "s" if len(values) != 1 else ""
+            listed = ", ".join(shown) + (f" {unit}" if unit else "")
+            return f"{label}: {listed} ({len(values)} point{plural})"
+
+        return build
+
+    # ---- one card per point -------------------------------------------
+
+    def _render_points(self, sweep: dict) -> None:
+        """A collapsible per point, built when it is opened and not before.
+
+        A hundred-point sweep is a hundred summary boxes and two thousand rows;
+        building them all at load costs seconds and a great many widgets, and
+        nobody reads more than a few. The values are indexed for search up
+        front, though, so searching still finds a point you have never opened.
+        """
+        params = sweep.get("rocket_parameters") or []
+        inputs = sweep.get("rocket_inputs") or []
+        combinations = sweep.get("combinations") or []
+        if not params:
+            return
+
+        self.add_heading(self._overall, "Results by simulation")
+        variables = list((sweep.get("variable_ranges") or {}).keys())
+        native = self.native_system
+
+        for index, point in enumerate(combinations):
+            if index >= len(params):
+                break
+            coords = point if isinstance(point, (list, tuple)) else [point]
+            section = self.add_section(self._overall, f"Point {index + 1}")
+            section.pack(fill="x", pady=2)
+            # The subtitle carries the swept coordinates, converted with
+            # everything else.
+            self.add_dynamic_label(section._subtitle,          # noqa: SLF001
+                                   self._coords_text(variables, coords, native))
+
+            # A point that never hit the target apogee has to say so from the
+            # collapsed row. Every point looks identical from the outside, and
+            # opening fifteen of them to find the failures is not a workflow.
+            #
+            # The key is target_apogee_reached, NOT reached_apogee: the latter
+            # is the altitude actually achieved, which the tests check
+            # numerically.
+            if params[index].get("target_apogee_reached") is False:
+                section.set_flagged("Did not reach target apogee")
+
+            point_inputs = inputs[index] if index < len(inputs) else {}
+            entries = self._box_entries(params[index], point_inputs)
+            path = (_OVERALL_TAB, f"Point {index + 1}")
+            self.set_row_path(*path)
+            self._index_entries(entries)
+            self.set_row_path(*path, "Performance")
+            for key, value in self._rest_keys(params[index]):
+                self.add_searchable_value(key, value)
+            self.set_row_path()
+
+            section.set_on_toggle(
+                self._point_builder(section, entries, params[index], path))
+
+    def _point_builder(self, section, entries: list, params: dict, path: tuple):
+        """Build this point's rows the first time it is opened."""
+        state = {"built": False}
+
+        def build(is_open: bool) -> None:
+            if not is_open or state["built"]:
+                return
+            state["built"] = True
+            # Already indexed, above. Registering again would show every hit
+            # from this point twice.
+            with self.suspend_search_index():
+                self._draw_box(section.body, entries, logo=False)
+                self._render_rest(section.body, params, path=path, extras=False)
+
+        return build
+
+    @staticmethod
+    def _coords_text(variables, coords, native: str = "SI"):
+        """A builder for the "ṁ = 3 kg/s · pc = 400 psi" subtitle on a point."""
+        def build(system: str) -> str:
+            parts = []
+            for name, value in zip(variables, coords):
+                shown, unit = summary_box.convert(value, name, system, native)
+                parts.append(f"{describe(name)[0]} = {format_scalar(shown)}"
+                             + (f" {unit}" if unit else ""))
+            return "   ·   ".join(parts)
+
+        return build
+
+    # ==================================================================
+    # Hardware & Parameters
+    # ==================================================================
+
+    def _render_hardware(self) -> None:
+        """The rocket as the physics saw it, one collapsible block per CV.
+
+        Values come from rocket_inputs where they were given and from
+        rocket_parameters where they were computed, because a reader tracing
+        the rocket does not care which the nozzle throat was.
+
+        A sweep has neither: its inputs differ point by point in the swept
+        variables, and everything computed differs in all of them. So a swept
+        variable says so and points at the list, and the computed rows are left
+        to the per-point cards, with a note saying where they went.
+        """
+        if self._is_parametric:
+            sweep = self.results.get("parametric_results") or {}
+            points = sweep.get("rocket_inputs") or []
+            inputs = points[0] if points else {}
+            params: dict = {}
+            swept = set((sweep.get("variable_ranges") or {}).keys())
+        else:
+            inputs = self.results.get("rocket_inputs") or {}
+            params = self.results.get("rocket_parameters") or {}
+            swept = set()
+
+        if not inputs:
+            self.add_empty(self._hardware, "No inputs recorded in this file.")
+            return
+
+        for title, groups in _HARDWARE:
+            section = self.add_section(self._hardware, title)
+            section.pack(fill="x", pady=theme.PAD_XS)
+            varies = False
+
+            for heading, items in groups:
+                rendered = []
+                for item in items:
+                    key, label = item if isinstance(item, tuple) else (item, None)
+                    if key in swept:
+                        rendered.append((key, None, label))
+                        continue
+                    if key in inputs:
+                        rendered.append((key, inputs[key], label))
+                    elif key in params:
+                        rendered.append((key, params[key], label))
+                    elif self._is_parametric:
+                        # Computed, and computed differently for every point.
+                        varies = True
+                if not rendered:
+                    continue
+                if heading:
+                    self.add_heading(section.body, heading)
+                self.set_row_path(_HARDWARE_TAB, title, heading)
+                for key, value, label in rendered:
+                    if value is None:
+                        summary_box.add_text_row(
+                            section.body, label or describe(key)[0],
+                            "swept, see Swept variables")
+                    else:
+                        self.add_row(section.body, key, value, label=label)
+                self.set_row_path()
+
+            if varies:
+                ctk.CTkLabel(
+                    section.body,
+                    text="Computed values differ for every point in the sweep. "
+                         "They are on each point's card, under Results by simulation.",
+                    anchor="w", text_color=theme.TEXT_MUTED, justify="left",
+                    wraplength=760,
+                    font=ctk.CTkFont(size=theme.SIZE_SMALL, slant="italic")).pack(
+                    fill="x", pady=(theme.PAD_XS, 0))
+
+    # ==================================================================
+    # Graphs
+    # ==================================================================
+
+    def _on_graphs(self) -> None:
+        if not self.results:
+            self._set_status("No run open", error=True)
+            return
+        if self._is_parametric:
+            self._open_parametric_dialog()
+        else:
+            self._open_flight_picker()
+
+    # ---- convergence: flight plots -----------------------------------
+
+    def _open_flight_picker(self) -> None:
+        from src.common.plotting import steady_plots
+
+        if not (self.results.get("flight_dict") or {}).get("time"):
+            self._set_status("This run has no trajectory to plot", error=True)
+            return
+
+        chosen = show_graph_picker(
+            self, steady_specs(), preselected=self._selected_plots,
+            defaults=list(steady_plots.DEFAULT_SELECTION))
+        if chosen is None:
+            return
+        self._selected_plots = chosen
+        if not chosen:
+            figure_window.close_all()
+            self._set_status("No graphs selected")
+            return
+
+        if not self.busy(f"Rendering graphs…  0 of {len(chosen)}"):
+            return
+
+        def build():
+            for name in chosen:
+                try:
+                    yield (steady_plots.label_of(name),
+                           steady_plots.build_figure(name, self.results))
+                except Exception as exc:        # noqa: BLE001
+                    yield name, exc
+
+        try:
+            self.report_render(*figure_window.show_figures(
+                self, build(), on_progress=self.render_progress(len(chosen))))
+        finally:
+            self.done_busy()
+
+    # ---- parametric: the axis builder --------------------------------
+
+    def _open_parametric_dialog(self) -> None:
+        from src.common.plotting import parametric_plots
+
+        sweep = self.results.get("parametric_results") or {}
+        swept = parametric_plots.swept_variables(sweep)
+        outputs_available = parametric_plots.available_output_variables(sweep)
+        if not swept:
+            self._set_status("This sweep lists no swept variables", error=True)
+            return
+        if not outputs_available:
+            self._set_status("This sweep contains no output values", error=True)
+            return
+
+        def label_of(wire: str) -> str:
+            return describe(wire)[0]
+
+        swept_pairs = [(label_of(w), w) for w in swept]
+        common = [w for w in _COMMON_OUTPUTS if w in outputs_available]
+        other = [w for w in outputs_available if w not in common]
+        output_groups = [
+            ("Common outputs", [(label_of(w), w) for w in common]),
+            ("All other outputs", [(label_of(w), w) for w in other]),
+        ]
+
+        # Hold values come from the grid the solver actually ran, formatted in
+        # the page's current unit system. Offering anything off-grid would
+        # promise data that doesn't exist.
+        ranges = sweep.get("variable_ranges") or {}
+        hold_options = {}
+        for wire in swept:
+            options = []
+            for value in ranges.get(wire, []):
+                shown, unit = summary_box.convert(value, wire, self.system,
+                                                  self.native_system)
+                display = format_scalar(shown) + (f" {unit}" if unit else "")
+                options.append((display, value))     # keep the stored value
+            hold_options[wire] = options
+
+        spec_2d, spec_3d = show_parametric_graph_dialog(
+            self, swept_pairs=swept_pairs, output_groups=output_groups,
+            hold_options=hold_options, label_of=label_of)
         if spec_2d is None and spec_3d is None:
             return
-        param = (self._result_dict or {}).get("parametric_results") or {}
-        if not param:
+
+        if not self.busy("Drawing parametric graphs…"):
             return
+        try:
+            self._render_parametric(sweep, spec_2d, spec_3d)
+        finally:
+            self.done_busy()
 
-        from src.backend.steady.parametric_plots import (
-            plot_parametric_2d, plot_parametric_3d,
-        )
-        from src.ui.app.services.pretty_names import (
-            get_field_info, unit_for_system, format_unit_label,
-        )
-        from src.ui.app import display as display_mod
-        from src.ui.app.services.mpl_bringup import lift_all_figures
+    def _render_parametric(self, sweep: dict, spec_2d, spec_3d) -> None:
+        from src.common.plotting import parametric_plots
 
-        system = self._unit_system
-
-        def _axis_info(wire: str):
-            """Return (labeled_axis_string, transform_callable) for a
-            given wire key, honouring the current unit system.
-            Transform is identity when the field is unitless."""
+        def axis(wire: str):
+            """(label with unit, stored->display transform) for one axis."""
+            label, si_unit = describe(wire)
+            if not si_unit:
+                return label, None
             try:
-                pretty, kind, si_unit = get_field_info(wire)
-            except Exception:
-                return (wire, lambda v: v)
-            pretty = pretty or wire
-            if not kind or not si_unit:
-                return (pretty, lambda v: v)
-            target = unit_for_system(wire, kind, system)
-            unit_display = format_unit_label(target)
-            label = f"{pretty} ({unit_display})"
-            if target == si_unit:
-                return (label, lambda v: v)
-            def _fn(v, _kind=kind, _si=si_unit, _t=target):
+                resolved = category_of_key(wire) or vc.category_of(si_unit)
+                source = vc.storage_unit(resolved, self.native_system)
+                target = vc.unit_for_system(resolved, self.system)
+            except (ValueError, KeyError):
+                return label, None
+            labelled = f"{label} ({target})"
+            if target == source:
+                return labelled, None
+            return labelled, (lambda v, _s=source, _t=target:
+                              vc.convert(float(v), _s, _t))
+
+        def hold_label(wire: str, value) -> str:
+            label, transform = axis(wire)
+            shown = transform(value) if transform else value
+            return f"{label} = {format_scalar(shown)}"
+
+        def build():
+            if spec_2d:
+                x_label, x_fn = axis(spec_2d["x"])
+                y_label, y_fn = axis(spec_2d["y"])
                 try:
-                    return display_mod.convert(float(v), _si, _t, _kind)
-                except Exception:
-                    return v
-            return (label, _fn)
-
-        def _hold_label(wire: str, si_value) -> str:
-            """Format a held value with pretty name + display unit."""
-            try:
-                pretty, kind, si_unit = get_field_info(wire)
-            except Exception:
-                return f"{wire} = {si_value}"
-            pretty = pretty or wire
-            if not kind or not si_unit:
-                return f"{pretty} = {si_value}"
-            target = unit_for_system(wire, kind, system)
-            unit_display = format_unit_label(target)
-            try:
-                display_val = display_mod.convert(
-                    float(si_value), si_unit, target, kind,
-                )
-            except Exception:
-                display_val = si_value
-            if isinstance(display_val, float) and display_val == int(display_val):
-                num_str = str(int(display_val))
-            else:
+                    yield f"{y_label} vs {x_label}", parametric_plots.plot_parametric_2d(
+                        sweep, spec_2d["x"], spec_2d["y"],
+                        holds=spec_2d.get("holds"),
+                        x_label=x_label, y_label=y_label,
+                        x_transform=x_fn, y_transform=y_fn,
+                        hold_label_fn=hold_label)
+                except Exception as exc:        # noqa: BLE001
+                    yield "2D plot", exc
+            if spec_3d:
+                x_label, x_fn = axis(spec_3d["x"])
+                y_label, y_fn = axis(spec_3d["y"])
+                z_label, z_fn = axis(spec_3d["z"])
                 try:
-                    num_str = f"{float(display_val):.6g}"
-                except Exception:
-                    num_str = str(display_val)
-            return f"{pretty} = {num_str} {unit_display}"
+                    yield f"{z_label} vs {x_label}, {y_label}", parametric_plots.plot_parametric_3d(
+                        sweep, spec_3d["x"], spec_3d["y"], spec_3d["z"],
+                        holds=spec_3d.get("holds"),
+                        x_label=x_label, y_label=y_label, z_label=z_label,
+                        x_transform=x_fn, y_transform=y_fn, z_transform=z_fn,
+                        hold_label_fn=hold_label)
+                except Exception as exc:        # noqa: BLE001
+                    yield "3D surface", exc
 
-        errors = []
-        if spec_2d is not None:
-            x_lbl, x_tf = _axis_info(spec_2d["x"])
-            y_lbl, y_tf = _axis_info(spec_2d["y"])
-            try:
-                plot_parametric_2d(
-                    param,
-                    x_var=spec_2d["x"], y_var=spec_2d["y"],
-                    holds=spec_2d.get("holds") or None,
-                    x_label=x_lbl, y_label=y_lbl,
-                    x_transform=x_tf, y_transform=y_tf,
-                    hold_label_fn=_hold_label,
-                )
-            except Exception as exc:
-                errors.append(f"2D plot: {type(exc).__name__}: {exc}")
+        # one 2D and one 3D at most, whichever the user asked for
+        total = int(bool(spec_2d)) + int(bool(spec_3d))
+        self.report_render(*figure_window.show_figures(
+            self, build(), on_progress=self.render_progress(total)))
 
-        if spec_3d is not None:
-            x_lbl, x_tf = _axis_info(spec_3d["x"])
-            y_lbl, y_tf = _axis_info(spec_3d["y"])
-            z_lbl, z_tf = _axis_info(spec_3d["z"])
-            try:
-                plot_parametric_3d(
-                    param,
-                    x_var=spec_3d["x"], y_var=spec_3d["y"],
-                    z_var=spec_3d["z"],
-                    holds=spec_3d.get("holds") or None,
-                    x_label=x_lbl, y_label=y_lbl, z_label=z_lbl,
-                    x_transform=x_tf, y_transform=y_tf, z_transform=z_tf,
-                    hold_label_fn=_hold_label,
-                )
-            except Exception as exc:
-                errors.append(f"3D plot: {type(exc).__name__}: {exc}")
-
-        lift_all_figures()
-
-        if errors:
-            messagebox.showerror(
-                "Couldn't build one or more graphs",
-                "\n".join(errors),
-            )
-
-    # ===================================================================
-    # Utilities
-    # ===================================================================
-
-    def _default_export_name(self) -> str:
-        if self._result_path is not None:
-            return self._result_path.stem + ".csv"
-        return f"steady_export_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.csv"
-
-    def _set_status(self, text: str) -> None:
-        self.status_label.configure(text=text)
-
-
-# ---------------------------------------------------------------------------
-
-def _format_value(v) -> str:
-    if v is None:
-        return "—"
-    if isinstance(v, float):
-        if v == int(v):
-            return f"{int(v)}"
-        return f"{v:.6g}"
-    if isinstance(v, dict):
-        return f"({len(v)} keys — nested)"
-    if isinstance(v, list):
-        return f"[{len(v)} items]"
-    return str(v)
+    def reset_to_defaults(self) -> None:
+        # Leaving the page closes the graph windows; they hold figures, and a
+        # window whose run is no longer open is just confusing.
+        figure_window.close_all()

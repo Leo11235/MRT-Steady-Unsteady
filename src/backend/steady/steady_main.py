@@ -25,7 +25,8 @@ from src.backend.steady.variable_initialization import initialize_natural_consta
 from src.backend.steady.simulation_engine import simulate_hotfire, simulate_fuel_mass_convergence
 from src.backend.steady.parametric_study import simulate_parametric_study
 
-import src.backend.variable_conversions as convert
+import src.common.variable_conversions as convert
+from src.common.version import VERSION
 
 
 def run_steady(rocket_inputs_filename: str, 
@@ -40,7 +41,7 @@ def run_steady(rocket_inputs_filename: str,
     # load rocket inputs and simulation settings
     rocket_inputs_full_filepath = Path(f"{rocket_inputs_filepath}") / f"{rocket_inputs_filename}"
     #print(f"Loading rocket inputs from {rocket_inputs_full_filepath}\n")
-    rocket_inputs, simulation_settings = load_steady_config(rocket_inputs_full_filepath)
+    rocket_inputs, simulation_settings, metadata = load_steady_config(rocket_inputs_full_filepath)
         
     # initialize constants dict
     constants_dict = initialize_natural_constants_dict()
@@ -79,10 +80,14 @@ def run_steady(rocket_inputs_filename: str,
         if param_results_dict is not None:
             convert_param_results_dict_SI_to_MRT(param_results_dict)
     
+    # for diagnostics
+    metadata["program_version"] = VERSION
+
     # assemble JSON export data
     export_data = {
         "rocket_inputs": rocket_inputs,
-        "simulation_settings": simulation_settings
+        "simulation_settings": simulation_settings, 
+        "metadata": metadata
     }
     if sim_type == "hotfire":
         export_data["rocket_parameters"] = rocket_parameters
@@ -93,14 +98,21 @@ def run_steady(rocket_inputs_filename: str,
         export_data["parametric_results"] = param_results_dict
     
     # setup output directory
+    output_dir_filepath = Path(output_dir_filepath)
     output_dir_filepath.mkdir(parents=True, exist_ok=True)
-    sim_filepath = output_dir_filepath / f"{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.json"
+
+    # <simulation_name>.json if the user gave one, else a timestamp
+    run_name = str(metadata.get("simulation_name") or "").strip()
+    if not run_name:
+        run_name = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    sim_filepath = output_dir_filepath / f"{run_name}.json"
     
     # write to JSON
     with open(sim_filepath, "w", encoding="utf-8") as f:
         json.dump(export_data, f, indent=4)
         
     print(f"\nSimulation data exported.")
+    return sim_filepath
 
 # HELPERS
 # prints all items of a dictionary in a nice way
@@ -113,32 +125,40 @@ def print_dict(input_dictionary):
 
 
 # various conversion functions to go from all SI values to MRT unit system (cursed mishmash of SI and IMP that Canadian engineers apparently like)
+def _converted(dictionary, key, conversion):
+    if dictionary.get(key) is not None:
+        dictionary[key] = conversion(dictionary[key])
+
 def convert_rocket_inputs_SI_to_MRT(rocket_inputs):
-    if rocket_inputs.get("target_apogee"): rocket_inputs["target_apogee"] = convert.m_to_ft(rocket_inputs["target_apogee"])
-    if rocket_inputs.get("launch_site_altitude"): rocket_inputs["launch_site_altitude"] = convert.m_to_ft(rocket_inputs["launch_site_altitude"])
-    if rocket_inputs.get("fuel_external_radius"): rocket_inputs["fuel_external_radius"] = convert.m_to_in(rocket_inputs["fuel_external_radius"])
-    if rocket_inputs.get("fuel_length"): rocket_inputs["fuel_length"] = convert.m_to_in(rocket_inputs["fuel_length"])
-    if rocket_inputs.get("chamber_pressure"): rocket_inputs["chamber_pressure"] = convert.Pa_to_psi(rocket_inputs["chamber_pressure"])
-    if rocket_inputs.get("rocket_external_radius"): rocket_inputs["rocket_external_radius"] = convert.m_to_in(rocket_inputs["rocket_external_radius"])
+    _converted(rocket_inputs, "target_apogee", convert.m_to_ft)
+    _converted(rocket_inputs, "launch_site_altitude", convert.m_to_ft)
+    _converted(rocket_inputs, "fuel_external_radius", convert.m_to_in)
+    _converted(rocket_inputs, "fuel_length", convert.m_to_in)
+    _converted(rocket_inputs, "chamber_pressure", convert.Pa_to_psi)
+    _converted(rocket_inputs, "rocket_external_radius", convert.m_to_in)
+    _converted(rocket_inputs, "launch_angle", convert.rad_to_deg)
 
 def convert_rocket_parameters_SI_to_MRT(rocket_parameters):
-    if rocket_parameters.get("initial_internal_fuel_radius"): rocket_parameters["initial_internal_fuel_radius"] = convert.m_to_in(rocket_parameters["initial_internal_fuel_radius"])
-    if rocket_parameters.get("nozzle_throat_area"): rocket_parameters["nozzle_throat_area"] = convert.m2_to_in2(rocket_parameters["nozzle_throat_area"])
-    if rocket_parameters.get("nozzle_throat_radius"): rocket_parameters["nozzle_throat_radius"] = convert.m_to_in(rocket_parameters["nozzle_throat_radius"])
-    if rocket_parameters.get("nozzle_gas_exit_pressure"): rocket_parameters["nozzle_gas_exit_pressure"] = convert.Pa_to_psi(rocket_parameters["nozzle_gas_exit_pressure"])
-    if rocket_parameters.get("nozzle_exit_area"): rocket_parameters["nozzle_exit_area"] = convert.m2_to_in2(rocket_parameters["nozzle_exit_area"])
-    if rocket_parameters.get("nozzle_exit_radius"): rocket_parameters["nozzle_exit_radius"] = convert.m_to_in(rocket_parameters["nozzle_exit_radius"])
-    if rocket_parameters.get("nozzle_gas_exit_velocity"): rocket_parameters["nozzle_gas_exit_velocity"] = convert.ms_to_fts(rocket_parameters["nozzle_gas_exit_velocity"])
-    if rocket_parameters.get("reached_apogee"): rocket_parameters["reached_apogee"] = convert.m_to_ft(rocket_parameters["reached_apogee"])
+    _converted(rocket_parameters, "initial_internal_fuel_radius", convert.m_to_in)
+    _converted(rocket_parameters, "nozzle_throat_area", convert.m2_to_in2)
+    _converted(rocket_parameters, "nozzle_throat_radius", convert.m_to_in)
+    _converted(rocket_parameters, "nozzle_gas_exit_pressure", convert.Pa_to_psi)
+    _converted(rocket_parameters, "nozzle_exit_area", convert.m2_to_in2)
+    _converted(rocket_parameters, "nozzle_exit_radius", convert.m_to_in)
+    _converted(rocket_parameters, "nozzle_gas_exit_velocity", convert.ms_to_fts)
+    _converted(rocket_parameters, "reached_apogee", convert.m_to_ft)
+    _converted(rocket_parameters, "reached_apogee_agl", convert.m_to_ft)
+    _converted(rocket_parameters, "peak_velocity", convert.ms_to_fts)
+    _converted(rocket_parameters, "peak_acceleration", convert.ms2_to_fts2)
 
 def convert_flight_dict_SI_to_MRT(flight_dict):
     if flight_dict.get("altitude"): flight_dict["altitude"] = [convert.m_to_ft(val) for val in flight_dict["altitude"]]
     if flight_dict.get("velocity"): flight_dict["velocity"] = [convert.ms_to_fts(val) for val in flight_dict["velocity"]]
-    if flight_dict.get("acceleration"): flight_dict["acceleration"] = [convert.ms_to_fts(val) for val in flight_dict["acceleration"]]
+    if flight_dict.get("acceleration"): flight_dict["acceleration"] = [convert.ms2_to_fts2(val) for val in flight_dict["acceleration"]]
 
 def convert_simulation_settings_SI_to_MRT(simulation_settings):
-    if simulation_settings.get("tolerated_apogee_difference"): simulation_settings["tolerated_apogee_difference"] = convert.m_to_ft(simulation_settings["tolerated_apogee_difference"])
-    if simulation_settings.get("smallest_allowed_inner_fuel_radius"): simulation_settings["smallest_allowed_inner_fuel_radius"] = convert.m_to_in(simulation_settings["smallest_allowed_inner_fuel_radius"])
+    _converted(simulation_settings, "tolerated_apogee_difference", convert.m_to_ft)
+    _converted(simulation_settings, "smallest_allowed_inner_fuel_radius", convert.m_to_in)
 
 def convert_param_results_dict_SI_to_MRT(param_results_dict):
     for inputs in param_results_dict.get("rocket_inputs", []):

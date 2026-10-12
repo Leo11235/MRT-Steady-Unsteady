@@ -1,26 +1,26 @@
 """
-LoadingScreen — shown while a simulation is running.
+LoadingScreen — shown while a simulation runs.
 
-Architecture
+Generic: anything wanting a "do slow work, show progress" flow calls
+
+    shell.start_loading_run(title, run_fn, on_complete, on_error)
+
+and this page handles the rest. It knows nothing about simulations.
+
+HOW IT WORKS
 ------------
-This page is generic.  Anything that wants a "do work + show progress"
-flow calls:
+1. A daemon worker thread runs `run_fn`.
+2. Process-wide stdout and stderr are redirected into a queue, so everything
+   the backend prints lands in the terminal box live.
+3. The worker drops its outcome into a SECOND queue rather than calling back.
+4. The Tk main thread polls both queues every POLL_MS and does all the widget
+   updates and callback dispatch.
 
-    shell.start_loading_run(title, run_fn, on_complete, on_error=None)
-
-`run_fn` is any callable that does the work and returns its result.
-We:
-  1. Navigate to this page (the shell handles that).
-  2. Reset the terminal + rocket bar.
-  3. Spawn a worker thread that runs `run_fn` and pipes its stdout
-     into a thread-safe queue.
-  4. Poll the queue from the Tk main thread and append every new chunk
-     into the terminal widget.
-  5. When the worker finishes, stop the animation and call `on_complete`
-     with the worker's return value (so the caller can navigate next).
-
-Thread-safety: the worker thread NEVER touches Tk widgets directly;
-all updates are scheduled on the main thread via `self.after`.
+The worker never touches a Tk widget, and never calls self.after(). That's not
+paranoia: tkinter's after() from a non-main thread is not reliably routed on
+every platform, and matplotlib refuses to build figures off the main thread. So
+the finish callbacks — which may well draw plots — have to run on the main
+thread, and the result queue is what guarantees that.
 """
 
 from __future__ import annotations
@@ -37,433 +37,355 @@ from typing import Any, Callable, Optional
 import customtkinter as ctk
 
 from src.ui.app import theme
-from src.ui.app.services import i18n
 from src.ui.app.widgets.loading_bar import RocketLoadingBar
 
 
-# Match phase markers the backend emits, e.g. "phase_1", "phase 4a",
-# "Phase 3 complete", "PHASE_4C: 12.34 s".  We just need to catch the
-# phase identifier and any adjacent 'complete' word.
-_PHASE_RE = re.compile(
-    r"\b[Pp]hase[_\s]*([0-9]+[a-c]?)\b",
-)
+# Phase markers the backend prints. phase_runner emits them upper-cased
+# ("--- PHASE_2 ---"), so this has to be case-insensitive; a [Pp]hase pattern
+# silently matches nothing against the real output.
+_PHASE_RE = re.compile(r"\bphase[_\s]*([0-9]+[a-c]?)\b", re.IGNORECASE)
 
 
-# ---------------------------------------------------------------------------
-# Thread-kill helper.
+# =============================================================================
+# Killing the worker
+# =============================================================================
 #
-# scipy's LSODA integrator is not reentrant and holds module-level state
-# for the duration of a solve; if the worker thread is still running when
-# the user clicks Run again we get `IntegratorConcurrencyError`.  A soft
-# cancel isn't enough — we need the worker thread to ACTUALLY finish so
-# scipy releases its handle before the next run starts.
+# A soft "please stop" flag isn't enough here. scipy's LSODA integrator is not
+# reentrant and holds module-level state for the length of a solve, so if the
+# worker is still integrating when the user starts a second run, the next
+# solve_ivp raises IntegratorConcurrencyError. The thread has to ACTUALLY end
+# and let scipy release its handle.
 #
-# The cleanest way to do that from outside the thread in CPython is
-# PyThreadState_SetAsyncExc, which raises an exception in the target
-# thread at its next Python bytecode boundary.  We use SystemExit because
-# it triggers Python's normal graceful thread-shutdown path (finally
-# blocks run, refs get released, integrator __del__ removes the handle
-# from scipy's active registry).
+# CPython's PyThreadState_SetAsyncExc is the only way to do that from outside
+# the thread. It schedules an exception to be raised at the target's next
+# bytecode boundary. We use SystemExit rather than a custom exception because
+# it takes Python's normal thread-shutdown path: finally blocks run, references
+# drop, and the integrator's __del__ removes itself from scipy's registry.
 #
-# This mechanism is unofficial but stable across all current CPython
-# versions.  It's a no-op on other Python implementations.
-# ---------------------------------------------------------------------------
+# The API is unofficial but stable across every current CPython. On other
+# implementations it simply isn't there and this degrades to a no-op.
 
-
-def _kill_thread(thread: threading.Thread) -> bool:
-    """Async-raise SystemExit in `thread`.  Returns True if the request
-    was accepted (the thread WILL exit at its next Python bytecode)."""
-    if thread is None or not thread.is_alive():
-        return False
-    tid = thread.ident
-    if tid is None:
+def _kill_thread(thread: Optional[threading.Thread]) -> bool:
+    """Async-raise SystemExit in a thread. True if the request was accepted."""
+    if thread is None or not thread.is_alive() or thread.ident is None:
         return False
     try:
-        api = ctypes.pythonapi.PyThreadState_SetAsyncExc
+        raise_async = ctypes.pythonapi.PyThreadState_SetAsyncExc
     except AttributeError:
-        return False   # non-CPython
-    res = api(ctypes.c_ulong(tid), ctypes.py_object(SystemExit))
-    if res == 0:
-        return False   # invalid thread id
-    if res > 1:
-        # Rolled back — shouldn't happen but be safe.
-        api(ctypes.c_ulong(tid), None)
+        return False                    # not CPython
+    affected = raise_async(ctypes.c_ulong(thread.ident), ctypes.py_object(SystemExit))
+    if affected > 1:
+        # Hit more than one thread; undo it rather than leave the interpreter
+        # with several pending async exceptions.
+        raise_async(ctypes.c_ulong(thread.ident), None)
         return False
-    return True
+    return affected == 1
 
-
-# ---------------------------------------------------------------------------
-# Stream → Queue: tiny file-like that forwards writes into a Queue.
-# ---------------------------------------------------------------------------
 
 class _StreamToQueue:
-    def __init__(self, q: "queue.Queue[str]") -> None:
-        self.q = q
+    """A minimal file-like that forwards writes into a queue."""
+
+    def __init__(self, sink: "queue.Queue[str]") -> None:
+        self._sink = sink
 
     def write(self, data: str) -> int:
         if data:
-            self.q.put(data)
+            self._sink.put(data)
         return len(data)
 
     def flush(self) -> None:
         pass
 
-    # tkinter occasionally checks for .isatty()
     def isatty(self) -> bool:
+        # Some libraries check this before deciding whether to emit colour.
         return False
 
 
-# ---------------------------------------------------------------------------
-# Page
-# ---------------------------------------------------------------------------
+# =============================================================================
+# Friendlier failures
+# =============================================================================
+#
+# A few backend exceptions are common enough, and cryptic enough on their own,
+# to be worth translating before they reach the terminal.
+
+def _friendly_hint(exc: BaseException) -> str:
+    """A plain-English line to put above the traceback, or "" for none."""
+    name = type(exc).__name__
+
+    if isinstance(exc, KeyError):
+        # The backend raises a bare KeyError naming the missing key. Without
+        # this you get a one-word traceback and no idea what to fix.
+        field = str(exc).strip("'\"")
+        known = False
+        try:
+            from src.ui.app import field_registry as registry
+            known = registry.has(field)
+            if known:
+                field = f"{registry.label(field)}  ({field})"
+        except Exception:                       # noqa: BLE001
+            pass
+
+        if known:
+            return (f"[missing required input]  {field} was not set.\n"
+                    f"Go back, fill it in, and run again.")
+
+        # Not a field on any form, so it is something the solver was supposed
+        # to compute and didn't. Telling the user to go and fill it in would
+        # send them looking for an input that does not exist. The usual cause
+        # is inputs that are individually valid but jointly impossible, so the
+        # step that produces this value failed and left nothing behind.
+        return (f"[internal value missing]  {field} is calculated by the solver, "
+                f"not entered by you, so there is nothing to fill in.\n"
+                f"This normally means an earlier step failed on inputs that are "
+                f"each plausible but cannot all be true at once — most often "
+                f"fuel mass, grain dimensions and density that describe a grain "
+                f"which cannot physically exist. Check those first.")
+
+    if isinstance(exc, ValueError):
+        # The loaders raise ValueError with a message written for a person, so
+        # the useful thing is to surface it rather than paraphrase it.
+        return (f"[invalid input]  {exc}\n"
+                f"Go back to the inputs page and correct it, then run again.")
+
+    if name == "SolverStalledError":
+        return ("[solver stalled]  The integrator stopped making progress, "
+                "which usually means the operating point is physically "
+                "unstable — chamber pressure very close to tank pressure, so "
+                "the injector has almost no authority.\n"
+                "Try a lower regression coefficient or a higher feed pressure "
+                "loss.")
+
+    return ""
+
+
+# =============================================================================
+# The page
+# =============================================================================
 
 class LoadingScreen(ctk.CTkFrame):
     TITLE = "Running…"
 
-    POLL_MS = 80   # how often we drain the stdout queue into the textbox
+    POLL_MS = 80        # how often the main thread drains the queues
 
     def __init__(self, master, on_navigate) -> None:
         super().__init__(master, corner_radius=0, fg_color="transparent")
         self.on_navigate = on_navigate
 
-        # state
-        self._output_q: queue.Queue[str] = queue.Queue()
-        # Result queue — the worker puts ('ok', result) or ('err', exc, tb)
-        # here, and the main-thread polling loop picks it up.  This avoids
-        # using self.after() from a worker thread, which is technically not
-        # thread-safe in tkinter and (per Matplotlib's own thread check)
-        # apparently doesn't reliably route callbacks back to the main thread
-        # on every platform.
-        self._result_q: queue.Queue = queue.Queue()
-        self._poll_after_id: Optional[str] = None
+        self._output_q: "queue.Queue[str]" = queue.Queue()
+        self._result_q: "queue.Queue[tuple]" = queue.Queue()
+        self._poll_id: Optional[str] = None
+
         self._on_complete: Optional[Callable[[Any], None]] = None
-        self._on_error:    Optional[Callable[[BaseException, str], None]] = None
+        self._on_error: Optional[Callable[[BaseException, str], None]] = None
+
         self._busy = False
-        # Soft-cancel flag: when True, any result the worker eventually
-        # produces is silently discarded (background thread finishes but
-        # its output goes nowhere).
         self._cancelled = False
-        # Reference to the current worker thread so cancel() can kill it.
-        self._worker_thread: Optional[threading.Thread] = None
+        self._worker: Optional[threading.Thread] = None
         self._saved_stdout = None
         self._saved_stderr = None
+        self._started_at: Optional[float] = None
+        self._phase: Optional[str] = None
 
         self._build()
 
-    # ===================================================================
+    # ==================================================================
     # Layout
-    # ===================================================================
+    # ==================================================================
 
     def _build(self) -> None:
-        # vertical stack: title (top) | terminal (fills) | rocket bar (bottom)
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(1, weight=1)      # the terminal takes the slack
 
-        self._title_label = ctk.CTkLabel(
-            self,
-            text="Running…",
+        self._title = ctk.CTkLabel(
+            self, text="Running…", anchor="center",
             font=ctk.CTkFont(size=theme.SIZE_TITLE, weight="bold"),
             text_color=theme.MRT_RED_THEMED,
-            anchor="center",
         )
-        self._title_label.grid(row=0, column=0, sticky="ew",
-                               padx=theme.PAD_L, pady=(theme.PAD_L, theme.PAD_S))
+        self._title.grid(row=0, column=0, sticky="ew",
+                         padx=theme.PAD_L, pady=(theme.PAD_L, theme.PAD_S))
 
-        # ---- terminal-style textbox ----------------------------------
         terminal_wrap = ctk.CTkFrame(self, fg_color="transparent")
         terminal_wrap.grid(row=1, column=0, sticky="nsew",
                            padx=theme.PAD_L, pady=theme.PAD_S)
         terminal_wrap.grid_columnconfigure(0, weight=1)
         terminal_wrap.grid_rowconfigure(0, weight=1)
 
+        # Always dark regardless of theme: it's a console, and the backend's
+        # output is easier to scan in monospace on black.
         self._terminal = ctk.CTkTextbox(
-            terminal_wrap,
-            wrap="none",
+            terminal_wrap, wrap="none",
             font=ctk.CTkFont(family="Consolas", size=12),
-            fg_color=theme.TERMINAL_BG,            # always-dark "terminal" look
-            text_color=theme.TERMINAL_FG,          # soft phosphor green
-            border_width=1,
-            border_color=("gray30", "gray30"),
+            fg_color=theme.TERMINAL_BG, text_color=theme.TERMINAL_FG,
+            border_width=1, border_color=("gray30", "gray30"),
         )
         self._terminal.grid(row=0, column=0, sticky="nsew")
         self._terminal.configure(state="disabled")
 
-        # ---- rocket loading bar --------------------------------------
         bar_wrap = ctk.CTkFrame(self, fg_color="transparent")
         bar_wrap.grid(row=2, column=0, sticky="ew",
                       padx=theme.PAD_L, pady=(theme.PAD_S, theme.PAD_L))
         bar_wrap.grid_columnconfigure(0, weight=1)
 
-        # sticky="ew" + the bar's own <Configure> resize handler = full-width
         self._bar = RocketLoadingBar(bar_wrap, height=80, px=4)
         self._bar.grid(row=0, column=0, sticky="ew", pady=(0, theme.PAD_S))
 
-        self._status_label = ctk.CTkLabel(
-            bar_wrap,
-            text="",
-            text_color=theme.TEXT_FAINT,
+        self._status = ctk.CTkLabel(
+            bar_wrap, text="", text_color=theme.TEXT_FAINT,
             font=ctk.CTkFont(size=theme.SIZE_SMALL, slant="italic"),
         )
-        self._status_label.grid(row=1, column=0, sticky="w", padx=4)
+        self._status.grid(row=1, column=0, sticky="w", padx=4)
 
-        # Progress ETA — "Phase 3 · 34 s elapsed"
-        self._eta_label = ctk.CTkLabel(
-            bar_wrap,
-            text="",
-            text_color=theme.TEXT_MUTED,
+        # "Phase 3 · 34s elapsed", opposite the status on the same row.
+        self._elapsed = ctk.CTkLabel(
+            bar_wrap, text="", text_color=theme.TEXT_MUTED,
             font=ctk.CTkFont(size=theme.SIZE_SMALL),
         )
-        self._eta_label.grid(row=1, column=0, sticky="e", padx=4)
+        self._elapsed.grid(row=1, column=0, sticky="e", padx=4)
 
-    # ===================================================================
-    # Public API — called by AppShell.start_loading_run
-    # ===================================================================
+    # ==================================================================
+    # Public API
+    # ==================================================================
 
-    def start_run(
-        self,
-        title: str,
-        run_fn: Callable[[], Any],
-        on_complete: Callable[[Any], None],
-        on_error: Optional[Callable[[BaseException, str], None]] = None,
-    ) -> None:
-        """
-        Begin a new run.  Resets the page, captures stdout, spawns a worker.
+    def start_run(self, title: str, run_fn: Callable[[], Any],
+                  on_complete: Callable[[Any], None],
+                  on_error: Optional[Callable[[BaseException, str], None]] = None) -> None:
+        """Reset the page, capture output, and start the worker.
 
-        Safe to call again later — it tears down any previous run state first.
+        Refuses to start while another run is in flight, rather than stacking
+        two solvers on top of each other.
         """
         if self._busy:
-            # Refuse to start a second run while one is in progress.
             return
         self._busy = True
-
+        self._cancelled = False
         self._on_complete = on_complete
-        self._on_error    = on_error or self._default_on_error
+        self._on_error = on_error
 
-        # reset the page
-        self._title_label.configure(text=title)
-        self._terminal.configure(state="normal")
-        self._terminal.delete("0.0", "end")
-        self._terminal.configure(state="disabled")
-        self._status_label.configure(text=i18n.t("loading.starting"),
-                                     text_color=theme.TEXT_FAINT)
-        # Progress tracking state — reset on every run.
-        self._run_start_ts = time.monotonic()
-        self._current_phase: Optional[str] = None
-        self._eta_label.configure(text="")
+        self._title.configure(text=title)
+        self._set_terminal("")
+        self._status.configure(text="Starting…", text_color=theme.TEXT_FAINT)
+        self._elapsed.configure(text="")
+        self._started_at = time.monotonic()
+        self._phase = None
+
         self._output_q = queue.Queue()
         self._result_q = queue.Queue()
-        self._cancelled = False
-        self._bar.start()
-        self._start_polling()
+        # The rocket stays parked until the backend actually says something.
+        # A bar that starts moving the instant you click Run implies progress
+        # nobody has made yet — an unsteady run spends its first seconds
+        # loading CEA tables in silence.
+        self._bar_started = False
+        self._bar.reset()
+        self._schedule_poll()
 
-        # divert stdout/stderr into the queue (process-global, but only the
-        # worker thread is producing anything noisy right now).
+        # Redirect the process's streams. This is global, but the worker is
+        # the only thing producing output while a run is in flight.
         self._saved_stdout, self._saved_stderr = sys.stdout, sys.stderr
         sys.stdout = _StreamToQueue(self._output_q)
         sys.stderr = _StreamToQueue(self._output_q)
 
-        # Keep a reference so cancel() can target this thread specifically.
-        self._worker_thread = threading.Thread(
-            target=self._worker,
-            args=(run_fn,),
-            daemon=True,
-        )
-        self._worker_thread.start()
+        self._worker = threading.Thread(target=self._run_worker,
+                                        args=(run_fn,), daemon=True)
+        self._worker.start()
 
     def get_terminal_text(self) -> str:
-        """Return everything currently in the terminal widget."""
+        """Everything currently in the terminal, for the bug report."""
         return self._terminal.get("0.0", "end").rstrip()
 
     def cancel(self) -> None:
-        """
-        Cancel a running simulation.
+        """Stop a running simulation.
 
-        We do this in two moves:
-          1. Async-raise SystemExit in the worker thread so scipy's LSODA
-             integrator releases its non-reentrant lock and any other
-             module-level state gets torn down cleanly (see the block
-             comment above `_kill_thread`).
-          2. Briefly join the thread with a timeout so the next Run can
-             start with a clean scipy.
-
-        We also flip flags so any result that DID sneak past step 1 is
-        silently dropped by the poll loop.
+        Two moves. First flip the flags so any result that's already in flight
+        gets dropped rather than navigating the user somewhere unexpected.
+        Then actually kill the worker, and wait briefly for it, so scipy has
+        released the integrator before the next run starts. If it hasn't died
+        within a few seconds we carry on anyway — a concurrency error on the
+        next run is possible but rare, and hanging the UI is worse.
         """
         if not self._busy:
             return
         self._cancelled = True
         self._busy = False
-        self._teardown_capture()
-        self._bar.stop()
-        # Stop polling — we won't dispatch _finish_ok anymore.
-        if self._poll_after_id is not None:
-            try:
-                self.after_cancel(self._poll_after_id)
-            except Exception:
-                pass
-            self._poll_after_id = None
-        # Null the callbacks so a race-condition result dispatch has
-        # nowhere to go.
         self._on_complete = None
-        self._on_error    = None
+        self._on_error = None
+        self._teardown()
+        self._bar.stop()
+        self._status.configure(text="Cancelled", text_color=theme.WARNING_STRONG)
 
-        # Actually kill the worker so scipy's LSODA integrator finishes
-        # its current step, unwinds, and releases the handle.  If it's
-        # not dead within 3 s we proceed anyway — the concurrency-error
-        # is still possible in that pathological case, but rare.
-        wt = self._worker_thread
-        if wt is not None and wt.is_alive():
-            _kill_thread(wt)
+        worker, self._worker = self._worker, None
+        if worker is not None and worker.is_alive():
+            _kill_thread(worker)
             try:
-                wt.join(timeout=3.0)
-            except Exception:
+                worker.join(timeout=3.0)
+            except Exception:                   # noqa: BLE001
                 pass
-        self._worker_thread = None
 
-    # ===================================================================
-    # Internals
-    # ===================================================================
+    @property
+    def is_running(self) -> bool:
+        return self._busy
 
-    def _worker(self, run_fn: Callable[[], Any]) -> None:
-        """
-        Runs on a background thread.  We DON'T call self.after() from here —
-        instead we drop the outcome into a thread-safe queue, and the
-        main-thread polling loop (_poll) picks it up.  This guarantees
-        _finish_ok / _finish_err run on the main thread, which matters for
-        matplotlib (and for tk widget updates generally).
-        """
+    # ==================================================================
+    # Worker
+    # ==================================================================
+
+    def _run_worker(self, run_fn: Callable[[], Any]) -> None:
+        """Runs off the main thread. Only ever touches the result queue."""
         try:
-            result = run_fn()
-            self._result_q.put(("ok", result))
+            self._result_q.put(("ok", run_fn()))
         except SystemExit:
-            # Injected by cancel().  Let the thread exit silently — the
-            # main thread already knows we're cancelling.
+            # Injected by cancel(). The main thread already knows; exit quietly
+            # so the traceback doesn't land in a terminal nobody is reading.
             return
-        except BaseException as exc:
-            tb = traceback.format_exc()
-            self._result_q.put(("err", exc, tb))
+        except BaseException as exc:            # noqa: BLE001 - reported, not handled
+            self._result_q.put(("err", exc, traceback.format_exc()))
 
-    def _finish_ok(self, result: Any) -> None:
-        self._teardown_capture()
-        self._bar.stop()
-        self._status_label.configure(
-            text=i18n.t("loading.complete"),
-            text_color=theme.SUCCESS,
-        )
-        self._drain_queue()
-        self._busy = False
-        if self._on_complete is not None:
+    # ==================================================================
+    # Main-thread polling
+    # ==================================================================
+
+    def _schedule_poll(self) -> None:
+        self._cancel_poll()
+        self._poll_id = self.after(self.POLL_MS, self._poll)
+
+    def _cancel_poll(self) -> None:
+        if self._poll_id is not None:
             try:
-                self._on_complete(result)
-            except Exception:
-                # don't let consumer errors break the loading screen
-                traceback.print_exc()
-
-    def _finish_err(self, exc: BaseException, tb: str) -> None:
-        self._teardown_capture()
-        self._bar.stop()
-        self._status_label.configure(
-            text=f"{i18n.t('loading.failed')}: {type(exc).__name__}",
-            text_color=theme.ERROR,
-        )
-        # show the traceback in the terminal too
-        self._terminal.configure(state="normal")
-        self._terminal.insert("end", "\n\n" + tb)
-        self._terminal.see("end")
-        self._terminal.configure(state="disabled")
-        self._drain_queue()
-        self._busy = False
-        if self._on_error is not None:
-            try:
-                self._on_error(exc, tb)
-            except Exception:
-                traceback.print_exc()
-
-    def _default_on_error(self, exc: BaseException, tb: str) -> None:
-        # If the caller didn't supply one, do nothing — the traceback is
-        # already on screen.  The user can hit the Home button to leave.
-        pass
-
-    def _teardown_capture(self) -> None:
-        if self._saved_stdout is not None:
-            sys.stdout = self._saved_stdout
-            self._saved_stdout = None
-        if self._saved_stderr is not None:
-            sys.stderr = self._saved_stderr
-            self._saved_stderr = None
-        if self._poll_after_id is not None:
-            try:
-                self.after_cancel(self._poll_after_id)
-            except Exception:
+                self.after_cancel(self._poll_id)
+            except Exception:                   # noqa: BLE001
                 pass
-            self._poll_after_id = None
-
-    def _start_polling(self) -> None:
-        if self._poll_after_id is not None:
-            try:
-                self.after_cancel(self._poll_after_id)
-            except Exception:
-                pass
-        self._poll_after_id = self.after(self.POLL_MS, self._poll)
+            self._poll_id = None
 
     def _poll(self) -> None:
-        # If the user cancelled, we stop cold: no more terminal updates,
-        # no result dispatch, no reschedule.
         if self._cancelled:
-            return
+            return          # stop cold: no more output, no dispatch, no reschedule
 
-        # Drain stdout/stderr chunks into the terminal
-        self._drain_queue()
+        self._drain_output()
 
-        # Drain the result queue — if the worker has finished, dispatch to
-        # _finish_ok / _finish_err HERE on the main thread (not from inside
-        # the worker via self.after(), which is what was breaking matplotlib).
         try:
-            msg = self._result_q.get_nowait()
+            message = self._result_q.get_nowait()
         except queue.Empty:
-            msg = None
-        if msg is not None:
+            message = None
+
+        if message is not None:
             try:
-                kind = msg[0]
-                if kind == "ok":
-                    self._finish_ok(msg[1])
-                elif kind == "err":
-                    self._finish_err(msg[1], msg[2])
-            except Exception:
+                if message[0] == "ok":
+                    self._finish_ok(message[1])
+                else:
+                    self._finish_err(message[1], message[2])
+            except Exception:                   # noqa: BLE001
                 traceback.print_exc()
-            return   # don't reschedule; _teardown_capture already cancelled
+            return          # _teardown already cancelled the poll
 
-        # Refresh the ETA / elapsed-time label independently of new
-        # terminal chunks — that way the timer keeps ticking even when
-        # the backend is silent.
-        self._refresh_eta()
-
-        # Keep polling as long as the run is in progress.  Once finished,
-        # _teardown_capture cancels this id and we stop scheduling.
+        self._refresh_elapsed()
         if self._busy:
-            self._poll_after_id = self.after(self.POLL_MS, self._poll)
+            self._poll_id = self.after(self.POLL_MS, self._poll)
 
-    def _refresh_eta(self) -> None:
-        """Update the '(Phase N ·) 34 s elapsed' label."""
-        try:
-            start = getattr(self, "_run_start_ts", None)
-            if start is None:
-                return
-            elapsed_s = int(time.monotonic() - start)
-            elapsed_str = (f"{elapsed_s // 60}m {elapsed_s % 60}s"
-                           if elapsed_s >= 60 else f"{elapsed_s}s")
-            parts: list[str] = []
-            if self._current_phase:
-                parts.append(f"{i18n.t('loading.phase')} {self._current_phase}")
-            parts.append(f"{elapsed_str} {i18n.t('loading.elapsed')}")
-            self._eta_label.configure(text="  ·  ".join(parts))
-        except Exception:
-            pass
+    def _drain_output(self) -> None:
+        """Move everything queued into the terminal in one Tk operation.
 
-    def _drain_queue(self) -> None:
-        """Append every queued chunk into the terminal in one Tk operation.
-        Also scans the chunk for phase markers so the ETA label can show
-        the current phase name."""
+        Batching matters: the backend can emit hundreds of lines in a burst,
+        and inserting them one at a time makes the UI crawl.
+        """
         chunks: list[str] = []
         try:
             while True:
@@ -472,16 +394,100 @@ class LoadingScreen(ctk.CTkFrame):
             pass
         if not chunks:
             return
+
         text = "".join(chunks)
-        # Scan for the last phase marker in this batch (backend often
-        # prints many lines at once, we want the freshest).
-        matches = _PHASE_RE.findall(text)
-        if matches:
-            new_phase = matches[-1]
-            if new_phase != self._current_phase:
-                self._current_phase = new_phase
-                self._refresh_eta()
+
+        # First output of the run: now the rocket may move.
+        if not self._bar_started:
+            self._bar_started = True
+            self._bar.start()
+
+        # Take the LAST phase marker in the batch, not the first — a burst
+        # often spans a transition and the newest one is what's current.
+        found = _PHASE_RE.findall(text)
+        if found:
+            # Normalise the sub-phase letter: the backend shouts "PHASE_4A"
+            # but the phase is written phase_4a everywhere else.
+            latest = found[-1].lower()
+            if latest != self._phase:
+                self._phase = latest
+                self._refresh_elapsed()
+
         self._terminal.configure(state="normal")
         self._terminal.insert("end", text)
         self._terminal.see("end")
+        self._terminal.configure(state="disabled")
+
+    def _refresh_elapsed(self) -> None:
+        """Keep the timer ticking even while the backend is silent."""
+        if self._started_at is None:
+            return
+        try:
+            seconds = int(time.monotonic() - self._started_at)
+            shown = (f"{seconds // 60}m {seconds % 60}s" if seconds >= 60
+                     else f"{seconds}s")
+            parts = ([f"Phase {self._phase}"] if self._phase else []) + [f"{shown} elapsed"]
+            self._elapsed.configure(text="  ·  ".join(parts))
+        except Exception:                       # noqa: BLE001
+            pass
+
+    # ==================================================================
+    # Finishing
+    # ==================================================================
+
+    def _finish_ok(self, result: Any) -> None:
+        self._teardown()
+        self._bar.stop()
+        self._status.configure(text="Complete", text_color=theme.SUCCESS)
+        self._drain_output()
+        # Freeze the timer on the total, so "took 47s" survives on screen.
+        self._refresh_elapsed()
+        self._busy = False
+        if self._on_complete is not None:
+            try:
+                self._on_complete(result)
+            except Exception:                   # noqa: BLE001
+                # A broken consumer shouldn't leave the loading screen wedged.
+                traceback.print_exc()
+
+    def _finish_err(self, exc: BaseException, traceback_text: str) -> None:
+        self._teardown()
+        self._bar.stop()
+        self._status.configure(text=f"Failed: {type(exc).__name__}",
+                               text_color=theme.ERROR)
+        self._drain_output()
+        self._refresh_elapsed()
+
+        # Hint first, traceback second: the useful part should be the thing
+        # you see without scrolling.
+        hint = _friendly_hint(exc)
+        self._terminal.configure(state="normal")
+        if hint:
+            self._terminal.insert("end", f"\n\n{hint}\n")
+        self._terminal.insert("end", f"\n{traceback_text}")
+        self._terminal.see("end")
+        self._terminal.configure(state="disabled")
+
+        self._busy = False
+        if self._on_error is not None:
+            try:
+                self._on_error(exc, traceback_text)
+            except Exception:                   # noqa: BLE001
+                traceback.print_exc()
+
+    def _teardown(self) -> None:
+        """Put stdout back and stop polling. Safe to call more than once."""
+        if self._saved_stdout is not None:
+            sys.stdout = self._saved_stdout
+            self._saved_stdout = None
+        if self._saved_stderr is not None:
+            sys.stderr = self._saved_stderr
+            self._saved_stderr = None
+        self._cancel_poll()
+
+    def _set_terminal(self, text: str) -> None:
+        self._terminal.configure(state="normal")
+        self._terminal.delete("0.0", "end")
+        if text:
+            self._terminal.insert("0.0", text)
         self._terminal.configure(state="disabled")

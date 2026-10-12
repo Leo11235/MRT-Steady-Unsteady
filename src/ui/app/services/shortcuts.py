@@ -1,13 +1,14 @@
-"""Configurable keyboard-shortcut service.
+"""
+Keyboard shortcuts: abstract actions bound to key sequences.
 
-Maps abstract action names to Tk key-sequence strings.  The shell binds
-every action globally; when a key fires, we dispatch to whichever page
-is currently active — pages that don't handle a given action simply
-ignore it.
+The shell binds every action globally and dispatches to whichever page is
+visible. Pages that don't care about an action ignore it. That keeps the
+binding table in one place instead of scattered across pages, and means
+rebinding a key doesn't require touching any page.
 
-The bindings persist in `user_data/ui_settings.json` under the key
-`shortcuts` as `{action: keysequence}`.  Missing entries fall back to
-the defaults defined below.
+Bindings live in user_data/ui_settings.json under "shortcuts", as
+{action: sequence} in Tk's own syntax. Anything the user hasn't overridden
+falls back to the defaults below.
 """
 
 from __future__ import annotations
@@ -17,12 +18,8 @@ from typing import Callable
 from src.ui.app import settings as user_settings
 
 
-# ---------------------------------------------------------------------------
-# Actions we recognise.  Each has:
-#   - a default key-sequence (Tk syntax; e.g. "<Control-r>", "<Escape>")
-#   - an i18n key for the display label in Settings
-# ---------------------------------------------------------------------------
-
+# The actions the app recognises. Pages opt in by handling the ones they care
+# about in handle_shortcut(); "cancel" is handled centrally by the shell.
 ACTIONS: tuple[str, ...] = ("run", "save", "load", "cancel")
 
 DEFAULT_BINDINGS: dict[str, str] = {
@@ -32,123 +29,116 @@ DEFAULT_BINDINGS: dict[str, str] = {
     "cancel": "<Escape>",
 }
 
-ACTION_LABEL_KEYS: dict[str, str] = {
-    "run":    "shortcut.run",
-    "save":   "shortcut.save",
-    "load":   "shortcut.load",
-    "cancel": "shortcut.cancel",
+ACTION_LABELS: dict[str, str] = {
+    "run":    "Run simulation",
+    "save":   "Save preset",
+    "load":   "Load preset",
+    "cancel": "Cancel run",
 }
 
 
-# ---------------------------------------------------------------------------
-# Load / save
-# ---------------------------------------------------------------------------
+# =============================================================================
+# Persistence
+# =============================================================================
 
 def load_bindings() -> dict[str, str]:
-    """Return the current bindings, with defaults merged in for any
-    action the user hasn't overridden."""
+    """Current bindings, with defaults filled in for anything unset."""
     stored = user_settings.get("shortcuts", {}) or {}
     if not isinstance(stored, dict):
         stored = {}
     merged = dict(DEFAULT_BINDINGS)
-    for action, seq in stored.items():
-        if action in DEFAULT_BINDINGS and isinstance(seq, str) and seq:
-            merged[action] = seq
+    for action, sequence in stored.items():
+        if action in DEFAULT_BINDINGS and isinstance(sequence, str) and sequence:
+            merged[action] = sequence
     return merged
 
 
 def save_bindings(bindings: dict[str, str]) -> None:
-    """Persist bindings to ui_settings.json.  Only keys in ACTIONS are kept."""
-    s = user_settings.load_settings()
-    cleaned = {a: seq for a, seq in bindings.items()
-               if a in DEFAULT_BINDINGS and isinstance(seq, str) and seq}
-    s["shortcuts"] = cleaned
-    user_settings.save_settings(s)
+    """Persist bindings, discarding anything that isn't a known action."""
+    settings = user_settings.load_settings()
+    settings["shortcuts"] = {
+        action: sequence for action, sequence in bindings.items()
+        if action in DEFAULT_BINDINGS and isinstance(sequence, str) and sequence
+    }
+    user_settings.save_settings(settings)
 
 
-# ---------------------------------------------------------------------------
-# Tk binding
-# ---------------------------------------------------------------------------
+# =============================================================================
+# Binding
+# =============================================================================
 
 class ShortcutRouter:
-    """Owns the bind_all calls on a root window.  Rebind on demand
-    (e.g. after the user edits Settings)."""
+    """Owns the bind_all calls on the root window."""
 
     def __init__(self, root, dispatch: Callable[[str], None]) -> None:
         self._root = root
         self._dispatch = dispatch
-        self._current: dict[str, str] = {}
+        self._bound: dict[str, str] = {}
         self.rebind(load_bindings())
 
     def rebind(self, bindings: dict[str, str]) -> None:
-        # Unbind whatever we had before so old sequences don't linger.
-        for _, seq in self._current.items():
+        """Replace every binding. Safe to call repeatedly."""
+        for sequence in self._bound.values():
             try:
-                self._root.unbind_all(seq)
-            except Exception:
+                self._root.unbind_all(sequence)
+            except Exception:                   # noqa: BLE001
                 pass
-        self._current = dict(bindings)
-        for action, seq in bindings.items():
+
+        self._bound = dict(bindings)
+        for action, sequence in bindings.items():
             try:
-                self._root.bind_all(seq,
-                                     lambda _e, a=action: self._fire(a),
-                                     add="+")
-            except Exception:
-                # Malformed sequences shouldn't crash the app.
+                self._root.bind_all(
+                    sequence, lambda _e, a=action: self._fire(a), add="+")
+            except Exception:                   # noqa: BLE001
+                # A malformed sequence in a hand-edited settings file
+                # shouldn't stop the app from starting.
                 pass
 
     def _fire(self, action: str) -> None:
         try:
             self._dispatch(action)
-        except Exception:
-            # Router must never break the app.
-            pass
+        except Exception:                       # noqa: BLE001
+            pass    # a shortcut must never be able to break the app
 
 
-# ---------------------------------------------------------------------------
-# Pretty rendering
-# ---------------------------------------------------------------------------
+# =============================================================================
+# Display
+# =============================================================================
 
-def humanize(seq: str) -> str:
-    """Turn a Tk key-sequence like '<Control-Shift-r>' into 'Ctrl+Shift+R'."""
-    if not seq:
+def humanize(sequence: str) -> str:
+    """'<Control-Shift-r>' -> 'Ctrl+Shift+R', for the settings page."""
+    if not sequence:
         return ""
-    inner = seq.strip("<>")
-    parts = inner.split("-")
-    pretty_parts: list[str] = []
-    for p in parts:
-        pl = p.lower()
-        if pl == "control":
-            pretty_parts.append("Ctrl")
-        elif pl == "shift":
-            pretty_parts.append("Shift")
-        elif pl in ("alt", "meta"):
-            pretty_parts.append(pl.capitalize())
-        elif pl == "escape":
-            pretty_parts.append("Esc")
-        elif pl == "return":
-            pretty_parts.append("Enter")
-        elif len(p) == 1:
-            pretty_parts.append(p.upper())
+    pretty = []
+    for part in sequence.strip("<>").split("-"):
+        lowered = part.lower()
+        if lowered == "control":
+            pretty.append("Ctrl")
+        elif lowered == "shift":
+            pretty.append("Shift")
+        elif lowered in ("alt", "meta"):
+            pretty.append(lowered.capitalize())
+        elif lowered == "escape":
+            pretty.append("Esc")
+        elif lowered == "return":
+            pretty.append("Enter")
+        elif len(part) == 1:
+            pretty.append(part.upper())
         else:
-            pretty_parts.append(p.capitalize())
-    return "+".join(pretty_parts)
+            pretty.append(part.capitalize())
+    return "+".join(pretty)
 
 
 def parse_event(event) -> str:
-    """Turn a Tk KeyPress event into a canonical <...> sequence string.
+    """Turn a key press into the '<...>' syntax Tk's bind() expects.
 
-    Used by the Settings 'rebind' dialog to capture whatever the user
-    pressed and store it in the same syntax Tk's bind() expects.
-    Ignores lone modifier presses (Ctrl / Shift / Alt) — the caller
-    should only lock in when a non-modifier key follows.
+    Used by the rebind dialog. Returns "" for a lone modifier press, since
+    Ctrl on its own isn't a shortcut — the caller should keep listening until
+    a real key arrives.
     """
     keysym = event.keysym
-    if keysym in (
-        "Control_L", "Control_R",
-        "Shift_L", "Shift_R",
-        "Alt_L", "Alt_R", "Meta_L", "Meta_R",
-    ):
+    if keysym in ("Control_L", "Control_R", "Shift_L", "Shift_R",
+                  "Alt_L", "Alt_R", "Meta_L", "Meta_R"):
         return ""
 
     state = int(event.state)
@@ -160,12 +150,7 @@ def parse_event(event) -> str:
     if state & 0x0008 or state & 0x0080:
         parts.append("Alt")
 
-    # Normalize letter keysyms to lowercase (Tk convention for
-    # <Control-x>) so bindings stay case-insensitive from the user's
-    # POV.  For non-letter keys keep the original keysym.
-    if len(keysym) == 1 and keysym.isalpha():
-        parts.append(keysym.lower())
-    else:
-        parts.append(keysym)
-
+    # Tk wants lowercase letters in sequences (<Control-r>, not <Control-R>),
+    # otherwise Shift becomes implicit and the binding misses.
+    parts.append(keysym.lower() if len(keysym) == 1 and keysym.isalpha() else keysym)
     return "<" + "-".join(parts) + ">"

@@ -1,81 +1,110 @@
-"""Recent-presets tracker.
+"""
+Recently-loaded presets, remembered across sessions.
 
-Keeps a per-kind ("steady" or "unsteady") list of the most recently
-loaded / saved preset file paths, MRU-first.  Persisted to
-`user_data/ui_settings.json` under the key `recent_presets` as:
+Stored in user_data/ui_settings.json under "recent_presets", one list per
+simulator, newest first:
 
-    {
-        "steady":   ["/abs/path/one.jsonc", "/abs/path/two.jsonc", ...],
-        "unsteady": ["/abs/path/three.jsonc", ...],
-    }
+    {"steady": ["C:/.../steady_example.jsonc", ...], "unsteady": [...]}
 
-Files that no longer exist are pruned automatically on read, so the
-dropdown never surfaces broken paths.
+Paths that no longer exist are filtered out on read rather than on write, so
+moving a file doesn't corrupt the list and a file that comes back reappears
+where it was. That matters here: presets live in a folder people reorganise,
+and a stale list of dead paths is worse than no list.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
 
 from src.ui.app import settings as user_settings
 
+MAX_RECENT = 10
 
-Kind = Literal["steady", "unsteady"]
-
-MAX_ENTRIES = 10
+_KINDS = ("steady", "unsteady")
 
 
-def _load_all() -> dict[str, list[str]]:
+def _all() -> dict:
     stored = user_settings.get("recent_presets", {}) or {}
     if not isinstance(stored, dict):
-        return {"steady": [], "unsteady": []}
-    return {
-        "steady":   list(stored.get("steady",   []) or []),
-        "unsteady": list(stored.get("unsteady", []) or []),
-    }
+        return {}
+    return stored
 
 
-def _save_all(data: dict[str, list[str]]) -> None:
-    s = user_settings.load_settings()
-    s["recent_presets"] = {
-        "steady":   list(data.get("steady", []))[:MAX_ENTRIES],
-        "unsteady": list(data.get("unsteady", []))[:MAX_ENTRIES],
-    }
-    user_settings.save_settings(s)
+def recent(kind: str, *, existing_only: bool = True) -> list[Path]:
+    """Recent presets for "steady" or "unsteady", newest first.
 
-
-def list_recent(kind: Kind) -> list[Path]:
-    """Return the recent presets for `kind`, freshest first, with any
-    now-missing paths pruned (and the pruned list re-persisted)."""
-    all_data = _load_all()
-    raw = all_data.get(kind, []) or []
-    keep: list[str] = []
-    seen: set[str] = set()
-    for p in raw:
-        if not isinstance(p, str) or not p or p in seen:
+    Filters out anything that's been moved or deleted, unless asked not to.
+    """
+    raw = _all().get(kind, [])
+    if not isinstance(raw, list):
+        return []
+    paths = []
+    for entry in raw:
+        try:
+            path = Path(entry)
+        except (TypeError, ValueError):
             continue
-        seen.add(p)
-        if Path(p).exists():
-            keep.append(p)
-    # If we filtered anything out, persist the pruned list.
-    if keep != raw:
-        all_data[kind] = keep
-        _save_all(all_data)
-    return [Path(p) for p in keep]
+        if not existing_only or path.exists():
+            paths.append(path)
+    return paths[:MAX_RECENT]
 
 
-def record(kind: Kind, path: Path) -> None:
-    """Push `path` to the front of the MRU list.  De-duplicates by
-    absolute-path string comparison."""
-    abs_str = str(Path(path).resolve())
-    all_data = _load_all()
-    existing = [p for p in all_data.get(kind, []) if p != abs_str]
-    all_data[kind] = ([abs_str] + existing)[:MAX_ENTRIES]
-    _save_all(all_data)
+def remember(kind: str, path: Path) -> None:
+    """Push a preset to the front of the list.
+
+    Re-loading something already in the list moves it up rather than
+    duplicating it.
+    """
+    if kind not in _KINDS:
+        return
+    resolved = str(Path(path).resolve())
+
+    stored = _all()
+    existing = [p for p in stored.get(kind, []) if isinstance(p, str)]
+    existing = [p for p in existing if str(Path(p)) != str(Path(resolved))]
+    stored[kind] = [resolved] + existing[:MAX_RECENT - 1]
+
+    settings = user_settings.load_settings()
+    settings["recent_presets"] = stored
+    user_settings.save_settings(settings)
 
 
-def clear(kind: Kind) -> None:
-    all_data = _load_all()
-    all_data[kind] = []
-    _save_all(all_data)
+def forget(kind: str, path: Path) -> None:
+    """Drop one entry, for when a load fails and the file is clearly bad."""
+    stored = _all()
+    target = str(Path(path).resolve())
+    stored[kind] = [p for p in stored.get(kind, [])
+                    if isinstance(p, str) and str(Path(p).resolve()) != target]
+    settings = user_settings.load_settings()
+    settings["recent_presets"] = stored
+    user_settings.save_settings(settings)
+
+
+def clear(kind: str | None = None) -> None:
+    """Empty one list, or all of them."""
+    stored = _all()
+    for k in ([kind] if kind else list(_KINDS)):
+        stored[k] = []
+    settings = user_settings.load_settings()
+    settings["recent_presets"] = stored
+    user_settings.save_settings(settings)
+
+
+def prune() -> int:
+    """Drop every path that no longer exists. Returns how many went.
+
+    Called at startup so the stored list doesn't grow a tail of dead entries
+    from folders that have been reorganised.
+    """
+    stored = _all()
+    removed = 0
+    for kind in _KINDS:
+        before = [p for p in stored.get(kind, []) if isinstance(p, str)]
+        after = [p for p in before if Path(p).exists()]
+        removed += len(before) - len(after)
+        stored[kind] = after
+    if removed:
+        settings = user_settings.load_settings()
+        settings["recent_presets"] = stored
+        user_settings.save_settings(settings)
+    return removed

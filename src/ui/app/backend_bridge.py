@@ -1,9 +1,30 @@
 """
-Thin wrappers around the simulator's existing analysis tools.
+The one module allowed to touch the backend.
 
-Keeping all backend calls behind this module means:
-  - the UI never touches sys.path / module imports directly,
-  - swapping implementations later (subprocess, threading, etc.) is a one-file change.
+Everything else in the UI goes through here.  That keeps the seam narrow: if
+the backend moves, only this file changes, and the pages above it can be
+restructured freely as long as this interface holds.
+
+WHAT IT PROVIDES
+----------------
+  path helpers        where presets, results and user data live
+  load_jsonc/save     reading and writing config files
+  validators          human-readable error lists for a config dict
+  preflight_*         input-range warnings, before committing to a run
+  run_steady/unsteady the actual invocation
+  run listing         enumerating and naming saved results
+
+WHY IT'S SMALLER THAN IT USED TO BE
+-----------------------------------
+The previous version carried a `_reconcile_backend_output` step that ran a
+simulation, scanned two directories, and moved whatever appeared from the
+bundled tree into the writable one.  That existed because the backend picked
+its own output location by walking up from its __file__, which in a frozen
+build landed inside the exe's resources rather than in %APPDATA%.
+
+Both run_steady and run_unsteady now take an explicit `output_dir_filepath` and
+return the path they wrote.  So we hand them the writable directory and use
+what they give back.  The whole reconciliation dance is gone.
 """
 
 from __future__ import annotations
@@ -11,42 +32,38 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from src.common.version import VERSION
+
 
 # =============================================================================
-# Path discovery
+# Roots
 # =============================================================================
 #
-# Two roots exist depending on how the app is running:
+# Two of them, and the difference matters in a frozen build:
 #
-#   - project_root() returns the WRITABLE root — where the app saves
-#     presets, run results, and per-user UI settings.
-#       * Source layout:   the git root (contains user_data/).
-#       * PyInstaller:     %APPDATA%\MRT-Steady-Unsteady\   (Windows)
-#                          ~/Library/Application Support/MRT-Steady-Unsteady/
-#                          $XDG_DATA_HOME/MRT-Steady-Unsteady/ (Linux)
+#   project_root()  WRITABLE.  Presets, results, settings.  Source mode: the
+#                   git checkout.  Frozen: a per-user application-data folder,
+#                   because the install directory may be read-only.
 #
-#   - bundled_root() returns the READ-ONLY root — where PyInstaller
-#     unpacked the bundled resources (default settings, template
-#     .jsonc files, image assets).  In source mode this is the same
-#     as project_root().  In frozen mode this is sys._MEIPASS.
+#   bundled_root()  READ-ONLY.  Default settings, example configs, images.
+#                   Source mode: the same checkout.  Frozen: sys._MEIPASS,
+#                   where PyInstaller unpacked the bundle.
 #
-# On first launch of a frozen bundle, we seed the writable root with
-# the templates + default settings from the bundled root so that
-# 'Load preset' and 'Reset to defaults' find something meaningful.
+# On first frozen launch the writable root is seeded from the bundled one, so
+# "Load preset" and "Reset to defaults" find something.
 
 def _is_frozen() -> bool:
-    import sys
     return bool(getattr(sys, "frozen", False))
 
 
 def _per_user_data_dir() -> Path:
-    """Platform-appropriate writable per-user data dir."""
-    import sys
+    """Platform-appropriate writable per-user directory."""
     if sys.platform.startswith("win"):
         base = os.environ.get("APPDATA") or str(Path.home() / "AppData/Roaming")
         return Path(base) / "MRT-Steady-Unsteady"
@@ -57,78 +74,124 @@ def _per_user_data_dir() -> Path:
 
 
 def _source_layout_root() -> Path:
-    """Root of the git checkout — used only in source mode."""
+    """Root of the git checkout, found by walking up for user_data/."""
     here = Path(__file__).resolve()
     for candidate in [here.parent, *here.parents]:
         if (candidate / "user_data").exists():
             return candidate
+    # src/ui/app/backend_bridge.py -> repo root
     return here.parents[3]
 
 
-_seeded_frozen_root = False
+_seeded = False
 
 
-def _seed_frozen_writable_root(root: Path) -> None:
-    """Idempotent: on first frozen launch, seed the per-user data dir
-    with the templates + default settings we bundled inside the exe."""
-    global _seeded_frozen_root
-    if _seeded_frozen_root:
+# A writable root seeded under an older stamp gets its examples refreshed on
+# next launch, and the stamp is the app version, so every release refreshes
+# them.
+#
+# This exists because the examples are TEMPLATES, not user documents. Seeding
+# them only when absent meant an upgraded install kept the examples from
+# whatever version first ran, so a config written against the old schema
+# survived into a build that no longer understood it — which surfaced as
+# "not an unsteady config, no rocket inputs block found" and
+# "ValueError: Unknown unit: 'n'" in the exe, and never in source mode, where
+# the checkout's own files are read directly.
+#
+# It was a hand-written string, and that is exactly how it failed: the string
+# said 1.5 for the whole of v1.6, through the release that changed the
+# regression coefficient from [0.000132, "."] to [0.132, mm/s]. Every install
+# kept the old example, read the old number as millimetres, and ran the engine
+# at a thousandth of the intended regression rate. Tying it to VERSION means
+# the person who ships a release cannot forget the examples went with it.
+SEED_STAMP = VERSION
+_STAMP_FILE = "user_data/.seeded"
+
+
+def _seed_writable_root(root: Path) -> None:
+    """Populate the writable root from the bundle, refreshing stale examples.
+
+    Idempotent, and never fatal: a failure here costs the user their example
+    presets, not the ability to run the app.
+    """
+    global _seeded
+    if _seeded:
         return
-    _seeded_frozen_root = True
-    import sys
+    _seeded = True
+
     import shutil
     src_root = Path(getattr(sys, "_MEIPASS", str(root)))
-    # Directories the app writes into.
+
     for sub in (
         "user_data",
         "user_data/simulation_configs/steady",
         "user_data/simulation_configs/unsteady",
+        "user_data/simulation_configs/ui_configs",
         "user_data/simulation_results/steady",
         "user_data/simulation_results/unsteady",
     ):
         (root / sub).mkdir(parents=True, exist_ok=True)
-    # Files to seed if the user doesn't already have them.
-    # Left = source (bundled) relative path.
-    # Right = destination relative path (same names — the source repo
-    # already uses `*_example.jsonc` as canonical filenames).
-    to_copy = [
-        ("user_data/default_ui_settings.json",
-         "user_data/default_ui_settings.json"),
-        ("user_data/simulation_configs/steady/steady_example.jsonc",
-         "user_data/simulation_configs/steady/steady_example.jsonc"),
-        ("user_data/simulation_configs/steady/steady_parametric_example.jsonc",
-         "user_data/simulation_configs/steady/steady_parametric_example.jsonc"),
-        ("user_data/simulation_configs/unsteady/unsteady_example.jsonc",
-         "user_data/simulation_configs/unsteady/unsteady_example.jsonc"),
+
+    stamp_path = root / _STAMP_FILE
+    try:
+        stale = stamp_path.read_text(encoding="utf-8").strip() != SEED_STAMP
+    except OSError:
+        stale = True                            # never seeded, or unreadable
+
+    seeds = [
+        "user_data/default_ui_settings.json",
+        "user_data/simulation_configs/steady/steady_example.jsonc",
+        "user_data/simulation_configs/steady/steady_parametric_example.jsonc",
+        "user_data/simulation_configs/unsteady/unsteady_example.jsonc",
+        # The UI failure-path configs. They ship with the exe so the checklist
+        # can be walked against a real build, which is where the bugs they
+        # exist to catch actually live.
+        "user_data/simulation_configs/ui_configs/ui_01_steady_missing_field.jsonc",
+        "user_data/simulation_configs/ui_configs/ui_02_steady_both_alternates.jsonc",
+        "user_data/simulation_configs/ui_configs/ui_03_steady_neither_alternate.jsonc",
+        "user_data/simulation_configs/ui_configs/ui_04_steady_unknown_unit.jsonc",
+        "user_data/simulation_configs/ui_configs/ui_05_unsteady_missing_field.jsonc",
+        "user_data/simulation_configs/ui_configs/ui_06_unsteady_both_alternates.jsonc",
+        "user_data/simulation_configs/ui_configs/ui_07_unsteady_preflight_warnings.jsonc",
+        "user_data/simulation_configs/ui_configs/ui_08_unsteady_preflight_critical.jsonc",
+        "user_data/simulation_configs/ui_configs/ui_09_unsteady_instant_valve.jsonc",
     ]
-    for src_rel, dst_rel in to_copy:
-        src = src_root / src_rel
-        dst = root / dst_rel
-        if src.exists() and not dst.exists():
-            try:
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(src, dst)
-            except Exception:
-                # Non-fatal — the app can still run without the seeds.
-                pass
+    for rel in seeds:
+        src, dst = src_root / rel, root / rel
+        if not src.exists():
+            continue
+        if dst.exists() and not stale:
+            continue
+        try:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if dst.exists():
+                # Someone may have edited an example in place. Keep a copy
+                # rather than silently discarding their work.
+                shutil.copyfile(dst, dst.with_suffix(dst.suffix + ".bak"))
+            shutil.copyfile(src, dst)
+        except OSError:
+            pass
+
+    if stale:
+        try:
+            stamp_path.write_text(SEED_STAMP, encoding="utf-8")
+        except OSError:
+            pass
 
 
 def project_root() -> Path:
-    """WRITABLE root.  When frozen, returns the per-user data dir (and
-    seeds it once).  In source mode, returns the git root."""
+    """The WRITABLE root.  Everything the user creates lives under here."""
     if _is_frozen():
         root = _per_user_data_dir()
-        _seed_frozen_writable_root(root)
+        _seed_writable_root(root)
         return root
     return _source_layout_root()
 
 
 def bundled_root() -> Path:
-    """READ-ONLY root of bundled resources.  Frozen: sys._MEIPASS.
-    Source: same as project_root()."""
+    """The READ-ONLY root holding bundled resources."""
     if _is_frozen():
-        import sys
-        return Path(sys._MEIPASS)
+        return Path(sys._MEIPASS)               # noqa: SLF001 - PyInstaller's API
     return _source_layout_root()
 
 
@@ -136,441 +199,394 @@ def steady_presets_dir() -> Path:
     return project_root() / "user_data" / "simulation_configs" / "steady"
 
 
-def steady_results_dir() -> Path:
-    return project_root() / "user_data" / "simulation_results" / "steady"
-
-
 def unsteady_presets_dir() -> Path:
     return project_root() / "user_data" / "simulation_configs" / "unsteady"
+
+
+def steady_results_dir() -> Path:
+    return project_root() / "user_data" / "simulation_results" / "steady"
 
 
 def unsteady_results_dir() -> Path:
     return project_root() / "user_data" / "simulation_results" / "unsteady"
 
 
-# ---------------------------------------------------------------------------
-# Post-run result reconciliation
-# ---------------------------------------------------------------------------
-#
-# The simulator backend does its own path resolution — it walks up from
-# its own __file__ looking for a user_data/ dir.  In a frozen PyInstaller
-# bundle, that walk finds `_internal/user_data/` (which we bundled so the
-# backend's data files load), NOT the per-user %APPDATA% location the UI
-# writes/reads from.
-#
-# The fix isn't to change the backend (we don't want to touch it): we
-# scan BOTH locations after a run and move any new result file from the
-# backend's dir into the writable %APPDATA% dir.  That way the UI's
-# downstream code always sees results where it expects them.
-
-def _reconcile_backend_output(kind: str, before_writable: set) -> Path | None:
-    """After the backend runs, find where the result JSON actually
-    landed (either in the writable user_data or in the bundled
-    _internal/user_data) and return its canonical location under the
-    writable dir.  Moves the file if the backend wrote it elsewhere.
-
-    `kind` is "steady" or "unsteady".
-    `before_writable` is the set of .json files present in the writable
-    results dir before the run started.
-
-    Returns None if no new file appeared anywhere.
-    """
-    import shutil
-
-    writable_dir = (unsteady_results_dir() if kind == "unsteady"
-                    else steady_results_dir())
-    writable_dir.mkdir(parents=True, exist_ok=True)
-
-    # 1. Any new file in the writable dir? — happy path, source mode.
-    after_writable = set(writable_dir.glob("*.json"))
-    new_writable = sorted(after_writable - before_writable,
-                          key=lambda p: p.stat().st_mtime, reverse=True)
-    if new_writable:
-        return new_writable[0]
-
-    # 2. Frozen mode: the backend wrote inside _internal/user_data/...
-    #    Look for a fresh .json there and move it.
-    if _is_frozen():
-        bundled_dir = (bundled_root() / "user_data" / "simulation_results"
-                       / kind)
-        if bundled_dir.exists():
-            candidates = sorted(bundled_dir.glob("*.json"),
-                                key=lambda p: p.stat().st_mtime,
-                                reverse=True)
-            # Only files newer than ~120 s ago count as "just produced".
-            # (Prevents grabbing stale test fixtures on repeat runs.)
-            import time
-            cutoff = time.time() - 120
-            for p in candidates:
-                if p.stat().st_mtime < cutoff:
-                    break
-                # Move it to the writable dir under the same name.
-                dst = writable_dir / p.name
-                try:
-                    shutil.move(str(p), str(dst))
-                except Exception:
-                    # If move fails (permission, cross-device), fall
-                    # back to copy — the source stays in _internal but
-                    # at least the UI can read the writable copy.
-                    try:
-                        shutil.copyfile(str(p), str(dst))
-                    except Exception:
-                        continue
-                # Also try to move any adjacent per-run output folder
-                # (PDF/PNG bundle, sibling of the .json).
-                sibling = p.with_suffix("")
-                if sibling.is_dir():
-                    try:
-                        shutil.move(str(sibling), str(writable_dir / sibling.name))
-                    except Exception:
-                        pass
-                return dst
-    return None
+def assets_dir() -> Path:
+    """Images and icons, which ship read-only inside the bundle."""
+    return bundled_root() / "src" / "ui" / "assets"
 
 
 # =============================================================================
-# JSONC helpers (matches what variable_initialization.py uses)
+# JSONC
 # =============================================================================
+#
+# Configs are .jsonc: JSON plus // and /* */ comments, and occasionally a
+# trailing comma. json5 handles all of it and is already a dependency; the
+# regex fallback exists only so the UI still opens if json5 is missing.
 
 def load_jsonc(path: Path) -> dict:
-    """
-    Read a JSON-with-comments file.
-
-    Mirrors the regex-strip approach the simulator backend already uses, so
-    we accept exactly the same files (including line comments and block
-    comments).
-    """
+    """Read a commented JSON file."""
     text = Path(path).read_text(encoding="utf-8")
-    text = re.sub(r"//.*?$|/\*.*?\*/", "", text, flags=re.MULTILINE | re.DOTALL)
-    return json.loads(text)
+    try:
+        import json5
+        return json5.loads(text)
+    except ImportError:
+        stripped = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+        stripped = re.sub(r"//.*?$", "", stripped, flags=re.MULTILINE)
+        stripped = re.sub(r",(\s*[}\]])", r"\1", stripped)
+        return json.loads(stripped)
 
 
 def save_jsonc(path: Path, data: dict) -> None:
-    """Write a dict as JSON (with .jsonc extension by convention)."""
-    Path(path).write_text(
-        json.dumps(data, indent=4, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    """Write a config.
 
-
-# =============================================================================
-# Unsteady — list & visualize saved results
-# =============================================================================
-
-def list_unsteady_results() -> list[Path]:
-    """All saved unsteady result JSONs, newest first."""
-    d = unsteady_results_dir()
-    if not d.exists():
-        return []
-    return sorted(d.glob("*.json"), reverse=True)
-
-
-def list_steady_results() -> list[Path]:
-    """All saved steady result JSONs, newest first.  Filters out the
-    `_ui_run_*.jsonc` temp configs; keeps only the actual result JSONs
-    the simulator produces."""
-    d = steady_results_dir()
-    if not d.exists():
-        return []
-    return sorted(d.glob("*.json"), reverse=True)
-
-
-def show_unsteady_results(results_file: Path) -> None:
+    Comments are not preserved — the UI regenerates the file from the form, so
+    there is nothing to preserve them from.  Hand-written presets keep their
+    comments right up until someone saves over them from the app.
     """
-    Call display_unsteady_results on a saved file.
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=4), encoding="utf-8")
 
-    Note: matplotlib's plt.show() blocks until the user closes every figure.
+
+def ui_test_configs_dir() -> Path:
+    """The deliberately-broken configs that drive the UI bug checklist."""
+    return project_root() / "user_data" / "simulation_configs" / "ui_configs"
+
+
+def list_presets(kind: str) -> list[Path]:
+    """Saved presets for "steady" or "unsteady", newest first.
+
+    Includes the ui_configs/ test files, so the checklist can be walked from
+    the normal Load preset dialog rather than by hunting through %APPDATA%.
+    They're named ui_NN_<kind>_* and sort to the bottom by mtime anyway.
     """
-    from src.backend.unsteady.analysis.unsteady_results import display_unsteady_results
-    display_unsteady_results(
-        json_filename=results_file.name,
-        json_filepath=results_file.parent,
-    )
+    directory = steady_presets_dir() if kind == "steady" else unsteady_presets_dir()
+    found = list(directory.glob("*.jsonc")) if directory.is_dir() else []
+
+    ui_dir = ui_test_configs_dir()
+    if ui_dir.is_dir():
+        found += [p for p in ui_dir.glob(f"ui_*_{kind}_*.jsonc")]
+
+    return sorted(found, key=lambda p: p.stat().st_mtime, reverse=True)
 
 
 # =============================================================================
-# Steady — presets
+# Validation
 # =============================================================================
+#
+# These answer "would the backend accept this?" without running anything, so
+# the user gets a list of problems instead of one exception at a time.
+#
+# Values arrive as [value, unit] pairs. "Filled" means the pair exists and its
+# value is neither None nor "". That distinction carries real weight now: an
+# unused alternate field is written [null, "m"], so the KEY is always present
+# and only the value tells you whether the user filled it in.
 
-def list_steady_presets() -> list[Path]:
-    """All saved steady-input presets, newest first."""
-    d = steady_presets_dir()
-    if not d.exists():
-        return []
-    return sorted(d.glob("*.jsonc")) + sorted(d.glob("*.json"))
+def _is_filled(value: Any) -> bool:
+    """True if a config entry actually carries a value."""
+    if value is None:
+        return False
+    if isinstance(value, (list, tuple)):
+        return len(value) > 0 and value[0] is not None and value[0] != ""
+    return value != ""
 
 
-# =============================================================================
-# Steady — validation
-# =============================================================================
+def check_alternate_fields(values: dict, pairs: list[tuple[str, str]]) -> list[str]:
+    """Enforce exactly-one-of for each pair.  Returns error strings.
 
-# These are the rocket_inputs keys required for every sim type.
-# NOTE: the UI now writes diameter-flavoured keys (fuel_external_diameter,
-# rocket_external_diameter, initial_internal_fuel_diameter) and the backend
-# normalizer converts them to the radius keys the physics loop needs.
-# We check the DIAMETER key here because that's what the UI form writes;
-# the normalizer runs only inside the backend.
-STEADY_BASE_REQUIRED = (
-    "oxidizer_mass_flow_rate",
-    "chamber_pressure",
-    "fuel_external_diameter",
-    "fuel_length",
-    "liquid_oxidizer_type",
-    "solid_fuel_type",
-    "fuel_grain_density",
-    "regression_rate_scaling_coefficient",
-    "regression_rate_exponent",
-)
-
-# Additionally required for fuel_mass_convergence and parametric_study (kinematics).
-STEADY_KINEMATICS_REQUIRED = (
-    "target_apogee",
-    "launch_site_altitude",
-    "dry_mass",
-    "rocket_external_diameter",
-    "drag_coefficient",
-    "launch_angle",
-)
+    Both-filled and neither-filled are both errors.  Zero counts as filled,
+    which is deliberate: 0 is a meaningful ullage fraction.
+    """
+    errors: list[str] = []
+    for a, b in pairs:
+        filled = [k for k in (a, b) if _is_filled(values.get(k))]
+        if len(filled) == 0:
+            errors.append(f"fill exactly one of: {a}, {b}")
+        elif len(filled) == 2:
+            errors.append(f"fill only one of: {a}, {b} (both are filled)")
+    return errors
 
 
 def validate_steady_config(config: dict) -> list[str]:
-    """
-    Return a list of human-readable validation errors.  Empty list = valid.
+    """Human-readable problems with a steady config.  Empty list means valid.
 
-    Parametric-study note: any variable listed in
-    simulation_settings.parametric_study_settings is *provided by the sweep*
-    and does not need a static value in rocket_inputs.  We treat those
-    keys as satisfied for required-field checks.
+    Variables driven by a parametric sweep count as satisfied even though they
+    have no static value, because the solver fills them in per point.
     """
+    from src.ui.app import field_registry as registry
+
     errors: list[str] = []
-
-    sim = config.get("simulation_settings", {}) or {}
-    ri  = config.get("rocket_inputs", {}) or {}
+    sim = config.get("simulation_settings") or {}
+    inputs = config.get("rocket_inputs") or {}
 
     sim_type = (sim.get("simulation_type") or "").lower()
     if sim_type not in ("hotfire", "fuel_mass_convergence", "parametric_study"):
-        errors.append(f"simulation_type must be one of: "
-                      f"hotfire, fuel_mass_convergence, parametric_study  "
-                      f"(got {sim_type!r})")
+        errors.append(f"simulation_type must be hotfire, fuel_mass_convergence "
+                      f"or parametric_study (got {sim_type!r})")
 
-    # Which rocket_inputs keys are being provided by the parametric sweep?
-    parametrized: set[str] = set()
-    if sim_type == "parametric_study":
-        ps = sim.get("parametric_study_settings") or {}
-        if isinstance(ps, dict):
-            parametrized = set(ps.keys())
+    sweep = sim.get("parametric_study_settings") or {}
+    parametrized = set(sweep) if sim_type == "parametric_study" else set()
 
-    # base inputs
-    for key in STEADY_BASE_REQUIRED:
-        if key in parametrized:
-            continue
-        if ri.get(key) in (None, ""):
-            errors.append(f"missing required: {key}")
+    schema = registry.steady_schema_keys()
+    for key in schema.get("base_requirements", []):
+        if key not in parametrized and not _is_filled(inputs.get(key)):
+            errors.append(f"missing required: {registry.label(key)}")
 
-    # kinematics inputs — for everything except plain hotfire
     if sim_type in ("fuel_mass_convergence", "parametric_study"):
-        for key in STEADY_KINEMATICS_REQUIRED:
-            if key in parametrized:
-                continue
-            if ri.get(key) in (None, ""):
-                errors.append(f"missing required (kinematics): {key}")
+        for key in schema.get("kinematics_requirements", []):
+            if key not in parametrized and not _is_filled(inputs.get(key)):
+                errors.append(f"missing required: {registry.label(key)}")
 
-    # Hotfire needs either the initial internal fuel diameter OR the
-    # fuel mass — the solver derives the missing one.
-    # NOTE: the UI writes the DIAMETER key; the backend normalizer
-    # converts it to the radius key the physics loop expects.
+    # Hotfire derives whichever alternate you leave out, but needs one of them.
     if sim_type == "hotfire":
-        if not (ri.get("initial_internal_fuel_diameter") or ri.get("fuel_mass")):
-            errors.append("hotfire requires one of: "
-                          "initial_internal_fuel_diameter, fuel_mass")
+        errors += check_alternate_fields(
+            inputs, [("fuel_mass", "initial_internal_fuel_diameter")])
 
-    # parametric study needs at least one parametric variable
     if sim_type == "parametric_study":
-        ps = sim.get("parametric_study_settings") or {}
-        if not isinstance(ps, dict) or not ps:
-            errors.append("parametric_study requires at least one variable in "
-                          "simulation_settings.parametric_study_settings")
-        else:
-            for var_name, spec in ps.items():
-                if not isinstance(spec, dict):
-                    errors.append(f"parametric '{var_name}' must be an object")
-                    continue
-                for f in ("low_end", "high_end", "step_size"):
-                    if spec.get(f) in (None, ""):
-                        errors.append(f"parametric '{var_name}' is missing '{f}'")
+        if not sweep:
+            errors.append("a parametric study needs at least one swept variable")
+        for name, spec in sweep.items():
+            if not isinstance(spec, dict):
+                errors.append(f"swept variable {name!r} must be an object")
+                continue
+            for bound in ("low_end", "high_end", "step_size"):
+                if not _is_filled(spec.get(bound)):
+                    errors.append(f"swept variable {name!r} is missing {bound}")
 
     return errors
 
 
-# =============================================================================
-# Steady — run
-# =============================================================================
-
-def run_steady(config: dict, config_file_path: Path | None = None) -> tuple[Path, dict]:
-    """
-    Run a steady simulation from an in-memory config dict.
-
-    Parameters
-    ----------
-    config : dict
-        The in-memory configuration.
-    config_file_path : Path or None
-        If provided, the simulator is called with this existing file
-        instead of writing a temp file.  Used when the page knows the
-        current form contents exactly match a saved preset, so we don't
-        clutter the configs directory.
-
-    Returns
-    -------
-    (results_file_path, results_dict)
-    """
-    presets = steady_presets_dir()
-    presets.mkdir(parents=True, exist_ok=True)
-
-    # `cleanup_after` is only true when we created the file ourselves as a
-    # throwaway (auto-save unchecked on the page side).  In that case we
-    # write to the OS's temp dir so nothing lingers in user_data/.
-    cleanup_after = False
-    if config_file_path is None:
-        fd, tmp_str = tempfile.mkstemp(suffix=".jsonc", prefix="mrt_steady_")
-        os.close(fd)
-        temp_path = Path(tmp_str)
-        save_jsonc(temp_path, config)
-        cleanup_after = True
-    else:
-        temp_path = Path(config_file_path)
-    temp_name = temp_path.name
-
-    # 2. snapshot the WRITABLE results dir so we can spot the new file
-    results = steady_results_dir()
-    results.mkdir(parents=True, exist_ok=True)
-    before = set(results.glob("*.json"))
-
-    try:
-        # 3. invoke the simulator.
-        from src.backend.steady.steady_main import run_steady as _run_steady
-        _run_steady(temp_name, rocket_inputs_filepath=temp_path.parent)
-
-        # 4. Reconcile: in source mode the backend wrote to the writable
-        # dir directly; in frozen mode it wrote to _internal/user_data/
-        # and this call moves it into the writable dir.
-        result_path = _reconcile_backend_output("steady", before)
-        if result_path is None:
-            raise RuntimeError("Simulation ran but produced no result file")
-
-        # 5. load & return
-        with open(result_path, "r", encoding="utf-8") as f:
-            results_dict = json.load(f)
-        return result_path, results_dict
-
-    finally:
-        # Only delete files we created in OS temp; never touch a user preset.
-        if cleanup_after:
-            try:
-                temp_path.unlink()
-            except Exception:
-                pass
-
-
-# =============================================================================
-# Unsteady — presets, validation, run
-# =============================================================================
-
-def list_unsteady_presets() -> list[Path]:
-    """All saved unsteady-input presets."""
-    d = unsteady_presets_dir()
-    if not d.exists():
-        return []
-    return sorted(d.glob("*.jsonc")) + sorted(d.glob("*.json"))
-
-
-# Minimum-required CVs for any unsteady run.
-_UNSTEADY_REQUIRED_CVS = (
-    "CV1_tank", "CV2_valve", "CV3_injector",
-    "CV4_chamber", "CV5_nozzle", "CV6_trajectory",
-)
+# Alternate-field pairs the unsteady form has to enforce, per CV.
+UNSTEADY_ALTERNATES: dict[str, list[tuple[str, str]]] = {
+    "CV1_tank": [("tank_ullage_fraction", "tank_internal_length")],
+    "CV4_chamber": [("chamber_fuel_mass", "chamber_fuel_internal_diameter")],
+}
 
 
 def validate_unsteady_config(config: dict) -> list[str]:
-    """
-    Return a list of human-readable validation errors.  Empty list = valid.
+    """Human-readable problems with an unsteady config.  Empty list means valid.
 
-    Only checks the broad shape — that every CV block exists and the
-    required-key set for each CV has values.  The simulator itself does
-    the deeper unit / range validation when it runs.
+    Which fields matter depends on the model each CV has selected, so this
+    walks the backend schema rather than a list of its own.
     """
+    from src.ui.app import field_registry as registry
+
     errors: list[str] = []
-    ri = (config.get("rocket_inputs") or {})
-    cvs = (ri.get("CV_inputs") or {})
+    block = config.get("config") or {}
+    cv_inputs = block.get("rocket_inputs") or {}
+    if not cv_inputs:
+        return ["config is missing its rocket_inputs block"]
 
-    for cv in _UNSTEADY_REQUIRED_CVS:
-        block = cvs.get(cv)
-        if not isinstance(block, dict):
-            errors.append(f"missing CV block: {cv}")
+    schema = registry.unsteady_schema_keys()
+    known_cvs = {cv for cv, _model in schema}
+
+    for cv in sorted(known_cvs):
+        cv_block = cv_inputs.get(cv)
+        if not isinstance(cv_block, dict):
+            errors.append(f"{cv} is missing")
             continue
-        if not block.get("model"):
-            errors.append(f"{cv}: missing model")
 
-    # Tank: must have ONE of ullage_fraction / internal_length_m
-    tank = cvs.get("CV1_tank") or {}
-    if (not tank.get("tank_ullage_fraction")
-            and not tank.get("tank_internal_length_m")):
-        errors.append("CV1_tank: provide one of "
-                      "tank_ullage_fraction or tank_internal_length_m")
+        model = cv_block.get("model")
+        if not model:
+            errors.append(f"{cv} has no model selected")
+            continue
+        if (cv, model) not in schema:
+            errors.append(f"{cv}: unknown model {model!r}")
+            continue
 
-    # Chamber: must have ONE of fuel_mass_kg / fuel_internal_radius_m
-    chamber = cvs.get("CV4_chamber") or {}
-    if (not chamber.get("chamber_fuel_mass_kg")
-            and not chamber.get("chamber_fuel_internal_radius_m")):
-        errors.append("CV4_chamber: provide one of "
-                      "chamber_fuel_mass_kg or chamber_fuel_internal_radius_m")
+        alternates = UNSTEADY_ALTERNATES.get(cv, [])
+        in_a_pair = {k for pair in alternates for k in pair}
+
+        for key in schema[(cv, model)]:
+            if key in in_a_pair:
+                continue                        # handled by the pair check
+            if not _is_filled(cv_block.get(key)):
+                errors.append(f"{cv}: missing {registry.label(key)}")
+
+        for message in check_alternate_fields(cv_block, alternates):
+            errors.append(f"{cv}: {message}")
 
     return errors
 
 
-def run_unsteady(config: dict, config_file_path: Path | None = None) -> tuple[Path, dict]:
+# =============================================================================
+# Preflight
+# =============================================================================
+
+def preflight_steady(rocket_inputs: dict) -> dict:
+    """Input-range warnings for a steady config, keyed by warning ID."""
+    from src.backend.common.preflight import preflight_steady as _preflight
+    return _preflight(rocket_inputs)
+
+
+def preflight_unsteady(rocket_inputs: dict) -> dict:
+    """Input-range warnings for an unsteady config, keyed by warning ID."""
+    from src.backend.common.preflight import preflight_unsteady as _preflight
+    return _preflight(rocket_inputs)
+
+
+def worst_severity(warnings: dict) -> str | None:
+    """The most serious severity in a warnings dict, or None if it's empty.
+
+    Lets a caller decide how loudly to present the modal without knowing the
+    severity ordering itself.
     """
-    Run an unsteady simulation from an in-memory config dict.
+    order = ("advisory", "caution", "critical")
+    worst = None
+    for entry in (warnings or {}).values():
+        severity = (entry or {}).get("severity") if isinstance(entry, dict) else None
+        if severity in order and (worst is None or order.index(severity) > order.index(worst)):
+            worst = severity
+    return worst
 
-    See run_steady for the full contract.  If `config_file_path` is given,
-    that file is reused instead of writing a temp one — UI pages set this
-    when the form contents still match an already-saved preset.
+
+# =============================================================================
+# Running
+# =============================================================================
+#
+# Both simulators read their config from a FILE rather than a dict, so what's
+# in the form has to be written somewhere before a run.
+#
+# It goes to a scratch file, every time, and never to the user's preset. An
+# earlier version passed the loaded preset's path straight through, which was
+# wrong twice over:
+#
+#   * The backend then read whatever was on disk, not what was in the form.
+#     Loading steady_example, switching it to hotfire and clicking Run gave you
+#     a fuel-mass convergence, because the file still said convergence. It only
+#     appeared to work when auto-save happened to write the edits back first —
+#     which is why it reproduced in the exe and not from source.
+#   * Running a preset quietly rewrote it. Open steady_example, tweak a number,
+#     run, and steady_example was now the tweaked version forever.
+#
+# Saving a preset is a separate, deliberate act. Running is not one.
+
+def _config_to_file(config: dict, kind: str) -> tuple[str, Path]:
+    """Write the config to a scratch directory. Returns (filename, directory).
+
+    The caller deletes the directory when the run finishes.
     """
-    presets = unsteady_presets_dir()
-    presets.mkdir(parents=True, exist_ok=True)
+    tmp_dir = Path(tempfile.mkdtemp(prefix=f"mrt_{kind}_"))
+    name = f"{kind}_run.jsonc"
+    save_jsonc(tmp_dir / name, config)
+    return name, tmp_dir
 
-    cleanup_after = False
-    if config_file_path is None:
-        fd, tmp_str = tempfile.mkstemp(suffix=".jsonc", prefix="mrt_unsteady_")
-        os.close(fd)
-        temp_path = Path(tmp_str)
-        save_jsonc(temp_path, config)
-        cleanup_after = True
-    else:
-        temp_path = Path(config_file_path)
-    temp_name = temp_path.name
 
-    results = unsteady_results_dir()
-    results.mkdir(parents=True, exist_ok=True)
-    before = set(results.glob("*.json"))
+def run_steady(config: dict) -> Path:
+    """Run a steady simulation.  Returns the path of the results JSON.
 
+    Blocking and slow enough to matter, so callers run it on a worker thread.
+    """
+    from src.backend.steady.steady_main import run_steady as _run
+
+    name, directory = _config_to_file(config, "steady")
+    out_dir = steady_results_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
     try:
-        from src.backend.unsteady.engine.phase_runner import run_unsteady as _run_unsteady
-        _run_unsteady(temp_name, rocket_inputs_filepath=temp_path.parent)
-
-        # See run_steady comment: in frozen mode the backend wrote into
-        # _internal/user_data/... and we move it into the writable dir.
-        result_path = _reconcile_backend_output("unsteady", before)
-        if result_path is None:
-            raise RuntimeError("Simulation ran but produced no result file")
-
-        with open(result_path, "r", encoding="utf-8") as f:
-            results_dict = json.load(f)
-        return result_path, results_dict
-
+        return Path(_run(name, directory, out_dir))
     finally:
-        if cleanup_after:
-            try:
-                temp_path.unlink()
-            except Exception:
-                pass
+        import shutil
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def run_unsteady(config: dict) -> Path:
+    """Run an unsteady simulation.  Returns the path of the results JSON.
+
+    Much slower than steady — tens of seconds to minutes — so this always
+    belongs on a worker thread.
+    """
+    from src.backend.unsteady.engine.phase_runner import run_unsteady as _run
+
+    name, directory = _config_to_file(config, "unsteady")
+    out_dir = unsteady_results_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        return Path(_run(name, directory, out_dir))
+    finally:
+        import shutil
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+# =============================================================================
+# Saved runs
+# =============================================================================
+#
+# The two simulators write different shapes: steady drops <name>.json straight
+# into its results folder, unsteady creates <name>/ holding sim_data.json plus
+# any graphs. The helpers below paper over that so the results browser can list
+# both without caring.
+
+# "sim_results.json" is what the engine wrote before the rename; accepted so
+# older runs still show up.
+_RUN_JSON_NAMES = ("sim_data.json", "sim_results.json")
+
+
+def _run_json_in_dir(directory: Path) -> Path | None:
+    for name in _RUN_JSON_NAMES:
+        candidate = directory / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def list_runs(kind: str) -> list[Path]:
+    """Saved runs for "steady" or "unsteady", newest first.
+
+    Entries are whatever represents the run: a .json file for steady, a
+    directory for unsteady.  Pass them to run_json_path() and run_display_name()
+    rather than interpreting them directly.
+    """
+    directory = steady_results_dir() if kind == "steady" else unsteady_results_dir()
+    if not directory.is_dir():
+        return []
+    runs = [entry for entry in directory.iterdir()
+            if (entry.is_dir() and _run_json_in_dir(entry) is not None)
+            or (entry.is_file() and entry.suffix == ".json")]
+    return sorted(runs, key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def run_json_path(run: Path) -> Path | None:
+    """The results JSON for a run, whichever layout it uses."""
+    run = Path(run)
+    if run.is_dir():
+        return _run_json_in_dir(run)
+    return run if run.exists() else None
+
+
+def run_display_name(run: Path) -> str:
+    """What to call a run in a list."""
+    return Path(run).stem if Path(run).is_file() else Path(run).name
+
+
+def run_timestamp(run: Path) -> datetime:
+    """When a run was written, for sorting and for display."""
+    return datetime.fromtimestamp(Path(run).stat().st_mtime)
+
+
+def run_program_version(run: Path) -> str | None:
+    """Which build wrote this run, or None for one written before we stamped it.
+
+    Reads the head of the file rather than parsing it. Both programs put their
+    metadata block near the top, and a parametric results file runs to
+    megabytes: parsing one to read a five-character string would make clicking
+    a row in the browser feel slow for no reason.
+    """
+    path = run_json_path(run)
+    if path is None:
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            head = handle.read(64 * 1024)
+    except OSError:
+        return None
+    match = re.search(r'"program_version"\s*:\s*"([^"]{1,32})"', head)
+    return match.group(1) if match else None
+
+
+def load_run(run: Path) -> dict:
+    """Parse a saved run's results JSON."""
+    path = run_json_path(run)
+    if path is None:
+        raise FileNotFoundError(f"No results JSON inside {run}")
+    return json.loads(path.read_text(encoding="utf-8"))

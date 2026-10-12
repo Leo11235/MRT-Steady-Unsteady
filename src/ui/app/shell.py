@@ -1,407 +1,470 @@
 """
-AppShell — the persistent application window.
+AppShell — the one window the whole app lives in.
 
-Holds the top bar (with home button + page title) and a page stack
-that lets us swap pages without ever opening a second window.
+Owns the top bar and a stack of pages that swap in place. Nothing ever opens a
+second window except modals.
 
-To add a new page:
-  1. Write a new class in src/ui/app/pages/<name>.py with class-attribute TITLE.
-  2. Import it here and add it to the PAGES dict below.
+ADDING A PAGE
+-------------
+Add a row to PAGES: a key, the module that holds it, and the class name. The
+shell imports it the first time you navigate there. Nothing else to wire.
+
+    "settings": PageRef("src.ui.app.pages.settings_page", "SettingsPage")
+
+If the module doesn't exist yet, the shell shows a placeholder instead of
+crashing. That's what lets the app run before every page is written: pages come
+online one at a time as their modules appear.
+
+PAGE CONTRACT
+-------------
+A page is a CTkFrame subclass taking (master, on_navigate). Everything below is
+optional and probed with hasattr:
+
+    TITLE               class attribute, shown in the top bar
+    on_show()           called each time the page is raised
+    handle_shortcut(a)  called when a keyboard action fires while visible
+    is_dirty()          True if navigating home should ask first
+    reset_to_defaults() called when the user goes home
 """
 
 from __future__ import annotations
 
+import gc
+import importlib
 import tkinter as tk
+from dataclasses import dataclass
+from typing import Callable, Optional
 
 import customtkinter as ctk
 
+from src.ui.app import settings as user_settings
 from src.ui.app import theme
-from src.ui.app.services import i18n
-from src.ui.app.services.shortcuts import ShortcutRouter
-from src.ui.app.pages.main_menu import MainMenuPage
-from src.ui.app.pages.steady_page import SteadyPage
-from src.ui.app.pages.unsteady_page import UnsteadyPage
-from src.ui.app.pages.results_browser import ResultsBrowserPage
-from src.ui.app.pages.bug_report import BugReportPage
-from src.ui.app.pages.settings_page import SettingsPage
-from src.ui.app.pages.loading_screen import LoadingScreen
-from src.ui.app.pages.steady_results import SteadyResultsPage
-from src.ui.app.pages.unsteady_results import UnsteadyResultsPage
-from src.ui.app.pages.patchnotes import PatchnotesPage
+from src.ui.app.pages.placeholder import PlaceholderPage
+from src.ui.app.services import crash_guard, recent_presets
+from src.ui.app.services.shortcuts import ShortcutRouter, load_bindings
+from src.ui.app.widgets.confirm_button import ConfirmButton
+from src.ui.app.widgets.word_edit import enable_word_editing
 
 
-# How long (ms) the "Confirm cancel" state sticks around before reverting
-# to plain "Cancel" if the user doesn't click a second time.
-_CONFIRM_CANCEL_TIMEOUT_MS = 3000
+@dataclass(frozen=True)
+class PageRef:
+    """Where to find a page, resolved on first navigation."""
+    module: str
+    cls: str
 
 
 class AppShell(ctk.CTk):
-    """The root window.  One instance per application run."""
+    """The root window. One instance per run."""
 
-    # ordered so debugging dumps come out predictably
-    PAGES = {
-        "main":              MainMenuPage,
-        "steady":            SteadyPage,
-        "unsteady":          UnsteadyPage,
-        "results":           ResultsBrowserPage,
-        "bug":               BugReportPage,
-        "settings":          SettingsPage,
-        "loading":           LoadingScreen,
-        "steady_results":    SteadyResultsPage,
-        "unsteady_results":  UnsteadyResultsPage,
-        "patchnotes":        PatchnotesPage,
+    # Set while go() is mid-navigation. See _pump() for why it is needed.
+    _navigating = False
+
+    PAGES: dict[str, PageRef] = {
+        "main":             PageRef("src.ui.app.pages.main_menu", "MainMenuPage"),
+        "steady":           PageRef("src.ui.app.pages.steady_page", "SteadyPage"),
+        "unsteady":         PageRef("src.ui.app.pages.unsteady_page", "UnsteadyPage"),
+        "loading":          PageRef("src.ui.app.pages.loading_screen", "LoadingScreen"),
+        "results":          PageRef("src.ui.app.pages.results_browser", "ResultsBrowserPage"),
+        "steady_results":   PageRef("src.ui.app.pages.steady_results", "SteadyResultsPage"),
+        "unsteady_results": PageRef("src.ui.app.pages.unsteady_results", "UnsteadyResultsPage"),
+        "settings":         PageRef("src.ui.app.pages.settings_page", "SettingsPage"),
+        "bug":              PageRef("src.ui.app.pages.bug_report", "BugReportPage"),
+        "patchnotes":       PageRef("src.ui.app.pages.patchnotes", "PatchnotesPage"),
     }
+
+    # Pages that suppress the Home button: main is home, loading shows Cancel
+    # instead, and settings has its own Save/Cancel that own the navigation.
+    _NO_HOME = ("main", "loading", "settings")
 
     def __init__(self) -> None:
         super().__init__()
 
-        # ---- global appearance -------------------------------------------
+        # Dark only. Every colour in theme.py is tuned against the dark
+        # background, and a light mode nobody used was one more thing to check
+        # on every screenshot.
         ctk.set_appearance_mode(theme.APPEARANCE)
         ctk.set_default_color_theme(theme.COLOR_THEME)
 
-        # ---- window chrome -----------------------------------------------
-        self.title(theme.APP_TITLE)
-        # NOTE: we deliberately DON'T call self.geometry(...) before the
-        # zoom attempt below.  Setting an explicit initial geometry gets
-        # baked in as the "unzoomed" size, and on some Windows setups Tk
-        # briefly falls back to it during startup — which produces the
-        # "blank fullscreen for a second, then shrinks" flicker.
-        self.minsize(*theme.MIN_WINDOW)
-        self._start_maximized()
+        # Before anything is drawn. Tk answers a failed bitmap allocation with
+        # a message box and abort() rather than an exception; this replaces
+        # that with a line in user_data/crash_log.txt and a quiet exit. See
+        # services/crash_guard.py, including what it cannot do.
+        crash_guard.install()
 
-        # ---- top bar -----------------------------------------------------
+        self.title(f"{theme.APP_TITLE}")
+        self.minsize(*theme.MIN_WINDOW)
+        # Deliberately no geometry() call before maximising. An explicit
+        # initial size gets remembered as the "restored" size, and on some
+        # Windows setups Tk flashes it during startup — you see a full-screen
+        # blank window snap down to 1100x720 and back.
+        self._maximize()
+
+        # Control-BackSpace and Control-Delete, for every entry in the app. Tk
+        # binds neither, so without this they quietly do nothing useful.
+        enable_word_editing(self)
+
+        self._build_top_bar()
+
+        self.body = ctk.CTkFrame(self, corner_radius=0, fg_color=("gray92", "gray14"))
+        self.body.pack(side="top", fill="both", expand=True)
+
+        self.pages: dict[str, ctk.CTkFrame] = {}
+        self.current_page: Optional[str] = None
+        # Where a run was launched from, so Cancel returns there rather than
+        # dumping the user somewhere they have to navigate back from.
+        self._pre_loading_page: Optional[str] = None
+        # The last input page visited, kept as a fallback and deliberately
+        # never cleared. Falling back to "main" would be actively destructive:
+        # go("main") resets every page, so a cancel that missed its origin
+        # would throw away the inputs the user was about to re-run.
+        self._last_input_page: str = "steady"
+
+        self.shortcut_router = ShortcutRouter(self, self._dispatch_shortcut)
+
+        # Drop recent presets whose files have gone, so the menu doesn't grow
+        # a tail of dead entries after someone reorganises their folders.
+        try:
+            recent_presets.prune()
+        except Exception:                       # noqa: BLE001
+            pass
+
+        self.go("main")
+
+        # Re-assert the maximised state after the first layout pass. Tk on
+        # Windows sometimes drops it during initial geometry negotiation.
+        self.after_idle(self._maximize)
+        self.after(100, self._maximize)
+
+    # ==================================================================
+    # Window
+    # ==================================================================
+
+    def _maximize(self) -> None:
+        """Fill the screen, by whichever mechanism this platform supports."""
+        try:
+            self.state("zoomed")               # Windows
+            return
+        except tk.TclError:
+            pass
+        try:
+            self.attributes("-zoomed", True)   # some Linux window managers
+            return
+        except tk.TclError:
+            pass
+        try:
+            # macOS and the rest: size to the screen rather than going true
+            # fullscreen, so the title bar and menu bar stay reachable.
+            self.geometry(f"{self.winfo_screenwidth()}x{self.winfo_screenheight()}+0+0")
+        except Exception:                       # noqa: BLE001
+            pass
+
+    # ==================================================================
+    # Top bar
+    # ==================================================================
+
+    def _build_top_bar(self) -> None:
         self.top_bar = ctk.CTkFrame(self, height=theme.TOP_BAR_HEIGHT, corner_radius=0)
         self.top_bar.pack(side="top", fill="x")
         self.top_bar.pack_propagate(False)
 
         self.home_btn = ctk.CTkButton(
-            self.top_bar,
-            text=i18n.t("topbar.home"),
-            width=110,
+            self.top_bar, text="Home", width=110,
             command=lambda: self.go("main"),
         )
-        # Cancel button — replaces Home while we're on the loading page.
-        self.cancel_btn = ctk.CTkButton(
-            self.top_bar,
-            text=i18n.t("topbar.cancel"),
-            width=140,
-            fg_color=theme.MRT_RED_THEMED,
-            hover_color=theme.MRT_RED_HOVER,
-            command=self._on_cancel_click,
+
+        # Both destructive top-bar actions take two clicks. See ConfirmButton.
+        self.cancel_btn = ConfirmButton(
+            self.top_bar, text="Cancel run", confirm_text="Confirm cancel",
+            command=self._do_cancel,
         )
-        # cancel-button state machine
-        self._cancel_state: str = "cancel"           # 'cancel' | 'confirm'
-        self._cancel_reset_after_id: str | None = None
+        self.halt_btn = ConfirmButton(
+            self.top_bar, text="Halt & report", confirm_text="Confirm halt & report",
+            command=self._do_halt_and_report,
+            fg_color=theme.WARNING_STRONG, hover_color=theme.WARNING,
+            confirm_color=theme.ERROR,
+        )
 
         self.page_title = ctk.CTkLabel(
-            self.top_bar,
-            text="",
+            self.top_bar, text="",
             font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
         )
         self.page_title.pack(side="left", padx=theme.PAD_M)
 
-        # ---- body / page stack -------------------------------------------
-        self.body = ctk.CTkFrame(self, corner_radius=0, fg_color=("gray92", "gray14"))
-        self.body.pack(side="top", fill="both", expand=True)
+    def _refresh_top_bar(self) -> None:
+        """Show the buttons the current page calls for.
 
-        # LAZY page-building: pages are built on first navigation.
-        self.pages: dict[str, ctk.CTkFrame] = {}
+        Loading gets Cancel and Halt; most pages get Home; main and settings
+        get neither.
+        """
+        on_loading = self.current_page == "loading"
+        wants_home = self.current_page not in self._NO_HOME
 
-        self.current_page: str | None = None
-        # Remember which page started the current run — used by cancel to
-        # know where to send the user back.
-        self._pre_loading_page: str | None = None
+        def show(widget, visible: bool, **pack_kwargs) -> None:
+            if visible and not widget.winfo_ismapped():
+                widget.pack(side="left", pady=theme.PAD_S,
+                            before=self.page_title, **pack_kwargs)
+            elif not visible and widget.winfo_ismapped():
+                widget.pack_forget()
 
-        # Global keyboard shortcuts.  The router owns the bind_all calls;
-        # we forward every fire event to _dispatch_shortcut which then
-        # delegates to the current page (if it implements handle_shortcut)
-        # or handles it centrally (Esc while on the loading page).
-        self.shortcut_router = ShortcutRouter(self, self._dispatch_shortcut)
+        show(self.home_btn, wants_home, padx=(theme.PAD_M, theme.PAD_S))
+        show(self.cancel_btn, on_loading, padx=(theme.PAD_M, theme.PAD_S))
+        show(self.halt_btn, on_loading, padx=(0, theme.PAD_S))
 
-        self.go("main")
+        # Never leave a confirm button armed across a page change.
+        self.cancel_btn.disarm()
+        self.halt_btn.disarm()
 
-        # Re-apply zoom after the first widget-build pass.  On Windows,
-        # Tk sometimes drops the zoomed state during initial geometry
-        # negotiation; re-asserting it here (once idle, and again 100ms
-        # later) removes the "blank fullscreen → shrink to default" flash.
-        self.after_idle(self._start_maximized)
-        self.after(100, self._start_maximized)
-
-    # ----------------------------------------------------------------------
-    # Startup — maximize the window on every OS we ship for.
-    # ----------------------------------------------------------------------
-
-    def _start_maximized(self) -> None:
-        try:
-            # Windows path
-            self.state("zoomed")
-            return
-        except tk.TclError:
-            pass
-        try:
-            # Some Linux WMs support this attribute
-            self.attributes("-zoomed", True)
-            return
-        except tk.TclError:
-            pass
-        # Fallback (macOS, other Linux WMs): size the window to the screen
-        # rather than going full "fullscreen" — that way title bars and
-        # the OS menu bar stay visible.
-        try:
-            sw = self.winfo_screenwidth()
-            sh = self.winfo_screenheight()
-            self.geometry(f"{sw}x{sh}+0+0")
-        except Exception:
-            pass
-
-    # ----------------------------------------------------------------------
+    # ==================================================================
     # Navigation
-    # ----------------------------------------------------------------------
+    # ==================================================================
 
-    def _ensure_page(self, page_name: str) -> ctk.CTkFrame:
-        """Get-or-build a page on demand."""
-        if page_name not in self.PAGES:
-            raise ValueError(f"unknown page: {page_name!r}")
-        if page_name not in self.pages:
-            page_cls = self.PAGES[page_name]
+    def _ensure_page(self, name: str) -> ctk.CTkFrame:
+        """Get a page, building it on first use.
+
+        A page whose module doesn't exist yet becomes a placeholder. Any other
+        import error also becomes a placeholder, but one that shows the error —
+        a typo in a page shouldn't take down the whole app, and it certainly
+        shouldn't do so silently.
+        """
+        if name in self.pages:
+            return self.pages[name]
+        if name not in self.PAGES:
+            raise ValueError(f"unknown page: {name!r}")
+
+        ref = self.PAGES[name]
+        try:
+            module = importlib.import_module(ref.module)
+            page_cls = getattr(module, ref.cls)
             page = page_cls(self.body, on_navigate=self.go)
-            page.place(relwidth=1, relheight=1)
-            self.pages[page_name] = page
-        return self.pages[page_name]
+        except ModuleNotFoundError as exc:
+            # Distinguish "this page isn't written yet" from "this page exists
+            # but imports something broken". Only the former is expected.
+            not_written = ref.module in str(exc)
+            page = PlaceholderPage(
+                self.body, on_navigate=self.go, page_name=name,
+                reason="" if not_written else f"{type(exc).__name__}: {exc}",
+            )
+        except Exception as exc:                # noqa: BLE001
+            page = PlaceholderPage(
+                self.body, on_navigate=self.go, page_name=name,
+                reason=f"{type(exc).__name__}: {exc}",
+            )
 
-    def go(self, page_name: str) -> None:
-        """Switch to the named page (case-sensitive key in PAGES)."""
-        # Navigating HOME wipes any editable state on the pages that
-        # implement reset_to_defaults() — steady, unsteady, bug report.
-        # First, check if any dirty page objects to the reset.
-        if page_name == "main" and self.current_page not in (None, "main"):
+        page.place(relwidth=1, relheight=1)
+        self.pages[name] = page
+        return page
+
+    def _pump(self) -> None:
+        """Service the OS message queue so Windows won't call the window hung.
+
+        Windows greys a top-level window out and appends "(Not responding)" to
+        its title when the owning thread has not pulled a message off its queue
+        for five seconds. That is a GAP timer, not a stopwatch, so this does not
+        have to run during the slow work. Called at the seams either side of it,
+        it splits one long stretch into several short ones and the clock never
+        gets there.
+
+        update(), not update_idletasks(): the latter flushes pending redraws but
+        never dispatches from the OS queue, so it does not reset the clock at all.
+        """
+        try:
+            self.update()
+        except Exception:                   # noqa: BLE001
+            pass                # window torn down mid-navigation
+
+    def go(self, name: str) -> None:
+        """Switch to a page by key.
+
+        _pump() dispatches input as well as paint, so a second click queued
+        during a slow page build would re-enter this and build the page twice.
+        One flag is enough, since nothing in _go() yields to anything but the
+        event loop.
+        """
+        if self._navigating:
+            return
+        self._navigating = True
+        try:
+            self._go(name)
+        finally:
+            self._navigating = False
+
+    def _go(self, name: str) -> None:
+        # Graph windows belong to the results page that opened them, so leaving
+        # it closes them wherever you're going. This used to happen only via
+        # reset_to_defaults, which only runs on the way home, so the common
+        # route of results -> inputs -> run left the previous run's windows on
+        # screen and alive during the next run.
+        if (self.current_page in ("steady_results", "unsteady_results")
+                and name != self.current_page):
+            from src.ui.app.widgets import figure_window
+            figure_window.close_all()
+
+        # Going home discards in-progress edits, so ask first if anything is
+        # dirty, then reset the pages that know how.
+        if name == "main" and self.current_page not in (None, "main"):
             if not self._confirm_discard_if_dirty():
-                return   # user cancelled — stay on the current page
-            for _name, _page in self.pages.items():
-                if hasattr(_page, "reset_to_defaults"):
+                return
+            for page in self.pages.values():
+                if hasattr(page, "reset_to_defaults"):
                     try:
-                        _page.reset_to_defaults()
-                    except Exception:
+                        page.reset_to_defaults()
+                    except Exception:           # noqa: BLE001
                         pass
 
-        page = self._ensure_page(page_name)
+        # Seam 1: end the current stretch before a first-use page build, which
+        # constructs several hundred widgets on this thread.
+        self._pump()
+
+        page = self._ensure_page(name)
         page.tkraise()
-        self.current_page = page_name
+        self.current_page = name
+        if name in ("steady", "unsteady"):
+            self._last_input_page = name
 
-        # update title
-        # Prefer a translated title if one exists; fall back to the page's
-        # TITLE class attribute otherwise.  Translation key convention:
-        # "page.<key>", where <key> is the shell's PAGES dict key.
-        i18n_key = f"page.{page_name}"
-        translated = i18n.t(i18n_key)
-        title = translated if translated != i18n_key else getattr(page, "TITLE", "")
-        self.page_title.configure(text=title)
+        # Main menu carries its own hero text, so the top bar stays empty.
+        self.page_title.configure(
+            text="" if name == "main" else getattr(page, "TITLE", ""))
+        self._refresh_top_bar()
 
-        # ---- chrome: which top-bar button is shown? --------------------
-        # On the loading page we show a red Cancel; on main we show
-        # nothing; elsewhere we show Home.
-        self._refresh_top_bar_button()
+        # Seam 2: the build is done and on_show has not started. These are the
+        # two expensive halves of a transition, so they get counted separately.
+        self._pump()
 
-        if page_name == "main":
-            self.page_title.configure(text="")
-
-        # let the page do per-show work
         if hasattr(page, "on_show"):
-            page.on_show()
-
-    def _refresh_top_bar_button(self) -> None:
-        """Swap between Home and Cancel based on the active page.
-
-        Home is suppressed on `settings` because that page owns its own
-        Cancel / Save buttons that already handle navigation.
-        """
-        want_cancel = (self.current_page == "loading")
-        want_home   = (self.current_page not in ("main", "loading", "settings"))
-
-        if want_cancel:
-            if self.home_btn.winfo_ismapped():
-                self.home_btn.pack_forget()
-            if not self.cancel_btn.winfo_ismapped():
-                self.cancel_btn.pack(
-                    side="left",
-                    padx=(theme.PAD_M, theme.PAD_S),
-                    pady=theme.PAD_S,
-                    before=self.page_title,
-                )
-            # Whenever we (re-)enter the loading page, reset the state to
-            # plain 'Cancel' — no lingering 'Confirm cancel' from a past run.
-            self._set_cancel_state("cancel")
-        else:
-            if self.cancel_btn.winfo_ismapped():
-                self.cancel_btn.pack_forget()
-            self._clear_cancel_timeout()
-
-            if want_home:
-                if not self.home_btn.winfo_ismapped():
-                    self.home_btn.pack(
-                        side="left",
-                        padx=(theme.PAD_M, theme.PAD_S),
-                        pady=theme.PAD_S,
-                        before=self.page_title,
-                    )
-            else:  # main
-                if self.home_btn.winfo_ismapped():
-                    self.home_btn.pack_forget()
-
-    # ----------------------------------------------------------------------
-    # Cancel button state machine
-    # ----------------------------------------------------------------------
-
-    def _set_cancel_state(self, state: str) -> None:
-        """state ∈ {'cancel', 'confirm'}"""
-        self._clear_cancel_timeout()
-        if state == "cancel":
-            self.cancel_btn.configure(text=i18n.t("topbar.cancel"), width=140)
-        elif state == "confirm":
-            self.cancel_btn.configure(text=i18n.t("topbar.confirm_cancel"), width=200)
-            # Auto-revert after N seconds if the user doesn't click again.
-            self._cancel_reset_after_id = self.after(
-                _CONFIRM_CANCEL_TIMEOUT_MS,
-                lambda: self._set_cancel_state("cancel"),
-            )
-        self._cancel_state = state
-
-    def _clear_cancel_timeout(self) -> None:
-        if self._cancel_reset_after_id is not None:
             try:
-                self.after_cancel(self._cancel_reset_after_id)
-            except Exception:
+                page.on_show()
+            except Exception:                   # noqa: BLE001
                 pass
-            self._cancel_reset_after_id = None
 
-    def _on_cancel_click(self) -> None:
-        if self._cancel_state == "cancel":
-            # First click — arm the confirm state.
-            self._set_cancel_state("confirm")
-            return
+    def _confirm_discard_if_dirty(self) -> bool:
+        """Ask before throwing away edits. True means go ahead."""
+        for page in self.pages.values():
+            if not hasattr(page, "is_dirty"):
+                continue
+            try:
+                if page.is_dirty():
+                    from tkinter import messagebox
+                    return messagebox.askyesno(
+                        "Discard changes?",
+                        "You have unsaved changes on this page.\n\n"
+                        "Going back to the menu will clear them. Continue?",
+                    )
+            except Exception:                   # noqa: BLE001
+                pass
+        return True
 
-        # Second click — actually cancel.
+    # ==================================================================
+    # Runs
+    # ==================================================================
+
+    def start_loading_run(self, title: str, run_fn: Callable,
+                          on_complete: Callable, on_error: Optional[Callable] = None) -> None:
+        """Switch to the loading page and start a simulation on a worker thread.
+
+        Any page can reach this with self.winfo_toplevel().start_loading_run(...).
+        Fully implemented once the loading screen lands; until then the
+        placeholder simply has no start_run to call.
+        """
+        if self.current_page not in (None, "loading"):
+            self._pre_loading_page = self.current_page
+
+        loading = self._ensure_page("loading")
+        self.go("loading")
+
+        # Belt and braces: nothing from a previous run should still be on
+        # screen while the next one computes. go() above already closes graph
+        # windows when you leave a results page, but a run can be started by
+        # other routes, and a stale window is exactly the state that produced
+        # the "main thread is not in main loop" reports.
+        from src.ui.app.widgets import figure_window
+        figure_window.close_all()
+
+        # Collect on the MAIN thread before the worker starts.
+        #
+        # Navigating here drops the input page's transient Tk objects (the
+        # preset prompt's StringVars, a preflight dialog's widgets). If they're
+        # still garbage when the worker triggers a collection, tkinter runs
+        # their __del__ on that thread and the console fills with
+        # "RuntimeError: main thread is not in main loop". Harmless, but it
+        # looks like a crash. Freeing them here means there's nothing left for
+        # the worker to trip over.
+        gc.collect()
+
+        if hasattr(loading, "start_run"):
+            loading.start_run(title, run_fn, on_complete, on_error)
+
+    def _do_cancel(self) -> None:
+        """Second click on Cancel: stop the run and go back where we came from."""
         loading = self.pages.get("loading")
-        if loading is not None:
+        if loading is not None and hasattr(loading, "cancel"):
             try:
                 loading.cancel()
-            except Exception:
+            except Exception:                   # noqa: BLE001
                 pass
-        target = self._pre_loading_page or "main"
-        self._pre_loading_page = None
-        self.go(target)
+        # Back to the form, with everything still filled in. Cancelling a run
+        # means "not like that", not "start over", so the inputs have to
+        # survive. _pre_loading_page is deliberately NOT cleared: a second
+        # cancel should behave the same as the first.
+        self.go(self._pre_loading_page or self._last_input_page)
 
-    # ----------------------------------------------------------------------
-    # Keyboard-shortcut dispatch
-    # ----------------------------------------------------------------------
+    def _do_halt_and_report(self) -> None:
+        """Second click on Halt & report: stop the run, then open the bug page
+        pre-filled with whatever the loading screen captured."""
+        loading = self.pages.get("loading")
+        terminal = ""
+        if loading is not None:
+            if hasattr(loading, "get_terminal_text"):
+                try:
+                    terminal = loading.get_terminal_text()
+                except Exception:               # noqa: BLE001
+                    pass
+            if hasattr(loading, "cancel"):
+                try:
+                    loading.cancel()
+                except Exception:               # noqa: BLE001
+                    pass
+
+        bug_page = self._ensure_page("bug")
+        if hasattr(bug_page, "prefill"):
+            try:
+                bug_page.prefill(
+                    title="Halted a simulation to report a problem",
+                    diagnostics=terminal or "(no terminal output captured)",
+                )
+            except Exception:                   # noqa: BLE001
+                pass
+        # _pre_loading_page survives here too, so leaving the bug page and
+        # cancelling a later run still knows where the form was.
+        self.go("bug")
+
+    # ==================================================================
+    # Keyboard
+    # ==================================================================
 
     def _dispatch_shortcut(self, action: str) -> None:
-        """Called by ShortcutRouter whenever a bound key is pressed.
+        """Route a keyboard action to whoever should handle it.
 
-        - "cancel" while on the loading screen: reuses the Cancel-button
-          state machine.  First press arms the confirm state; second press
-          within the timeout window actually cancels.  Everywhere else
-          Esc is ignored.
-        - Anything else: forward to the current page's handle_shortcut()
-          if it defines one.
+        Escape on the loading page drives the same two-press confirm as the
+        Cancel button, so the keyboard and the mouse can't disagree about
+        whether cancelling is armed. Everything else goes to the current page.
         """
         if action == "cancel":
             if self.current_page == "loading":
-                self._on_cancel_click()
+                self.cancel_btn.invoke()
             return
 
         page = self.pages.get(self.current_page or "")
         if page is not None and hasattr(page, "handle_shortcut"):
             try:
                 page.handle_shortcut(action)
-            except Exception:
+            except Exception:                   # noqa: BLE001
                 pass
 
     def refresh_shortcuts(self) -> None:
-        """Called by the Settings page after the user rebinds actions."""
-        from src.ui.app.services.shortcuts import load_bindings
+        """Re-read the bindings. Called by the settings page after a rebind."""
         self.shortcut_router.rebind(load_bindings())
 
-    def rebuild_all_pages(self) -> None:
-        """Nuke every cached page and rebuild the current one.  Used by
-        the language switcher — CustomTkinter has no live-retranslate,
-        so the only reliable way to get every label / button / tab
-        header into the new language is to rebuild them from scratch.
-
-        Front-end top-bar buttons get their text refreshed here too so
-        Home / Cancel switch language without a page navigation."""
-        current = self.current_page or "main"
-
-        # Refresh top-bar chrome that lives outside the page stack.
-        try:
-            self.home_btn.configure(text=i18n.t("topbar.home"))
-        except Exception:
-            pass
-        try:
-            self.cancel_btn.configure(text=i18n.t("topbar.cancel"))
-        except Exception:
-            pass
-
-        # Destroy every cached page.
-        for _name, page in list(self.pages.items()):
-            try:
-                page.destroy()
-            except Exception:
-                pass
-        self.pages.clear()
-
-        # Rebuild the page the user was on.  If we were on "loading" or
-        # some transient page, drop back to "main" — safer than trying
-        # to re-enter a mid-run state.
-        target = current if current not in ("loading",) else "main"
-        self.current_page = None
-        self.go(target)
-
-    # ----------------------------------------------------------------------
-    # Dirty-check on Home
-    # ----------------------------------------------------------------------
-
-    def _confirm_discard_if_dirty(self) -> bool:
-        """If any cached page reports is_dirty(), pop a confirm dialog.
-        Returns True if the user chose to discard (or nothing was dirty)."""
-        dirty = False
-        for _name, page in self.pages.items():
-            if hasattr(page, "is_dirty"):
-                try:
-                    if page.is_dirty():
-                        dirty = True
-                        break
-                except Exception:
-                    pass
-        if not dirty:
-            return True
-        from tkinter import messagebox
-        return messagebox.askyesno(
-            i18n.t("confirm.discard_title"),
-            i18n.t("confirm.discard_body"),
-        )
-
-    # ----------------------------------------------------------------------
-    # Loading-screen helper
-    # ----------------------------------------------------------------------
-
-    def start_loading_run(
-        self,
-        title: str,
-        run_fn,
-        on_complete,
-        on_error=None,
-    ) -> None:
-        """
-        Switch to the LoadingScreen page and kick off `run_fn`.
-
-        Any page can call this via:
-            self.winfo_toplevel().start_loading_run(...)
-        """
-        # Remember where we were so cancel can return the user here.
-        if self.current_page not in (None, "loading"):
-            self._pre_loading_page = self.current_page
-
-        loading = self._ensure_page("loading")
-        self.go("loading")
-        loading.start_run(title, run_fn, on_complete, on_error)
+    def refresh_appearance(self) -> None:
+        """Kept so the settings page has one call site to make when appearance
+        becomes configurable again. The app is dark-only for now."""
+        ctk.set_appearance_mode(theme.APPEARANCE)

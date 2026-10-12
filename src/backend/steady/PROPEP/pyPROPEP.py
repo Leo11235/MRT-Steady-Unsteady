@@ -23,7 +23,7 @@ def runPROPEP(rocket_inputs, rocket_parameters):
         fuel = ppp.PROPELLANTS[fuel_name.upper()]
         oxidizer = ppp.PROPELLANTS[oxidizer_name.upper()]
     except KeyError as e:
-        return {"error": f"Invalid propellant name: {e}"}
+        raise ValueError(f"Invalid propellant name: {e}")
     
     # create equilibrium object
     eq = ppp.Equilibrium()
@@ -33,7 +33,7 @@ def runPROPEP(rocket_inputs, rocket_parameters):
         # set chamber state
         eq.set_state(P=chamber_pressure)
     except Exception as e:
-        return {"error": f"Error setting up equilibrium state: {e}"}
+        raise ValueError(f"Error setting up equilibrium state: {e}")
     
     # get chamber temp, molar weight, and heat ratio
     try: 
@@ -51,4 +51,4 @@ def runPROPEP(rocket_inputs, rocket_parameters):
         rocket_parameters["heat_capacity_ratio"] = heat_ratio
 
     except Exception as e:
-        return {"error": f"pyPROPEP - Error extracting properties: {e}"}
+        raise ValueError(f"pyPROPEP: Error extracting properties: {e}")

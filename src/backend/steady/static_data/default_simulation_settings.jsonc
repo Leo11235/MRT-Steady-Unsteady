@@ -3,7 +3,6 @@
 {
     "simulation_type": "fuel_mass_convergence", // the default simulation type
     "output_units": "MRT", // SI or MRT (rocket team mishmash of SI and IMP)
-    "save_output_data": true,
 
     "number_of_timesteps": 100, // number of timesteps in burntime (only accounts for the part of the burn where there is a thrust). Ascent timesteps typically 300-400
     "tolerated_apogee_difference": 1, // m, allowed space between target and real apogee

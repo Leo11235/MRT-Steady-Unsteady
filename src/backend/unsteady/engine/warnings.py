@@ -1,7 +1,7 @@
 """
 Warnings look for an log validity/runtime information. They do not affect the program while it is running, but rather get returned to the user afterward. They can be global of phase/CV specific. 
     - Advisory (of note, not necessarily bad)
-    - Warning (potential problems with the input rcket config)
+    - Caution (potential problems with the input rocket config)
     - Critical (cause the simulation to fail or to be severely unphysical)
     
     - Debug (more about the simulation engine than physics)
@@ -9,39 +9,99 @@ Warnings look for an log validity/runtime information. They do not affect the pr
 
 import math
 
-# checks whether a whole bunch of rocket input values are within the model's validity range
-def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict): 
-    ###### fuel grain
-    L_f = rocket_inputs["chamber_fuel_length_m"]
-    if "chamber_fuel_internal_radius_m" in rocket_inputs:
-        r_f = rocket_inputs["chamber_fuel_internal_radius_m"]
-    else:
-        # if the user provided fuel mass instead, calculate the implied r_f
-        m_f_tot = rocket_inputs["chamber_fuel_mass_kg"]
-        p_f = rocket_inputs["chamber_fuel_density_kgm3"]
-        R_f = rocket_inputs["chamber_fuel_external_radius_m"]
-        r_f = math.sqrt(R_f**2 - m_f_tot / (math.pi * p_f * L_f))
+###############################
+# init warnings
+###############################
+# input range & sanity checks
+# checks whether a whole bunch of rocket input values are valid and within the model's validity range
+# !!! this function is used directly by the frontend. Do not change the inputs, and only add to warning_dict if it would be reasonable for the user to get a popup warning them about that input. 
+def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict | None = None): 
+    if warning_dict is None: 
+        warning_dict={}
     
-    if L_f < 0.2:
+    
+    ###### fuel grain
+    L_f = _number(rocket_inputs, "chamber_fuel_length")
+    R_f = _number(rocket_inputs, "chamber_fuel_external_radius")
+
+    # dummy value, we run some checks to ensure the fuel geometry makes physical sense
+    fuel_geometry_impossible = False
+
+    r_f = _number(rocket_inputs, "chamber_fuel_internal_radius")
+    if r_f is None:
+        # the user provided fuel mass instead, so calculate the implied r_f
+        m_f_tot = _number(rocket_inputs, "chamber_fuel_mass")
+        p_f = _number(rocket_inputs, "chamber_fuel_density")
+        if None not in (m_f_tot, p_f, L_f, R_f):
+            try: # triggers if inputs are gemoetrically valid
+                r_f = math.sqrt(R_f**2 - m_f_tot / (math.pi * p_f * L_f))
+            except ValueError: # triggers if inputs are physically impossible (ie inner diameter > outer diameter)
+                r_f = None
+                fuel_geometry_impossible = True
+
+    if L_f is not None and L_f < 0.2:
         warning_dict["init_short_fuel_grain"] = {
-            "severity": "warning",
+            "severity": "caution",
             "message": "Fuel grain length is dangerously short (< 0.2 m). 1D regression models lose accuracy at low L/D ratios.",
-            "length_m": L_f
+            "fuel_cell_length": L_f
         }
         
-    if r_f < 0.01:
+    if r_f is not None and r_f < 0.01:
         warning_dict["init_tight_fuel_port"] = {
-            "severity": "warning",
-            "message": "Initial fuel port radius is extremely tight (< 1 cm). High risk of choked port flow and flame blowout.",
-            "radius_m": r_f
+            "severity": "caution",
+            "message": f"Initial fuel port radius is extremely tight ({r_f*100} < 1 cm). High risk of choked port flow and flame blowout.",
+            "inner_radius": r_f
+        }
+        
+    # two ways to get here: the fuel mass implied no real port radius, or a port radius was given that swallows the whole grain
+    if fuel_geometry_impossible or (r_f is not None and R_f is not None and r_f >= R_f):
+        warning_dict["init_fuel_cell_geometry_non_physical"] = {
+            "severity": "critical", 
+            "message": f"Inner fuel radius ({r_f}{" m" if r_f is not None else ""}) either impossible to calculate or is larger than outer fuel radius ({R_f} m). If initialized via fuel mass, ensure a real value can be calculated.", 
+            "inner_radius": r_f, 
+            "outer_radius": R_f
         }
     
+    ##### airframe & fuel cell checks
+    # check if fuel grain radius is larger than rocket external radius
+    R_r = _number(rocket_inputs, "rocket_outer_radius")
+    if R_f is not None and R_r is not None and R_f > R_r:
+        warning_dict["init_fuel_outer_radius_greater_than_rocket_outer_radius"] = {
+            "severity": "critical", 
+            "message": f"Outer fuel radius ({R_f} m) is larger than rocket outer radius ({R_r} m)", 
+            "fuel_outer_radius": R_f, 
+            "rocket_outer_radius": R_r
+        }
+    # conversely, check if airframe outer diameter is unrealistically larger than outer fuel diameter
+    if (R_f is not None and R_r is not None and R_r > R_f * 1.2): # airframe OD must be 20% or more larger than fuel OD to trigger this warning
+        excess = R_r / R_f - 1.0
+        warning_dict["init_airframe_much_wider_than_grain"] = {
+            "severity": "caution",
+            "message": f"Rocket outer diameter ({R_r * 2:.4f} m) is {excess * 100:.0f}% wider than the fuel grain ({R_f * 2:.4f} m).",
+            "fuel_outer_radius": R_f,
+            "rocket_outer_radius": R_r,
+            "excess_fraction": excess,
+        }
+    # and check that the rocket height is a few times larger than outer diameter
+    L_tank = _number(rocket_inputs, "tank_internal_length")
+    if L_tank is not None and R_r is not None:
+        # need to cheat a little to get this height object, since there is no 'height' input. 
+        height = L_tank + sum(v for v in (_number(rocket_inputs, "pre_chamber_length"), _number(rocket_inputs, "chamber_fuel_length"), _number(rocket_inputs, "post_chamber_length")) if v is not None)
+        if height > 0 and (R_r * 2.0) > height * 0.5:
+            warning_dict["init_airframe_too_wide_for_its_length"] = {
+                "severity": "caution",
+                "message": (f"Rocket outer diameter ({R_r * 2:.4f} m) is more than half the height of the components it has to contain ({height:.4f} m of tank and chamber). \nNothing that squats flies. -Sun Tzu"),
+                "rocket_outer_radius": R_r,
+                "stacked_component_height_m": height,
+                "diameter_to_height": (R_r * 2.0) / height,
+            }
+
     ##### tank ullage
-    if "tank_ullage_fraction" in rocket_inputs:
-        ullage = rocket_inputs["tank_ullage_fraction"]
+    ullage = _number(rocket_inputs, "tank_ullage_fraction")
+    if ullage is not None:
         if ullage < 0.10:
             warning_dict["init_low_ullage"] = {
-                "severity": "critical",
+                "severity": "caution",
                 "message": "Tank ullage fraction is dangerously low (< 10%). Severe risk of hydraulic lock and catastrophic tank failure due to thermal expansion.",
                 "ullage_fraction": ullage
             }
@@ -52,6 +112,93 @@ def warn_initialization_limits(rocket_inputs: dict, warning_dict: dict):
                 "ullage_fraction": ullage
             }
     
+    ##### regression rate warnings
+    """
+    accepted value ranges for Paraffin/N2O
+        - fuel regression coefficient (a): [0.5e-4, 1e-3]
+        - fuel regression exponent (n): [0.3, 0.9]
+    (exact values may change)
+    
+    sources
+        - Karabeyoglu, Altman & Cantwell (2001), "Development and Testing of Paraffin-Based Hybrid Rocket Fuels"
+        - Karabeyoglu et al. (2004), "Combustion of Liquefying Hybrid Propellants" (JPP Vol 20 No 6)
+        - Sutton & Biblarz, Rocket Propulsion Elements, Chapter 15 (hybrids)
+    """
+    a = _number(rocket_inputs, "chamber_regression_rate_scaling_constant")
+    if a is not None:
+        # a arrives here in SI, but the form and every paper quote it in the mm/s convention
+        a_mm = a * 1e3
+        if a < 0.5e-4:
+            warning_dict["init_low_chamber_regression_rate_scaling_constant"] = {
+                    "severity": "caution",
+                    "message": f"Regression coefficient ({a_mm:.6g} mm/s per (kg/m2/s)^n) is unusually low. Recommended range is [0.05, 1]. ",
+                    "chamber_regression_rate_scaling_constant": a
+                }
+        elif a> 1e-3: 
+            warning_dict["init_high_chamber_regression_rate_scaling_constant"] = {
+                    "severity": "caution",
+                    "message": f"Regression coefficient ({a_mm:.6g} mm/s per (kg/m2/s)^n) is unusually high. Recommended range is [0.05, 1]. ",
+                    "chamber_regression_rate_scaling_constant": a
+                }
+
+    n = _number(rocket_inputs, "chamber_regression_rate_exponent")
+    if n is not None:
+        if n < 0.3:
+            warning_dict["init_low_chamber_regression_rate_exponent"] = {
+                    "severity": "caution",
+                    "message": f"Regression rate exponent ({n}) is unusually low. Recommended range is [0.3, 0.9]. ",
+                    "chamber_regression_rate_exponent": n
+                }
+        elif n > 0.9:
+            warning_dict["init_high_chamber_regression_rate_exponent"] = {
+                    "severity": "caution",
+                    "message": f"Regression rate exponent ({n}) is unusually high. Recommended range is [0.3, 0.9]. ",
+                    "chamber_regression_rate_exponent": n
+                }
+    
+    ##### c* efficiency
+    """
+    c* here refers to eta, as in eta_c* = c*_actual / c*_theoretical
+    c*_theoretical given by CEA in m/s, eta_c* dimensionless input, c*_actual in m/s & computed using the other two
+    """
+    
+    eta_cstar = _number(rocket_inputs, "chamber_cstar_efficiency")
+    if eta_cstar is not None:
+        if eta_cstar > 1.0:
+            warning_dict["init_cstar_efficiency_too_high"] = {
+                    "severity": "critical",
+                    "message": f"C* efficiency ({eta_cstar}) is above 1.0, so the chamber would deliver more than the theoretical maximum for this propellant. Chamber pressure, thrust and Isp will all be overpredicted.",
+                    "chamber_cstar_efficiency": eta_cstar
+                }
+        elif eta_cstar <= 0.0:
+            warning_dict["init_cstar_efficiency_non_positive"] = {
+                    "severity": "critical",
+                    "message": f"C* efficiency ({eta_cstar}) must be greater than zero. At or below zero the chamber can never build pressure.",
+                    "chamber_cstar_efficiency": eta_cstar
+                }
+        elif eta_cstar < 0.7:
+            warning_dict["init_low_cstar_efficiency"] = {
+                    "severity": "advisory",
+                    "message": f"C* efficiency ({eta_cstar}) is unusually low. Even poorly mixed hybrids rarely fall below 0.8. Recommended range is [0.85, 0.95].",
+                    "chamber_cstar_efficiency": eta_cstar
+                }
+    
+
+    ###### recovery
+    # 1000 ft min. main chute deploy altitude
+    MAIN_DEPLOY_FLOOR = 304.8 # m
+    main_deploy_agl = _number(rocket_inputs, "main_parachute_deployment_altitude_agl")
+    if main_deploy_agl is not None and main_deploy_agl < MAIN_DEPLOY_FLOOR:
+        warning_dict["init_low_main_parachute_deployment"] = {
+                "severity": "caution",
+                "message": f"Main parachute deploys at {main_deploy_agl} m above ground, below the 304.8 m (1000 ft) minimum. The canopy may not fully inflate and slow the rocket before touchdown.",
+                "main_parachute_deployment_altitude_agl": main_deploy_agl
+            }
+
+
+########################################
+# timestep warnings (run every timestep)
+########################################
 
 # checks whether CEA is a good predictor for a given (OF, p_C) input to CEA
 def warn_CEA_outside_tested_range(t: float, warning_dict: dict, state_vector: dict, live: dict, rocket_inputs: dict):
@@ -98,7 +245,7 @@ def warn_CEA_outside_tested_range(t: float, warning_dict: dict, state_vector: di
         }
     
 # checks whether a given (OF, p_C) CEA input is outside the table bounds in static_data/CEA_table.json
-from src.backend.unsteady.physics.CEA.CEA_interpolator import get_CEA_table_bounds
+from src.backend.unsteady.physics.CEA.CEA_interpolator import get_CEA_table_bounds, envelope_excursions
 OF_MIN, OF_MAX, p_C_MIN, p_C_MAX = get_CEA_table_bounds()
 def warn_CEA_outside_table_bounds(t: float, warning_dict: dict, state_vector: dict, live: dict, rocket_inputs: dict):
     warn_key = "CEA_outside_table_bounds"
@@ -141,6 +288,101 @@ def warn_CEA_outside_table_bounds(t: float, warning_dict: dict, state_vector: di
             "max_p_C": p_C
         }
 
+from src.backend.unsteady.physics.N2O_properties.N2O_properties import N2O_excursions
+# N2O warnings implemented after and differently from CEA warnings. N2O_properties.py directly stores all the instances where we go outside table bounds, and a summary of all these instances is created once (see end of sim warnings section below)
+
+
+##############################################################################################
+# transition-triggered warning (run only once per phase transition rather than every timestep)
+##############################################################################################
+
+# phase 3 ended by the thrust floor rather than finishing on its own
+# vapor blowdown decays asymptotically, so there is always some thrust left. better to cut it off early and save 5s of compute time (during tests, this missed out on ~0.0003% of total impulse)
+def warn_engine_cutoff_thrust_floor(t: float, warning_dict: dict, state_vector: dict, live: dict, rocket_inputs: dict):
+    F = live.get("F_thrust", 0.0)
+    k = rocket_inputs.get("min_thrust_to_weight", 0.02)
+
+    warning_dict["engine_cutoff_thrust_floor"] = {
+        "severity": "advisory",
+        "message": f"Engine cut off at t={t:.2f} s while still producing {F:.1f} N, because thrust had fallen below {k:.1%} of vehicle weight. The remaining decay tail was not integrated, so apogee is marginally conservative.",
+        "t_cutoff": t,
+        "F_thrust_at_cutoff": F,
+        "min_thrust_to_weight": k,
+    }
+
+
+#########################################
+# end of sim warnings
+#########################################
+
+# CEA lookups that were held at the edge of the precomputed table
+def warn_CEA_envelope_excursions(warning_dict: dict):
+    for key, exc in envelope_excursions().items():
+        warning_dict[f"cea_envelope_{key.replace(' ', '_').replace('/', '')}"] = {
+            "severity": "advisory",
+            "message": (f"{exc['axis']} went {exc['limit']} {exc['count']} times; worst was {exc['worst_requested']:.4g} against a table edge of {exc['table_edge']:.4g}. Values were held at the edge for those steps."),
+            "axis": exc["axis"],
+            "worst_requested": exc["worst_requested"],
+            "table_edge": exc["table_edge"],
+            "occurrences": exc["count"],
+        }
+
+# N2O lookups that fell outside the N2O table
+def warn_N2O_envelope_excursions(warning_dict: dict):
+    for key, exc in N2O_excursions().items():
+        if "minimum" in exc["limit"]:
+            note = "Below the N2O triple point no saturated liquid-vapour state exists; the tank had effectively finished blowing down."
+        else:
+            note = "Above the N2O critical point the liquid and vapour phases are not distinct."
+
+        warning_dict[f"n2o_table_{key.replace(' ', '_')}"] = {
+            "severity": "caution",
+            "message": (f"Tank temperature went {exc['limit']} {exc['count']} times; worst was {exc['worst_requested']:.5g} K against a table edge of {exc['table_edge']:.5g} K. Saturated properties were held at the edge for those steps. {note}"),
+            "worst_requested_K": exc["worst_requested"],
+            "table_edge_K": exc["table_edge"],
+            "occurrences": exc["count"],
+        }
+
+# report any abnormal ending for the user to see
+def warn_terminal_state(warning_dict: dict, terminal_info: dict, t: float):
+    if terminal_info["completed_nominally"]:
+        return
+
+    warning_dict[f"terminal_{terminal_info['code']}"] = {
+        "severity": terminal_info["severity"],
+        "message": f"Simulation ended at t={t:.3f} s. {terminal_info['message']}",
+        "terminal_state": terminal_info["code"],
+        "t_terminal": t,
+    }
+
+# checks whether peak TtW is above ~5 and whether the rocket climbed at least ~10m
+def warn_launch_capability(warning_dict: dict, metrics: dict, min_TtW: float, min_gain_m: float, report_launch_failure: bool = True):
+    TtW = metrics.get("peak_thrust_to_weight")
+    if TtW is not None and metrics.get("reached_operating_point", True) and TtW < min_TtW:
+        warning_dict["low_peak_thrust_to_weight"] = {
+            "severity": "caution",
+            "message": f"Peak thrust-to-weight is {TtW:.2f}, below the recommended minimum of {min_TtW:.1f}. A rocket this marginal leaves the rail slowly and is unstable while it does.",
+            "peak_thrust_to_weight": TtW,
+            "peak_thrust": metrics.get("peak_thrust"),
+            "minimum": min_TtW,
+        }
+
+    gain = metrics.get("altitude_gain", 0.0)
+    if report_launch_failure and gain < min_gain_m:
+        warning_dict["failed_to_launch"] = {
+            "severity": "critical",
+            "message": f"The vehicle rose {gain:.2f} m above the pad, under the {min_gain_m:.0f} m needed to count as a launch. Every trajectory figure in this run describes a rocket that did not fly.",
+            "altitude_gain": gain,
+            "minimum": min_gain_m,
+        }
+
+
+###############################################################################################
+# WARNING REGISTRIES
+# these keep track of all the warnings between each timestep/phase. if a new warning function is added in the file above, it must also be added in a registry in order for phase_runner to interact with it. 
+
+
+# tested every timestep
 WARNINGS_REGISTRY = {
     "phase_1": [warn_CEA_outside_tested_range, warn_CEA_outside_table_bounds],
     "phase_2": [warn_CEA_outside_tested_range, warn_CEA_outside_table_bounds],
@@ -152,9 +394,20 @@ WARNINGS_REGISTRY = {
     "phase_7": []
 }
 
+
+# which transition events owe the user a warning when they fire, keyed by th event function's __name__
+TRANSITION_WARNINGS_REGISTRY = {
+    "event_thrust_below_floor": [warn_engine_cutoff_thrust_floor],
+}
+# run whatever warnings a just-fired transition event owes the user
+# phase runner calls this on every transition without checking anything, so which events are worth warning about stays a question this file answers and the runner never grows a chain of name comparisons
+def warn_on_transition(event_name: str, t: float, warning_dict: dict, state_vector: dict, live: dict, rocket_inputs: dict):
+    for func in TRANSITION_WARNINGS_REGISTRY.get(event_name, []):
+        func(t, warning_dict, state_vector, live, rocket_inputs)
+
 # computes overall simulation health level
 def finalize_warnings(warning_dict: dict):
-    severity_rank = {"advisory": 1, "warning": 2, "critical": 3}
+    severity_rank = {"advisory": 1, "caution": 2, "critical": 3}
     max_severity_val = 0
     overall_level = "nominal"
 
@@ -168,3 +421,17 @@ def finalize_warnings(warning_dict: dict):
         "overall_warning_level": overall_level,
         "triggered_warnings": warning_dict
     }
+    
+
+
+##############################################
+# HELPERS
+
+
+# returns the value at 'key', only if it is a usable number, otherwise none
+# exists because 'key in rocket_inputs' means two different things depending on who called warn_initialization_limits. 
+def _number(rocket_inputs: dict, key: str):
+    value = rocket_inputs.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return value

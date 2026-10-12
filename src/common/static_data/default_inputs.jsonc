@@ -1,0 +1,23 @@
+/*
+Default values for inputs that have a defensible standard answer.
+
+These are physical properties and empirical constants, not UI preferences, so they live in src/common/ beside the unit tables rather than being hardcoded in a form. 
+The same file backs both the steady and unsteady forms, which is why the paraffin regression law appears once here instead of twice in two pages.
+*/
+
+{
+    "steady": {
+        "fuel_grain_density": [900, "kg/m^3"],
+        "regression_rate_scaling_coefficient": [0.132, "(mm/s)/(kg/m^2/s)^n"],
+        "regression_rate_exponent": [0.555, "."],
+        "liquid_oxidizer_type": "NITROUS OXIDE",
+        "solid_fuel_type": "EICOSANE (PARAFFIN)"
+    },
+
+    "unsteady": {
+        "chamber_fuel_density": [900, "kg/m^3"],
+        "chamber_regression_rate_scaling_constant": [0.132, "(mm/s)/(kg/m^2/s)^n"],
+        "chamber_regression_rate_exponent": [0.555, "."],
+        "chamber_cstar_efficiency": [0.9, "."]
+    }
+}

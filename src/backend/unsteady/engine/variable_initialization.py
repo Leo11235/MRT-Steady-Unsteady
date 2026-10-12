@@ -4,7 +4,6 @@ Handles the calculation of the t=0 initial state vector
 
 import json
 import re
-import numpy
 import math
 from pathlib import Path
 _ENGINE_DIR = Path(__file__).resolve().parent
@@ -32,35 +31,45 @@ def initialize_state_vector(rocket_inputs: dict, constants_dict: dict, get_N2O_p
     """
     # INITIALIZE CV1: tank state variables [n_v, n_l, T_T]
     # initialize saturated N2O properties
-    T_T_0 = rocket_inputs['tank_temperature_K']
+    T_T_0 = rocket_inputs['tank_temperature']
     v_l = get_N2O_property('v_l', T_T_0) 
     v_v = get_N2O_property('v_v', T_T_0) 
     
-    m_o_tot_0 = rocket_inputs["tank_oxidizer_mass_kg"]
+    m_o_tot_0 = rocket_inputs["tank_oxidizer_mass"]
     W_o = constants_dict["nitrous_oxide_molar_mass"]
     
-    # Convert schema radii to diameters for the matrix math
-    d_T = rocket_inputs["tank_internal_radius_m"] * 2.0
-    D_dt = rocket_inputs["dip_tube_external_radius_m"] * 2.0
-    d_dt = rocket_inputs["dip_tube_internal_radius_m"] * 2.0
+    # tank bore cross-section; both branches are just this area times a length
+    A_T = math.pi * rocket_inputs["tank_internal_radius"] ** 2
     
     # decide whether to initialize tank variables using ullage or tank length
-    if "tank_internal_length_m" in rocket_inputs:
-        V_l, n_l, n_v, V_V, L_dt = initialize_state_vector_using_tank_length(rocket_inputs, v_l, v_v, m_o_tot_0, W_o, d_T, D_dt, d_dt)
+    if "tank_internal_length" in rocket_inputs:
+        V_l, n_l, n_v, V_V = initialize_state_vector_using_tank_length(rocket_inputs, v_l, v_v, m_o_tot_0, W_o, A_T)
+        # the two branches are mirror images and should leave the same record behind
+        rocket_inputs["tank_ullage_fraction"] = float(V_V / V_l) if V_l > 0 else 0.0
     elif "tank_ullage_fraction" in rocket_inputs:
-        V_l, n_l, n_v, L_T, L_dt = initialize_state_vector_using_ullage(rocket_inputs, v_l, v_v, m_o_tot_0, W_o, d_T, D_dt, d_dt)
+        V_l, n_l, n_v, L_T, V_V = initialize_state_vector_using_ullage(rocket_inputs, v_l, v_v, m_o_tot_0, W_o, A_T)
+        rocket_inputs["tank_internal_length"] = float(L_T)
+    
+    # ensure tank isn't being asked to hold more liquid than it has volume. 
+    _validate_tank_fill(n_l, n_v, v_l, v_v, m_o_tot_0, W_o, A_T, rocket_inputs)
+
+    # add for the results JSON later
+    rocket_inputs["tank_liquid_volume"] = float(V_l)
+    rocket_inputs["tank_ullage_volume"] = float(V_V)
+    rocket_inputs["tank_volume"] = float(V_l + V_V)
     
     # INITIALIZE CV4: combustion chamber variables [r_f, m_o, m_f, p_C]
-    L_f = rocket_inputs["chamber_fuel_length_m"]
-    R_f = rocket_inputs["chamber_fuel_external_radius_m"]
+    L_f = rocket_inputs["chamber_fuel_length"]
+    R_f = rocket_inputs["chamber_fuel_external_radius"]
     
     # get or calculate internal fuel radius
-    if "chamber_fuel_internal_radius_m" in rocket_inputs:
-        r_f = rocket_inputs["chamber_fuel_internal_radius_m"]
+    if "chamber_fuel_internal_radius" in rocket_inputs:
+        r_f = rocket_inputs["chamber_fuel_internal_radius"]
     else:
-        m_f_tot = rocket_inputs["chamber_fuel_mass_kg"]
-        p_f = rocket_inputs["chamber_fuel_density_kgm3"]
+        m_f_tot = rocket_inputs["chamber_fuel_mass"]
+        p_f = rocket_inputs["chamber_fuel_density"]
         r_f = math.sqrt(R_f**2 - m_f_tot/(math.pi*p_f*L_f)) 
+        rocket_inputs["chamber_fuel_internal_radius"] = float(r_f)
         
     m_f = 0.0 # initial fuel in the chamber gas
     m_o = 0.0 # initial oxidizer in the chamber gas
@@ -75,50 +84,79 @@ def initialize_state_vector(rocket_inputs: dict, constants_dict: dict, get_N2O_p
         'p_C': p_C,  
         'r_f': r_f,  
         'sx_R': 0.0, 
-        'sy_R': rocket_inputs["launch_site_altitude_asl_m"], 
+        'sy_R': rocket_inputs["launch_site_altitude_asl"], 
         'vx_R': 0.0, 
         'vy_R': 0.0  
     }
 
-def initialize_state_vector_using_ullage(rocket_inputs, v_l, v_v, m_o_tot_0, W_o, d_T, D_dt, d_dt):
+def initialize_state_vector_using_ullage(rocket_inputs, v_l, v_v, m_o_tot_0, W_o, A_T):
     """
-    Uses tank ullage factor to initialize the state vector.
+    uses tank ullage fraction to initialize the state vector
+        total oxidizer is split between the phases: n_l + n_v = m_ox / W_o      
+        the ullage definition: v_v * n_v = U * v_l * n_l   
     """
-    # get rocket ullage    
     U = rocket_inputs["tank_ullage_fraction"]
     
-    # need to solve for x in the A*x=b system below
-    A = numpy.array([
-        [0,             1,      1,       0,          0                         ],
-        [-1,            v_l,    0,       0,          0                         ],
-        [-U,            0,      v_v,     0,          0                         ],
-        [-4*U/math.pi,  0,      0,       0,          d_T**2 - D_dt**2 + d_dt**2],
-        [-4/math.pi,    0,      0,       d_T**2,    -d_T**2                    ]
-    ])
-    b = numpy.array([m_o_tot_0/W_o,   0, 0, 0, 0])    
+    n_tot = m_o_tot_0 / W_o
+    n_l = n_tot / (1.0 + U * v_l / v_v)
+    n_v = n_tot - n_l
     
-    # solve the system Ax=b for x
-    V_l, n_l, n_v, L_T, L_dt = numpy.linalg.solve(A, b)
+    V_l = v_l * n_l
+    V_V = v_v * n_v
+    L_T = (V_l + V_V) / A_T
     
-    return V_l, n_l, n_v, L_T, L_dt
+    return V_l, n_l, n_v, L_T, V_V
 
-def initialize_state_vector_using_tank_length(rocket_inputs, v_l, v_v, m_o_tot_0, W_o, d_T, D_dt, d_dt):
+def initialize_state_vector_using_tank_length(rocket_inputs, v_l, v_v, m_o_tot_0, W_o, A_T):
     """
-    Uses tank length to initialize the state vector.
+    uses tank internal length to initialize the state vector
+        total oxidizer: n_l + n_v = m_ox / W_o                  
+        the two phases fill the tank: v_l * n_l + v_v * n_v  = A_T * L_T      
     """
-    # unpack rocket length
-    L_T = rocket_inputs["tank_internal_length_m"]
+    L_T = rocket_inputs["tank_internal_length"]
     
-    # do the lin alg stuff
-    A = numpy.array([
-        [0,         1,     1,      0,              0                         ], 
-        [-1,        v_l,   0,      0,              0                         ], 
-        [0,         0,     v_v,   -1,              0                         ], 
-        [0,         0,     0,      -4/math.pi,     d_T**2 - D_dt**2 + d_dt**2], 
-        [4/math.pi, 0,     0,      0,              d_T**2                    ]
-    ])
-    b = numpy.array([m_o_tot_0/W_o,  0, 0, 0, d_T**2 * L_T])
+    n_tot = m_o_tot_0 / W_o
+    V_tank = A_T * L_T
     
-    V_l, n_l, n_v, V_V, L_dt = numpy.linalg.solve(A, b)
+    # solving the two equations above for n_l
+    n_l = (V_tank - n_tot * v_v) / (v_l - v_v)
+    n_v = n_tot - n_l
     
-    return V_l, n_l, n_v, V_V, L_dt
+    V_l = v_l * n_l
+    V_V = v_v * n_v
+    
+    return V_l, n_l, n_v, V_V
+
+# refuse a tank state that is physically nonphysical
+def _validate_tank_fill(n_l, n_v, v_l, v_v, m_o_tot_0, W_o, A_T, rocket_inputs):
+    if n_l > 0.0 and n_v > 0.0:
+        return
+    
+    n_tot = m_o_tot_0 / W_o
+    V_tank = A_T * rocket_inputs["tank_internal_length"]
+    V_liquid_only = n_tot * v_l
+    V_vapour_only = n_tot * v_v
+    
+    if n_v <= 0.0:
+        raise ValueError(f"Tank cannot hold this much oxidizer! ({m_o_tot_0:.3f} kg of saturated liquid occupies {V_liquid_only*1e3:.2f} L, but the tank is only {V_tank*1e3:.2f} L.)")
+    raise ValueError(f"Tank is too large for this much oxidizer to be saturated. ({m_o_tot_0:.3f} kg as pure saturated vapour occupies {V_vapour_only*1e3:.2f} L, less than the tank's {V_tank*1e3:.2f} L, so no liqui phase exists.)")
+
+def compute_rocket_variables(rocket_inputs):
+    """
+    Used to compute certain rocket variables such as parachute area, injector hole area, etc, used in the rest of the simulation
+    """
+    # areas
+    rocket_inputs["injector_hole_area"] = math.pi * rocket_inputs["injector_hole_radius"] ** 2
+    rocket_inputs["drogue_parachute_frontal_area"] = math.pi * rocket_inputs["drogue_parachute_radius"] ** 2
+    rocket_inputs["main_parachute_frontal_area"] = math.pi * rocket_inputs["main_parachute_radius"] ** 2
+    rocket_inputs["rocket_frontal_area"] = math.pi * rocket_inputs["rocket_outer_radius"] ** 2
+    rocket_inputs["nozzle_throat_area"] = math.pi * rocket_inputs["nozzle_throat_radius"] ** 2
+    rocket_inputs["nozzle_exit_area"] = math.pi * rocket_inputs["nozzle_exit_radius"] ** 2
+    # volumes
+    rocket_inputs["pre_chamber_volume"] = math.pi * rocket_inputs["pre_chamber_radius"] ** 2 * rocket_inputs["pre_chamber_length"]
+    rocket_inputs["post_chamber_volume"] = math.pi * rocket_inputs["post_chamber_radius"] ** 2 * rocket_inputs["post_chamber_length"]
+    # ratios
+    if rocket_inputs["nozzle_throat_radius"] > 0:
+        rocket_inputs["nozzle_expansion_ratio"] = (rocket_inputs["nozzle_exit_radius"] / rocket_inputs["nozzle_throat_radius"]) ** 2
+    
+    return rocket_inputs

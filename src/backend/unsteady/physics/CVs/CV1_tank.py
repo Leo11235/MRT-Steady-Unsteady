@@ -4,7 +4,6 @@ Handles tank physics. Tank physics active in phases 1-4
 
 import numpy as np
 from src.backend.unsteady.physics.N2O_properties.N2O_properties import get_N2O_property
-from src.backend.unsteady.physics.CEA.CEA_interpolator import CEA_interpolation_lookup
 
 ############################ JOEL'S MODEL
 # phases 1 & 2

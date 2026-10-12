@@ -1,1106 +1,365 @@
 """
-Steady simulation page.
+Steady input form.
 
-Changes vs. the previous iteration:
+Three tabs:
 
-  - Pretty display names in the simulation-type dropdown and parametric picker
-    (round-tripped via src.ui.app.display).
-  - Unit dropdowns on every numeric field that has a unit (length / pressure /
-    mass / mass-flow / density / angle).  Internal storage stays SI.
-  - Oxidizer & Fuel and Rocket Body sections have NO pre-filled values; only
-    the Advanced subsection (chemistry & regression law) is pre-filled.
-  - Reset-to-defaults button removed.
-  - Sim-type-driven visibility:
-      * hotfire           → hide every Rocket Body field, show a placeholder.
-      * parametric_study  → show the parametric list; remove any variable
-                            from its tab while it is parametrized.
-  - Lock icon (🔒 / 🔓) next to the Advanced section title.  Click toggles.
-  - default_output_units initial value comes from user_settings.
+    Sim settings      name, type, save toggle, and the parametric sweep editor
+    Oxidizer & fuel   the operating point and grain geometry
+    Rocket body       mass, drag and mission, only used when there's a trajectory
+
+Two sections appear conditionally. The hotfire alternates live inside the
+Oxidizer & fuel tab and only show for a hotfire, because the other two types
+solve for them. The Rocket body tab swaps its whole contents for a short
+explanation during a hotfire rather than emptying out, so the tab never looks
+broken.
+
+There's no output-units control here. Inputs carry their own unit per field,
+and the SI/MRT/IMP choice belongs to the results page where it's actually read.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
-from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
-from src.ui.app import theme, backend_bridge, settings as user_settings
-from src.ui.app import display as display_mod
-from src.ui.app.widgets.form_field import LabeledField
+from src.ui.app import backend_bridge, theme
+from src.ui.app import field_registry as registry
+from src.ui.app import settings as user_settings
+from src.ui.app.pages.input_page import InputPage, VALUE_INDENT
 from src.ui.app.widgets.parametric_list import ParametricList
-from src.ui.app.widgets.error_popup import show_simulation_error
-from src.ui.app.widgets.recent_preset_menu import RecentPresetMenu
-from src.ui.app.services.preset_manager import PresetManager
-from src.ui.app.services import i18n
-from src.ui.app.services import recent_presets
 
 
-# --------------------------------------------------------------------------
-# Defaults
-#
-# By design ONLY the Advanced (propellant chemistry & regression law) fields
-# are pre-filled.  Everything else starts blank.
-# --------------------------------------------------------------------------
-
-_ADVANCED_DEFAULTS = {
-    "fuel_grain_density":                   900,
-    "regression_rate_scaling_coefficient":  0.000132,
-    "regression_rate_exponent":             0.555,
-    "liquid_oxidizer_type":                 "NITROUS OXIDE",
-    "solid_fuel_type":                      "EICOSANE (PARAFFIN)",
+SIM_TYPES: dict[str, str] = {
+    "hotfire":               "Hotfire",
+    "fuel_mass_convergence": "Fuel mass convergence",
+    "parametric_study":      "Parametric study",
 }
+SIM_TYPE_WIRE = {label: wire for wire, label in SIM_TYPES.items()}
 
-SIM_TYPES_WIRE = ("hotfire", "fuel_mass_convergence", "parametric_study")
-OUTPUT_UNITS   = ("SI", "MRT", "IMP")
+_HOTFIRE_ALTERNATES = ("initial_internal_fuel_diameter", "fuel_mass")
+
+# Inputs with defensible defaults that most runs never touch. Locked behind
+# the padlock so changing one is deliberate.
+_ADVANCED_KEYS = (
+    "fuel_grain_density",
+    "regression_rate_scaling_coefficient",
+    "regression_rate_exponent",
+    "liquid_oxidizer_type",
+    "solid_fuel_type",
+)
 
 
-# --------------------------------------------------------------------------
-# Page
-# --------------------------------------------------------------------------
-
-class SteadyPage(ctk.CTkFrame):
+class SteadyPage(InputPage):
     TITLE = "Steady simulation"
+    KIND = "steady"
 
-    def __init__(self, master, on_navigate) -> None:
-        super().__init__(master, corner_radius=0, fg_color="transparent")
-        self.on_navigate = on_navigate
+    # ==================================================================
+    # Tabs
+    # ==================================================================
 
-        # Field registry: key = rocket_inputs JSON key, value = LabeledField.
-        # Also: which tab the field's row is currently packed into, so we can
-        # pack_forget / pack it back without losing its position.
-        self.fields: dict[str, LabeledField] = {}
-
-        # Top-level form state
-        # — sim_type stored in WIRE form internally
-        self.sim_type_var = ctk.StringVar(value="fuel_mass_convergence")
+    def _build_tabs(self) -> None:
+        self.sim_name_var = ctk.StringVar()
+        self.sim_type_var = ctk.StringVar(value=SIM_TYPES["fuel_mass_convergence"])
         self.output_units_var = ctk.StringVar(
-            value=user_settings.get("default_output_units", "SI"),
-        )
-        self.save_data_var = ctk.BooleanVar(value=True)
-        self.sim_name_var = ctk.StringVar(value="")
+            value=user_settings.get("default_program_units", "SI"))
 
-        # Preset tracking: when the user has loaded (or just saved) a preset,
-        # we remember which file it was and what the config dict looked like
-        # right after.  If the form is then run without any further edits,
-        # we reuse that file instead of writing a fresh _ui_run_*.jsonc.
-        # Owned by a PresetManager service so both simulation pages share
-        # exactly one implementation of the "reuse-or-auto-save" logic.
-        self._presets = PresetManager(
-            presets_dir_fn=backend_bridge.steady_presets_dir,
-            save_fn=backend_bridge.save_jsonc,
-        )
+        self._build_sim_tab(self.add_tab("Sim Settings"))
+        self._build_oxfuel_tab(self.add_tab("Oxidizer & Fuel"))
+        self._build_body_tab(self.add_tab("Rocket Body"))
 
-        # "Auto-save inputs as new preset" — when on, every Run also stamps
-        # out a properly-named preset file rather than a temp one.  Default
-        # ON so runs are traceable out of the box; user can uncheck it if
-        # they're iterating rapidly and don't want the files.
-        self.auto_save_var = ctk.BooleanVar(value=True)
-
-        # Visibility-control state
-        self._rocket_body_fields: list[str] = []  # keys whose widgets sit on Rocket Body tab
-        self._rocket_body_placeholder = None
-
-        # Advanced-section lock state
-        self._advanced_locked = ctk.BooleanVar(value=True)
-        self._advanced_fields: list[str] = []
-        self._lock_btn = None
-
-        self._build()
-        self._capture_build_order()       # snapshot pack order for restoration
-
-        # Initial visibility pass
-        self.sim_type_var.trace_add("write", lambda *_: self._refresh_visibility())
-        self._apply_advanced_lock()
+    def _after_build(self) -> None:
         self._refresh_visibility()
 
-        # Snapshot the initial (blank + Advanced-defaults) form state.
-        # is_dirty() compares against this OR the last loaded/saved preset.
-        self._initial_snapshot: dict | None = self.to_config()
+    # ==================================================================
+    # After a run
+    # ==================================================================
 
-    # ===================================================================
-    # Layout
-    # ===================================================================
+    def _review_result(self, result) -> bool:
+        """Warn when a convergence run never reached the target apogee.
 
-    def _build(self) -> None:
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=0, minsize=200)
-        self.grid_rowconfigure(0, weight=1)
+        The run succeeded — it produced a complete result — so nothing else in
+        the pipeline flags it, and the results page looks exactly like a
+        converged one until you read the apogee. Only convergence runs can
+        fail this way: a hotfire has no target, and a parametric study flags
+        its failing points individually in the sweep tab.
+        """
+        if self.sim_type_var.get() != SIM_TYPES["fuel_mass_convergence"]:
+            return True
 
-        self.tabs = ctk.CTkTabview(self, anchor="w")
-        self.tabs.grid(row=0, column=0, sticky="nsew",
-                       padx=(theme.PAD_M, theme.PAD_S), pady=theme.PAD_M)
+        try:
+            results = backend_bridge.load_run(Path(result))
+        except Exception:                       # noqa: BLE001
+            return True                         # can't tell; don't block
 
-        sim_tab    = self.tabs.add(i18n.t("tab.sim_settings"))
-        oxfuel_tab = self.tabs.add(i18n.t("tab.oxidizer_fuel"))
-        body_tab   = self.tabs.add(i18n.t("tab.rocket_body"))
+        params = results.get("rocket_parameters") or {}
+        if params.get("target_apogee_reached") is not False:
+            return True
 
-        self._build_sim_tab(sim_tab)
-        self._build_oxfuel_tab(oxfuel_tab)
-        self._build_body_tab(body_tab)
+        from src.ui.app.widgets.apogee_dialog import show_apogee_shortfall
+        from src.ui.app.widgets.kv_row import native_system_of
 
-        # Sidebar
-        sidebar = ctk.CTkFrame(self, fg_color="transparent")
-        sidebar.grid(row=0, column=1, sticky="ns",
-                     padx=(theme.PAD_S, theme.PAD_M), pady=theme.PAD_M)
-        self._build_sidebar(sidebar)
-
-        # Bottom status line
-        self.status_label = ctk.CTkLabel(
-            self, text="", anchor="w",
-            text_color=("gray35", "gray65"),
-            font=ctk.CTkFont(size=theme.SIZE_SMALL),
+        inputs = results.get("rocket_inputs") or {}
+        return show_apogee_shortfall(
+            self,
+            # AGL, because target_apogee is AGL. reached_apogee is the
+            # sea-level number and is only a fallback for runs written before
+            # the AGL key existed, where it is the best available.
+            reached=params.get("reached_apogee_agl",
+                               params.get("reached_apogee")),
+            target=inputs.get("target_apogee"),
+            system=self.system,
+            # The file is in MRT units when the run's output_units said so, so
+            # a 45000 ft target is stored as the number 45000. Reading that as
+            # metres is exactly the bug this argument exists to prevent.
+            native=native_system_of(results),
         )
-        self.status_label.grid(row=1, column=0, columnspan=2, sticky="ew",
-                               padx=theme.PAD_M, pady=(0, theme.PAD_S))
 
-    # -------------------------------------------------------------------
-    # Sim Settings tab
-    # -------------------------------------------------------------------
+    def _on_system_changed(self, system: str) -> None:
+        """The base class re-presents the plain fields; these two widgets carry
+        units of their own and have to be told separately."""
+        self.output_units_var.set(system)
+        if getattr(self, "parametric_list", None) is not None:
+            self.parametric_list.set_system(system)
 
-    def _build_sim_tab(self, parent) -> None:
-        wrap = ctk.CTkScrollableFrame(parent, label_text="")
-        wrap.pack(fill="both", expand=True)
+    # ---- tab 1 --------------------------------------------------------
 
-        # --- header --------------------------------------------------------
-        self._section_title(wrap, i18n.t("section.simulation"))
+    def _build_sim_tab(self, wrap) -> None:
+        self.add_section_title(wrap, "Simulation")
 
-        # Simulation name
         row = ctk.CTkFrame(wrap, fg_color="transparent")
         row.pack(fill="x", pady=theme.PAD_XS)
-        ctk.CTkLabel(row, text=i18n.t("label.sim_name"), width=220, anchor="w") \
-            .pack(side="left", padx=(0, theme.PAD_S))
+        ctk.CTkLabel(row, text="Simulation name", width=220, anchor="w").pack(
+            side="left", padx=(0, theme.PAD_S))
         ctk.CTkEntry(row, textvariable=self.sim_name_var,
-                     placeholder_text=i18n.t("label.sim_name_placeholder")) \
-            .pack(side="left", fill="x", expand=True)
+                     placeholder_text="optional; blank uses a timestamp").pack(
+            side="left", fill="x", expand=True)
 
-        # Simulation type — pretty display, wire-form storage
         row = ctk.CTkFrame(wrap, fg_color="transparent")
         row.pack(fill="x", pady=theme.PAD_XS)
-        ctk.CTkLabel(row, text=i18n.t("label.sim_type"), width=220, anchor="w") \
-            .pack(side="left", padx=(0, theme.PAD_S))
+        ctk.CTkLabel(row, text="Simulation type", width=220, anchor="w").pack(
+            side="left", padx=(0, theme.PAD_S))
+        ctk.CTkOptionMenu(row, variable=self.sim_type_var,
+                          values=list(SIM_TYPES.values()),
+                          command=lambda _v: self._refresh_visibility(),
+                          dynamic_resizing=False, width=260).pack(side="left")
 
-        self._sim_type_display_var = ctk.StringVar(
-            value=display_mod.sim_type_display(self.sim_type_var.get()),
-        )
-        ctk.CTkOptionMenu(
-            row, variable=self._sim_type_display_var,
-            values=[display_mod.sim_type_display(k) for k in SIM_TYPES_WIRE],
-            command=self._on_sim_type_display_changed,
-            dynamic_resizing=False, width=260,
-        ).pack(side="left")
+        ctk.CTkLabel(wrap, text="Description", anchor="w").pack(
+            fill="x", pady=(theme.PAD_S, theme.PAD_XS))
+        self.description = ctk.CTkTextbox(wrap, height=60, wrap="word")
+        self.description.pack(fill="x")
 
-        # (Output-units dropdown removed — the SI/IMP/MRT toggle on the
-        # results-page sidebar covers this use case.  The output_units
-        # value is still populated from user settings + saved into the
-        # config so no backend behaviour changes.)
-
-        # Save data
-        row = ctk.CTkFrame(wrap, fg_color="transparent")
-        row.pack(fill="x", pady=theme.PAD_XS)
-        ctk.CTkCheckBox(row, text=i18n.t("checkbox.save_data"),
-                        variable=self.save_data_var) \
-            .pack(side="left")
-
-        # --- parametric study section ---------------------------------------
-        self._divider(wrap)
+        # ---- parametric sweep ----------------------------------------
+        self.add_divider(wrap)
         self._parametric_section = ctk.CTkFrame(wrap, fg_color="transparent")
         self._parametric_section.pack(fill="x", pady=(theme.PAD_S, 0))
 
-        self._section_title(self._parametric_section, i18n.t("section.parametric"))
+        self.add_section_title(self._parametric_section, "Parametric Study Settings")
         ctk.CTkLabel(
             self._parametric_section,
-            text=i18n.t("param.blurb"),
-            anchor="w", justify="left",
+            text=("Add one or more variables to sweep; each is given a low/high/step."),
+            anchor="w", justify="left", wraplength=820,
             text_color=theme.TEXT_MUTED,
             font=ctk.CTkFont(size=theme.SIZE_SMALL),
-            wraplength=820,
         ).pack(fill="x", pady=(0, theme.PAD_S))
 
         self.parametric_list = ParametricList(
-            self._parametric_section,
-            on_change=self._refresh_visibility,
-        )
+            self._parametric_section, system=self.system,
+            on_change=self._refresh_visibility)
         self.parametric_list.pack(fill="x", pady=(0, theme.PAD_S))
 
-    # -------------------------------------------------------------------
-    # Oxidizer & Fuel tab
-    # -------------------------------------------------------------------
+    # ---- tab 2 --------------------------------------------------------
 
-    def _build_oxfuel_tab(self, parent) -> None:
-        wrap = ctk.CTkScrollableFrame(parent, label_text="")
-        wrap.pack(fill="both", expand=True)
+    def _build_oxfuel_tab(self, wrap) -> None:
+        self.add_section_title(wrap, "Combustion")
+        self.add_field(wrap, "oxidizer_mass_flow_rate")
+        self.add_field(wrap, "chamber_pressure")
 
-        self._section_title(wrap, i18n.t("section.combustion"))
-        self._add_field(wrap, "oxidizer_mass_flow_rate",
-                        label="Oxidizer mass flow rate",
-                        kind="mass_flow",
-                        required=True, numeric=True)
-        self._add_field(wrap, "chamber_pressure",
-                        label="Chamber pressure",
-                        kind="pressure",
-                        required=True, numeric=True)
+        self.add_divider(wrap)
+        self.add_section_title(wrap, "Fuel geometry")
+        self.add_field(wrap, "fuel_external_diameter")
+        self.add_field(wrap, "fuel_length")
 
-        self._divider(wrap)
-        self._section_title(wrap, i18n.t("section.fuel_geometry"))
-        self._add_field(wrap, "fuel_external_diameter",
-                        label="Fuel external diameter",
-                        kind="length",
-                        required=True, numeric=True)
-        self._add_field(wrap, "fuel_length",
-                        label="Fuel length",
-                        kind="length",
-                        required=True, numeric=True)
-
-        # Hotfire-only sub-frame (one container so we can show/hide it as a
-        # unit, preserving the internal order on every toggle).
-        self._hotfire_only_section = ctk.CTkFrame(wrap, fg_color="transparent")
-        # NOT packed initially — _refresh_visibility will pack it when hotfire.
-
-        # "Fill in either X or Y" note sits above the two alternates so
-        # users see the rule before they see the fields.
+        # One container for the hotfire-only pair, so it hides and shows as a
+        # unit and keeps its internal order across toggles.
+        self._hotfire_section = ctk.CTkFrame(wrap, fg_color="transparent")
+        # Deliberately not packed; _refresh_visibility owns it.
         ctk.CTkLabel(
-            self._hotfire_only_section,
-            text=("Fill in EITHER 'Initial internal fuel diameter' OR "
-                  "'Fuel mass' — the solver derives the other. (Only used "
-                  "for hotfires.)"),
-            anchor="w",
-            text_color=("gray35", "gray65"),
+            self._hotfire_section,
+            text=("Fill in EITHER 'Initial internal fuel diameter' OR 'Fuel mass.' The "
+                  "solver derives the other. Only used for hotfires."),
+            anchor="w", justify="left", wraplength=820,
+            text_color=theme.TEXT_MUTED,
             font=ctk.CTkFont(size=theme.SIZE_SMALL, slant="italic"),
-            wraplength=820,
-        ).pack(fill="x", padx=(220 + theme.PAD_S, 0),
-               pady=(theme.PAD_S, theme.PAD_XS))
+        ).pack(fill="x", padx=(VALUE_INDENT, 0), pady=(theme.PAD_S, theme.PAD_XS))
+        for key in _HOTFIRE_ALTERNATES:
+            self.add_field(self._hotfire_section, key)
 
-        self._add_field(self._hotfire_only_section, "initial_internal_fuel_diameter",
-                        label="Initial internal fuel diameter",
-                        kind="length",
-                        numeric=True)
-        self._add_field(self._hotfire_only_section, "fuel_mass",
-                        label="Fuel mass",
-                        kind="mass",
-                        numeric=True)
+        self.add_divider(wrap)
+        self.add_advanced_header(
+            wrap, "Advanced (propellant chemistry & regression law)")
+        for key in _ADVANCED_KEYS:
+            if key == "regression_rate_scaling_coefficient":
+                self.add_advanced_field(
+                    wrap, key,
+                    exponent_provider=self.regression_exponent_provider(
+                        "regression_rate_exponent"))
+            else:
+                self.add_advanced_field(wrap, key)
 
-        # ---- Advanced section (with lock icon) ---------------------------
-        self._divider(wrap)
-        self._build_advanced_header(wrap)
+    # ---- tab 3 --------------------------------------------------------
 
-        for key, default in _ADVANCED_DEFAULTS.items():
-            field = self._add_field(
-                wrap, key,
-                label=_PRETTY_FIELD_LABELS.get(key, key),
-                kind=display_mod.field_kind(key),
-                default=str(default) if default is not None else "",
-                numeric=isinstance(default, (int, float)),
-            )
-            self._advanced_fields.append(key)
+    def _build_body_tab(self, wrap) -> None:
+        # Content and placeholder are siblings in the same wrap; exactly one is
+        # packed at a time. Keeping the content in its own frame means the
+        # field order survives every toggle.
+        self._body_content = ctk.CTkFrame(wrap, fg_color="transparent")
+        self._body_content.pack(fill="x")
 
-    def _build_advanced_header(self, parent) -> None:
-        # Give the row a fixed height so all three children get a consistent
-        # vertical-center.  We pad the labels' heights to match the lock
-        # button so nothing gets cropped.
-        ROW_H = 32
-        row = ctk.CTkFrame(parent, fg_color="transparent", height=ROW_H)
-        row.pack(fill="x", pady=(theme.PAD_S, theme.PAD_XS))
-        row.pack_propagate(False)  # honour our explicit height
-
-        ctk.CTkLabel(
-            row,
-            text=i18n.t("section.advanced"),
-            font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
-            anchor="w",
-            height=ROW_H,
-        ).pack(side="left")
-
-        # 🔒/🔓 clickable label — sized to match the row height so it
-        # sits on the same baseline as the surrounding text.
-        self._lock_btn = ctk.CTkButton(
-            row,
-            text="🔒",
-            width=32, height=ROW_H,
-            corner_radius=6,
-            fg_color="transparent",
-            hover_color=("gray85", "gray25"),
-            command=self._toggle_advanced_lock,
-        )
-        self._lock_btn.pack(side="left", padx=(theme.PAD_S, 0))
-
-        # "click to edit" — explicit height + width avoids the
-        # font-padding-cropping-the-t bug.
-        ctk.CTkLabel(
-            row,
-            text=i18n.t("advanced.click_to_edit"),
-            font=ctk.CTkFont(size=theme.SIZE_SMALL, slant="italic"),
-            text_color=("gray45", "gray60"),
-            height=ROW_H,
-            width=85,
-            anchor="w",
-        ).pack(side="left", padx=(theme.PAD_XS, 0))
-
-    # -------------------------------------------------------------------
-    # Rocket Body tab
-    # -------------------------------------------------------------------
-
-    def _build_body_tab(self, parent) -> None:
-        wrap = ctk.CTkScrollableFrame(parent, label_text="")
-        wrap.pack(fill="both", expand=True)
-        self._rocket_body_wrap = wrap
-
-        # Wrapper-frame pattern: keep all the actual content inside one inner
-        # frame so we can pack_forget the whole subtree (preserving the
-        # internal order) when sim_type is hotfire.
-        self._rocket_body_content = ctk.CTkFrame(wrap, fg_color="transparent")
-        self._rocket_body_content.pack(fill="x")
-        content = self._rocket_body_content
-
-        # Placeholder shown when sim_type is hotfire (in the SAME wrap).
-        self._rocket_body_placeholder = ctk.CTkLabel(
+        self._body_placeholder = ctk.CTkLabel(
             wrap,
-            text=i18n.t("rocket_body.not_used"),
+            text=("A hotfire has no trajectory, so none of these inputs are "
+                  "used.\n\nSwitch to fuel mass convergence or a parametric "
+                  "study to set them."),
             font=ctk.CTkFont(size=theme.SIZE_H2),
-            text_color=("gray45", "gray60"),
-            wraplength=600,
-            justify="center",
+            text_color=theme.TEXT_FAINT,
+            wraplength=600, justify="center",
         )
-        # built but not packed yet — _refresh_visibility manages it
 
-        self._section_title(content, i18n.t("section.rocket"))
-        self._add_field(content, "dry_mass",
-                        label="Dry mass", kind="mass",
-                        required=True, numeric=True)
-        self._add_field(content, "rocket_external_diameter",
-                        label="Rocket external diameter", kind="length",
-                        required=True, numeric=True)
-        self._add_field(content, "drag_coefficient",
-                        label="Drag coefficient",
-                        required=True, numeric=True)
+        content = self._body_content
+        self.add_section_title(content, "Rocket")
+        self.add_field(content, "dry_mass")
+        self.add_field(content, "rocket_external_diameter")
+        self.add_field(content, "drag_coefficient")
 
-        self._divider(content)
-        self._section_title(content, i18n.t("section.mission"))
-        self._add_field(content, "target_apogee",
-                        label="Target apogee", kind="length",
-                        required=True, numeric=True)
-        self._add_field(content, "launch_site_altitude",
-                        label="Launch site altitude", kind="length",
-                        required=True, numeric=True)
-        self._add_field(content, "launch_angle",
-                        label="Launch angle (from vertical)", kind="angle",
-                        required=True, numeric=True)
+        self.add_divider(content)
+        self.add_section_title(content, "Mission")
+        self.add_field(content, "target_apogee")
+        self.add_field(content, "launch_site_altitude")
+        self.add_field(content, "launch_angle")
 
-        # Track which fields live on the Rocket Body tab so the parametric
-        # mode knows which ones to hide when they're being swept.
-        self._rocket_body_fields = [
-            "dry_mass", "rocket_external_diameter", "drag_coefficient",
-            "target_apogee", "launch_site_altitude", "launch_angle",
-        ]
+    # ==================================================================
+    # Visibility
+    # ==================================================================
 
-    # -------------------------------------------------------------------
-    # Sidebar
-    # -------------------------------------------------------------------
-
-    def _build_sidebar(self, parent) -> None:
-        ctk.CTkLabel(parent, text=i18n.t("action.actions"),
-                     font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
-                     anchor="w").pack(fill="x", pady=(0, theme.PAD_S))
-
-        ctk.CTkButton(parent, text=i18n.t("action.load_preset"),
-                      width=180, height=36,
-                      command=self._on_load_preset).pack(pady=theme.PAD_XS)
-
-        ctk.CTkButton(parent, text=i18n.t("action.save_preset"),
-                      width=180, height=36,
-                      command=self._on_save_preset).pack(pady=theme.PAD_XS)
-
-        ctk.CTkButton(parent, text=i18n.t("action.run"),
-                      width=180, height=44,
-                      font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
-                      fg_color=theme.ACCENT_SLATE,
-                      hover_color=theme.ACCENT_SLATE_HOVER,
-                      command=self._on_run).pack(pady=(theme.PAD_M, theme.PAD_XS))
-
-        ctk.CTkCheckBox(parent,
-                        text=i18n.t("action.autosave"),
-                        variable=self.auto_save_var) \
-            .pack(pady=(theme.PAD_S, 0))
-
-    # -------------------------------------------------------------------
-    # Builder helpers
-    # -------------------------------------------------------------------
-
-    def _section_title(self, parent, text: str) -> None:
-        ctk.CTkLabel(
-            parent, text=text, anchor="w",
-            font=ctk.CTkFont(size=theme.SIZE_H2, weight="bold"),
-        ).pack(fill="x", pady=(theme.PAD_S, theme.PAD_XS))
-
-    def _divider(self, parent) -> None:
-        ctk.CTkFrame(parent, height=1, fg_color=("gray75", "gray30")) \
-            .pack(fill="x", pady=theme.PAD_S)
-
-    def _add_field(self, parent, key: str, **kwargs) -> LabeledField:
-        # Snake-case keys get a friendly default label if not overridden
-        kwargs.setdefault("label", _PRETTY_FIELD_LABELS.get(key, key))
-        # kind defaults to the registered FIELD_KIND
-        kwargs.setdefault("kind", display_mod.field_kind(key))
-        # Help text (tooltip on hover) if we have a canonical entry for it.
-        if "help_text" not in kwargs:
-            kwargs["help_text"] = _FIELD_HELP.get(key)
-        field = LabeledField(parent, **kwargs)
-        field.pack(fill="x", pady=theme.PAD_XS)
-        self.fields[key] = field
-        return field
-
-    # ===================================================================
-    # Conditional visibility
-    # ===================================================================
-
-    def _on_sim_type_display_changed(self, display_value: str) -> None:
-        wire = display_mod.sim_type_value_from_display(display_value)
-        self.sim_type_var.set(wire)
-        # the trace on sim_type_var fires _refresh_visibility
+    @property
+    def sim_type(self) -> str:
+        return SIM_TYPE_WIRE.get(self.sim_type_var.get(), "fuel_mass_convergence")
 
     def _refresh_visibility(self) -> None:
-        sim_type = self.sim_type_var.get()
-        hotfire  = (sim_type == "hotfire")
-        param    = (sim_type == "parametric_study")
+        """Show what this simulation type uses, hide what it doesn't."""
+        sim_type = self.sim_type
+        is_hotfire = sim_type == "hotfire"
+        is_parametric = sim_type == "parametric_study"
+        swept = set(self.parametric_list.used_vars()) if is_parametric else set()
 
-        # 1) Parametric Settings section appears only in parametric mode
-        if self._parametric_section is not None:
-            self._set_packed(self._parametric_section, param,
-                             pack_kwargs={"fill": "x",
-                                          "pady": (theme.PAD_S, 0)})
+        self.set_packed(self._parametric_section, is_parametric,
+                        {"fill": "x", "pady": (theme.PAD_S, 0)})
+        self.set_packed(self._hotfire_section, is_hotfire, {"fill": "x"})
 
-        # 2) Hotfire-only sub-frame (initial_internal_fuel_radius + note)
-        self._set_packed(self._hotfire_only_section, hotfire,
-                         pack_kwargs={"fill": "x"})
+        # Rocket body swaps content for an explanation rather than emptying.
+        self.set_packed(self._body_content, not is_hotfire, {"fill": "x"})
+        self.set_packed(self._body_placeholder, is_hotfire,
+                        {"pady": theme.PAD_XL, "padx": theme.PAD_L, "fill": "x"})
 
-        # 3) Rocket Body tab — swap between the real content frame and the
-        #    "not used for hotfire" placeholder.  Wrapping in a single inner
-        #    frame preserves the internal order across toggles (no reordering
-        #    of fields when you go hotfire → fuel_mass_convergence and back).
-        self._set_packed(self._rocket_body_content, not hotfire,
-                         pack_kwargs={"fill": "x"})
-        self._set_packed(self._rocket_body_placeholder, hotfire,
-                         pack_kwargs={"pady": theme.PAD_XL,
-                                      "padx": theme.PAD_L,
-                                      "fill": "x"})
+        # A swept variable is supplied per point, so its static field would be
+        # misleading. Hide it rather than leaving a value that does nothing.
+        for path, field in self.fields.items():
+            if path in swept:
+                self.set_packed(field, False)
+            elif path not in _HOTFIRE_ALTERNATES:
+                self.set_packed(field, True)
 
-        # 4) Parametrized variables disappear from their static tab.
-        #    Restoration uses _show_field_in_order so they re-appear in
-        #    their original position rather than at the bottom of the tab.
-        parametrized = set(self.parametric_list.used_vars()) if param else set()
-        for key, field in self.fields.items():
-            if key in parametrized:
-                self._set_packed(field, False)
-            else:
-                # Skip fields whose tab-level container is currently hidden
-                # (parent frame manages those; don't second-guess it).
-                parent = field.master
-                if parent is self._rocket_body_content and hotfire:
-                    continue
-                if parent is self._hotfire_only_section and not hotfire:
-                    continue
-                # Restore in original position (in case it was previously
-                # parametric-hidden).
-                if field.winfo_manager() != "pack":
-                    self._show_in_order(field)
-
-    def _show_in_order(self, widget,
-                       pack_kwargs: dict | None = None) -> None:
-        """
-        Pack `widget` at its original position relative to its siblings.
-
-        We snapshot the pack order of every parent at build time
-        (_capture_build_order); when restoring, we look up the next sibling
-        that's still packed and use `pack(before=...)`.  Falls back to
-        plain pack() if no anchor is found.
-        """
-        pack_kwargs = pack_kwargs or {"fill": "x", "pady": theme.PAD_XS}
-        siblings = self._build_order.get(widget.master, [])
-        if widget in siblings:
-            idx = siblings.index(widget)
-            for sib in siblings[idx + 1:]:
-                try:
-                    if sib.winfo_manager() == "pack":
-                        widget.pack(before=sib, **pack_kwargs)
-                        return
-                except Exception:
-                    continue
-        widget.pack(**pack_kwargs)
-
-    def _capture_build_order(self) -> None:
-        """Snapshot child order of every parent that hosts toggle-able widgets."""
-        self._build_order = {}
-
-        # Parents we must track: each toggleable widget's master + every
-        # field's master.  Sets deduplicate.
-        parents = set()
-        for w in (self._parametric_section,
-                  self._hotfire_only_section,
-                  self._rocket_body_content,
-                  self._rocket_body_placeholder):
-            if w is not None:
-                parents.add(w.master)
-        for field in self.fields.values():
-            parents.add(field.master)
-        # The inner content frames of the wrappers also matter — they hold
-        # the actual fields whose order we want to preserve.
-        for parent in (self._rocket_body_content, self._hotfire_only_section):
-            if parent is not None:
-                parents.add(parent)
-
-        for parent in parents:
-            if parent is not None:
-                self._build_order[parent] = list(parent.winfo_children())
-
-    def _set_packed(self, widget, want_visible: bool,
-                    pack_kwargs: dict | None = None) -> None:
-        # NOTE: we deliberately check `winfo_manager()` instead of
-        # `winfo_ismapped()`.  Widgets on an inactive CTkTabview tab are
-        # technically NOT mapped (the tabview hides them), so
-        # winfo_ismapped() returns False and we'd skip the pack_forget,
-        # leaving the widgets visible when the tab is later activated.
-        try:
-            is_managed = (widget.winfo_manager() == "pack")
-        except Exception:
-            return
-        if want_visible and not is_managed:
-            # Use the build-order helper so widgets re-appear in their
-            # original position (otherwise pack() appends to the end of the
-            # parent — and the hotfire-only section would end up below
-            # Advanced instead of inside Fuel grain geometry).
-            self._show_in_order(widget, pack_kwargs)
-        elif not want_visible and is_managed:
-            widget.pack_forget()
-
-    # ===================================================================
-    # Advanced section lock
-    # ===================================================================
-
-    def _toggle_advanced_lock(self) -> None:
-        self._advanced_locked.set(not self._advanced_locked.get())
-        self._apply_advanced_lock()
-
-    def _apply_advanced_lock(self) -> None:
-        locked = self._advanced_locked.get()
-        if self._lock_btn is not None:
-            self._lock_btn.configure(text="🔒" if locked else "🔓")
-        for key in self._advanced_fields:
-            f = self.fields.get(key)
-            if f is not None:
-                f.set_locked(locked)
-
-    # ===================================================================
-    # Serialization
-    # ===================================================================
+    # ==================================================================
+    # Serialisation
+    # ==================================================================
 
     def to_config(self) -> dict:
-        sim_settings: dict = {
-            "simulation_type":  self.sim_type_var.get(),
-            "output_units":     self.output_units_var.get(),
-            "save_output_data": bool(self.save_data_var.get()),
-        }
-        if self.sim_type_var.get() == "parametric_study":
-            sim_settings["parametric_study_settings"] = self.parametric_list.to_dict()
-        if self.sim_name_var.get().strip():
-            sim_settings["simulation_name"] = self.sim_name_var.get().strip()
+        sim_type = self.sim_type
+        swept = (set(self.parametric_list.used_vars())
+                 if sim_type == "parametric_study" else set())
 
-        rocket_inputs: dict = {}
-        parametrized = (
-            set(self.parametric_list.used_vars())
-            if self.sim_type_var.get() == "parametric_study" else set()
-        )
-        for key, field in self.fields.items():
-            # Skip values that are parametrized (those live in sim_settings)
-            if key in parametrized:
+        settings: dict = {
+            "simulation_type": sim_type,
+            "output_units": self.output_units_var.get(),
+        }
+        if sim_type == "parametric_study":
+            settings["parametric_study_settings"] = self.parametric_list.to_dict()
+
+        inputs: dict = {}
+        for path, field in self.fields.items():
+            key = path.rsplit(".", 1)[-1]
+            if key in swept or not self._is_key_active(key, sim_type):
                 continue
-            # Skip hotfire-only fields if not hotfire
-            if (key in ("initial_internal_fuel_diameter", "fuel_mass")
-                    and self.sim_type_var.get() != "hotfire"):
-                continue
-            # Skip Rocket Body fields entirely when hotfire
-            if (self.sim_type_var.get() == "hotfire"
-                    and key in self._rocket_body_fields):
-                continue
-            value = field.get_internal()
-            if value is None or value == "":
-                continue
-            rocket_inputs[key] = value
+            inputs[key] = field.to_pair()
 
         return {
-            "simulation_settings": sim_settings,
-            "rocket_inputs": rocket_inputs,
+            "metadata": {
+                "simulation_type": "steady",
+                "simulation_name": self.sim_name_var.get().strip(),
+                "simulation_description": self.description.get("0.0", "end").strip(),
+                "expected_output": "",
+            },
+            "simulation_settings": settings,
+            "rocket_inputs": inputs,
         }
 
-    def from_config(self, cfg: dict) -> None:
-        sim = cfg.get("simulation_settings", {}) or {}
-        ri  = cfg.get("rocket_inputs", {}) or {}
+    def _is_key_active(self, key: str, sim_type: str) -> bool:
+        """Whether a field belongs in the config for this simulation type.
 
-        # Legacy-preset compat: if the file was saved before the diameter
-        # switch, ri only has radius keys.  Promote them so the diameter
-        # fields on the form populate correctly.  No-op for new presets.
-        try:
-            from src.backend.common.input_normalizer import (
-                promote_to_diameter_steady,
-            )
-            promote_to_diameter_steady(ri)
-        except Exception:
-            # Compat is best-effort; a broken import should never block
-            # loading a preset.
-            pass
+        Keeps a stale hotfire value from leaking into a convergence run, and
+        vice versa.
+        """
+        if key in _HOTFIRE_ALTERNATES:
+            return sim_type == "hotfire"
+        kinematics = registry.steady_schema_keys().get("kinematics_requirements", [])
+        if key in kinematics:
+            return sim_type != "hotfire"
+        return True
 
-        st = sim.get("simulation_type")
-        if st in SIM_TYPES_WIRE:
-            self.sim_type_var.set(st)
-            self._sim_type_display_var.set(display_mod.sim_type_display(st))
-        ou = sim.get("output_units")
-        if ou in OUTPUT_UNITS:
-            self.output_units_var.set(ou)
-        if "save_output_data" in sim:
-            self.save_data_var.set(bool(sim["save_output_data"]))
-        if "simulation_name" in sim:
-            self.sim_name_var.set(str(sim["simulation_name"]))
+    def from_config(self, config: dict) -> None:
+        settings = config.get("simulation_settings") or {}
+        metadata = config.get("metadata") or {}
+        inputs = config.get("rocket_inputs") or {}
 
-        ps = sim.get("parametric_study_settings", {}) or {}
-        self.parametric_list.from_dict(ps)
+        wire = settings.get("simulation_type", "fuel_mass_convergence")
+        self.sim_type_var.set(SIM_TYPES.get(wire, SIM_TYPES["fuel_mass_convergence"]))
+        self.output_units_var.set(settings.get("output_units", "SI"))
 
-        # populate every known field; clear ones that aren't in the config so
-        # we don't keep stale values from a previous preset.
-        for key, field in self.fields.items():
-            if key in ri:
-                field.set_from_internal(ri[key])
+        self.sim_name_var.set(str(metadata.get("simulation_name", "") or ""))
+        self.description.delete("0.0", "end")
+        self.description.insert("0.0", str(metadata.get("simulation_description", "") or ""))
+
+        # Clear first, so fields absent from this preset don't keep values from
+        # whatever was loaded before.
+        for path, field in self.fields_in_load_order():
+            key = path.rsplit(".", 1)[-1]
+            if key in inputs:
+                field.from_pair(inputs[key])
             else:
-                # Advanced fields fall back to their default; everything else clears
-                if key in _ADVANCED_DEFAULTS:
-                    field.set(str(_ADVANCED_DEFAULTS[key]))
-                else:
-                    field.set("")
+                field.reset_to_default()
 
+        self.parametric_list.from_dict(settings.get("parametric_study_settings") or {})
         self._refresh_visibility()
 
-    # ===================================================================
-    # Dirty-check (used by shell's confirm-on-Home)
-    # ===================================================================
+    # ==================================================================
+    # Backend
+    # ==================================================================
 
-    def is_dirty(self) -> bool:
-        """True if the current form differs from the last known-clean
-        snapshot.  The snapshot is captured at build time (blank form
-        with Advanced defaults) and updated on Load / Save preset."""
-        try:
-            baseline = self._presets._snapshot
-            if baseline is None:
-                baseline = getattr(self, "_initial_snapshot", None)
-            if baseline is None:
-                return False
-            return self.to_config() != baseline
-        except Exception:
-            return False
+    def _validate(self, config: dict) -> list[str]:
+        return backend_bridge.validate_steady_config(config)
 
-    # ===================================================================
-    # Keyboard shortcut dispatch
-    # ===================================================================
+    def _preflight(self, config: dict) -> dict:
+        return backend_bridge.preflight_steady(config.get("rocket_inputs") or {})
 
-    def handle_shortcut(self, action: str) -> None:
-        """Wired via ShortcutRouter.  Only listens when this page is the
-        currently-visible one (shell filters that upstream)."""
-        if action == "run":
-            self._on_run()
-        elif action == "save":
-            self._on_save_preset()
-        elif action == "load":
-            self._on_load_preset()
-
-    # ===================================================================
-    # Actions
-    # ===================================================================
-
-    def _on_load_preset(self) -> None:
-        d = backend_bridge.steady_presets_dir()
-        d.mkdir(parents=True, exist_ok=True)
-        path = filedialog.askopenfilename(
-            initialdir=str(d),
-            title="Load steady preset",
-            filetypes=[("Steady configs", "*.jsonc *.json"), ("All files", "*.*")],
-        )
-        if not path:
-            return
-        self._load_preset_from_path(Path(path))
-
-    def _load_preset_from_path(self, path: Path) -> None:
-        """Shared load-preset implementation used by both the button and
-        the recent-presets dropdown."""
-        try:
-            cfg = backend_bridge.load_jsonc(path)
-            self.from_config(cfg)
-            # Snapshot via to_config() (post-round-trip) so a later Run's
-            # equality check isn't tripped up by JSON-vs-Python type quirks.
-            self._presets.mark_loaded(path, self.to_config())
-            recent_presets.record("steady", path)
-            if hasattr(self, "_recent_menu"):
-                self._recent_menu.refresh()
-            self._set_status(f"Loaded preset: {path.name}")
-        except Exception as exc:
-            messagebox.showerror("Could not load preset",
-                                 f"{type(exc).__name__}: {exc}")
-
-    def _on_save_preset(self) -> None:
-        cfg = self.to_config()
-        errors = backend_bridge.validate_steady_config(cfg)
-        if errors:
-            self._highlight_invalid_fields(cfg)
-            messagebox.showwarning(
-                "Missing required fields",
-                "Please fix the following before saving:\n\n• "
-                + "\n• ".join(errors),
-            )
-            return
-
-        d = backend_bridge.steady_presets_dir()
-        d.mkdir(parents=True, exist_ok=True)
-        default_name = self._default_save_name(cfg)
-        path = filedialog.asksaveasfilename(
-            initialdir=str(d),
-            initialfile=default_name,
-            title="Save steady preset",
-            defaultextension=".jsonc",
-            filetypes=[("Steady configs", "*.jsonc *.json"), ("All files", "*.*")],
-        )
-        if not path:
-            return
-        try:
-            backend_bridge.save_jsonc(Path(path), cfg)
-            self._presets.mark_loaded(Path(path), cfg)
-            recent_presets.record("steady", Path(path))
-            if hasattr(self, "_recent_menu"):
-                self._recent_menu.refresh()
-            self._set_status(f"Saved preset: {Path(path).name}")
-        except Exception as exc:
-            messagebox.showerror("Could not save preset",
-                                 f"{type(exc).__name__}: {exc}")
-
-    def _on_run(self) -> None:
-        cfg = self.to_config()
-        errors = backend_bridge.validate_steady_config(cfg)
-        if errors:
-            self._highlight_invalid_fields(cfg)
-            messagebox.showwarning(
-                "Cannot run simulation",
-                "Please fix the following before running:\n\n• "
-                + "\n• ".join(errors),
-            )
-            return
-
-        # Ask the preset manager which file the backend should read.
-        config_file_path, path_source = self._presets.pick_path_for_run(
-            cfg,
-            default_name=self._default_save_name(cfg),
-            auto_save=bool(self.auto_save_var.get()),
-        )
-        if path_source == "auto_save" and config_file_path is not None:
-            recent_presets.record("steady", config_file_path)
-            if hasattr(self, "_recent_menu"):
-                self._recent_menu.refresh()
-            self._set_status(f"Auto-saved as {config_file_path.name}")
-
-        # Route through the loading screen: it owns the worker thread,
-        # captures stdout for the terminal display, and animates the
-        # rocket bar.
-        shell = self.winfo_toplevel()
-        shell.start_loading_run(
-            title="Running steady simulation",
-            run_fn=lambda: backend_bridge.run_steady(
-                cfg, config_file_path=config_file_path,
-            ),
-            on_complete=self._on_loading_complete,
-            # `cfg` baked in via default-arg so the closure doesn't depend
-            # on the local scope by the time the worker reports back.
-            on_error=lambda exc, tb, cfg=cfg: self._on_loading_error(exc, tb, cfg),
-        )
-
-    def _on_loading_complete(self, result) -> None:
-        """Called by LoadingScreen when the simulation finishes successfully."""
-        result_path, result_dict = result
-        self._set_status(f"Done. Results saved to {result_path.name}")
-        # Navigate to the dedicated results page.
-        shell = self.winfo_toplevel()
-        try:
-            results_page = shell._ensure_page("steady_results")
-            results_page.load_results(result_path, result_dict)
-            shell.go("steady_results")
-        except Exception:
-            # Fallback: the old inline modal, in case something went wrong.
-            self._show_results_dialog(result_path, result_dict)
-
-    def _on_loading_error(self, exc, tb, cfg) -> None:
-        """Called by LoadingScreen on uncaught exceptions in the worker."""
-        self._set_status(f"Simulation failed: {type(exc).__name__}")
-        self._show_error_popup(exc, tb, cfg)
-
-    # ===================================================================
-    # Error popup (delegates to the shared widget)
-    # ===================================================================
-
-    def _show_error_popup(self, exc: BaseException, tb: str, cfg: dict) -> None:
-        show_simulation_error(
-            self, exc, tb, cfg,
-            back_button_text="Back to Steady",
-            back_target="steady",
-            error_title_prefix="Error while running steady",
-            error_body_prefix=(
-                "While running steady, the following message stack occurred:"
-            ),
-        )
-
-    # ===================================================================
-    # Results dialog (interim — to be replaced by the dedicated results page)
-    # ===================================================================
-
-    def _show_results_dialog(self, result_path: Path, result_dict: dict) -> None:
-        win = ctk.CTkToplevel(self)
-        win.title("Simulation results")
-        win.geometry("640x520")
-        win.transient(self.winfo_toplevel())
-        win.grab_set()
-
-        ctk.CTkLabel(
-            win, text="Simulation finished",
-            font=ctk.CTkFont(size=theme.SIZE_H1, weight="bold"),
-        ).pack(pady=(theme.PAD_M, theme.PAD_XS))
-
-        ctk.CTkLabel(
-            win, text=f"Saved to:  {result_path}",
-            text_color=("gray35", "gray65"),
-            font=ctk.CTkFont(size=theme.SIZE_SMALL),
-            wraplength=600, justify="left", anchor="w",
-        ).pack(fill="x", padx=theme.PAD_M, pady=(0, theme.PAD_M))
-
-        body = ctk.CTkTextbox(win, wrap="word",
-                              font=ctk.CTkFont(family="Consolas", size=12))
-        body.pack(fill="both", expand=True, padx=theme.PAD_M, pady=theme.PAD_S)
-        body.insert("0.0", self._format_results(result_dict))
-        body.configure(state="disabled")
-
-        footer = ctk.CTkFrame(win, fg_color="transparent")
-        footer.pack(fill="x", padx=theme.PAD_M, pady=theme.PAD_M)
-        ctk.CTkButton(footer, text="Close", command=win.destroy).pack(side="right")
-
-    def _format_results(self, results: dict) -> str:
-        lines: list[str] = []
-        sim = results.get("simulation_settings", {}) or {}
-        ri  = results.get("rocket_inputs", {}) or {}
-        sim_type = (sim.get("simulation_type") or "").lower()
-
-        lines.append(f"Simulation type: "
-                     f"{display_mod.SIM_TYPE_DISPLAY.get(sim_type, sim_type)}")
-        if "rocket_name" in ri:
-            lines.append(f"Rocket: {ri.get('rocket_name')}")
-        lines.append("")
-
-        if sim_type == "hotfire":
-            _append_performance(lines, results.get("rocket_parameters", {}) or {})
-
-        elif sim_type == "fuel_mass_convergence":
-            _append_performance(lines, results.get("rocket_parameters", {}) or {})
-            fd = results.get("flight_dict") or {}
-            if isinstance(fd, dict) and fd.get("altitude"):
-                lines.append("")
-                lines.append("Ascent profile:")
-                alts = fd["altitude"]
-                times = fd.get("time", [])
-                lines.append(f"  apogee:          {max(alts):,.1f} m")
-                if times:
-                    lines.append(f"  time to apogee:  {times[-1]:,.2f} s")
-
-        elif sim_type == "parametric_study":
-            pr = results.get("parametric_results") or {}
-            combos = pr.get("combinations") if isinstance(pr, dict) else None
-            if combos:
-                lines.append(f"Parametric study completed: "
-                             f"{len(combos)} configurations simulated.")
-            rp_list = pr.get("rocket_parameters", []) if isinstance(pr, dict) else []
-            if rp_list:
-                lines.append("")
-                lines.append("First cell:")
-                _append_performance(lines, rp_list[0])
-
-        return "\n".join(lines) if lines else "(no result data)"
-
-    # ===================================================================
-    # Utilities
-    # ===================================================================
-
-    def _default_save_name(self, cfg: dict) -> str:
-        sim = cfg.get("simulation_settings", {}) or {}
-        ri  = cfg.get("rocket_inputs", {}) or {}
-        name = sim.get("simulation_name") or ri.get("rocket_name")
-        if name:
-            safe = "_".join(str(name).split()).replace("/", "_").replace("\\", "_")
-            return f"steady_{safe}.jsonc"
-        return f"steady_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.jsonc"
-
-    def _highlight_invalid_fields(self, cfg: dict) -> None:
-        ri = cfg.get("rocket_inputs", {}) or {}
-        sim_type = (cfg.get("simulation_settings", {}) or {}).get(
-            "simulation_type", "").lower()
-
-        required = list(backend_bridge.STEADY_BASE_REQUIRED)
-        if sim_type in ("fuel_mass_convergence", "parametric_study"):
-            required += list(backend_bridge.STEADY_KINEMATICS_REQUIRED)
-        if sim_type == "hotfire":
-            if not ri.get("initial_internal_fuel_diameter") and not ri.get("fuel_mass"):
-                required.append("initial_internal_fuel_diameter")
-
-        parametrized = (
-            set(self.parametric_list.used_vars())
-            if sim_type == "parametric_study" else set()
-        )
-
-        for key in required:
-            if key in parametrized:
-                continue   # parametrized vars don't need a static value
-            f = self.fields.get(key)
-            if f is not None:
-                f.mark_invalid(ri.get(key) in (None, ""))
-        for key, field in self.fields.items():
-            if key not in required or key in parametrized:
-                field.mark_invalid(False)
-
-    def _set_status(self, text: str) -> None:
-        self.status_label.configure(text=text)
-
-    # ===================================================================
-    # Reset — called by the shell when the user hits Home
-    # ===================================================================
+    def _default_run_name(self) -> str:
+        return self.sim_name_var.get().strip() or super()._default_run_name()
 
     def reset_to_defaults(self) -> None:
-        """Blow away current inputs and status, restore initial state."""
-        # form vars
-        self.sim_type_var.set("fuel_mass_convergence")
-        self._sim_type_display_var.set(display_mod.sim_type_display("fuel_mass_convergence"))
-        self.output_units_var.set(user_settings.get("default_output_units", "SI"))
-        self.save_data_var.set(True)
+        super().reset_to_defaults()
         self.sim_name_var.set("")
-        # fields — clear ones that used to be blank; restore Advanced defaults
-        for key, field in self.fields.items():
-            if key in _ADVANCED_DEFAULTS:
-                field.set(str(_ADVANCED_DEFAULTS[key]))
-            else:
-                field.set("")
-            field.mark_invalid(False)
-        # parametric list starts empty
+        self.description.delete("0.0", "end")
+        self.sim_type_var.set(SIM_TYPES["fuel_mass_convergence"])
         self.parametric_list.clear()
-        # advanced section locked
-        self._advanced_locked.set(True)
-        self._apply_advanced_lock()
-        # preset tracking + auto-save
-        self._presets.clear()
-        self.auto_save_var.set(True)
-        # status
-        self._set_status("")
-        # visibility refresh (in case sim_type changed)
         self._refresh_visibility()
-
-    # ----- per-show hook (refreshes the output-units initial when settings changed)
-    def on_show(self) -> None:
-        # If the user opened Settings, changed default_output_units, and came
-        # back, only update the dropdown if they haven't already manually
-        # overridden it during this session. Simplest rule: only override
-        # if it's still set to a stale default.
-        wanted = user_settings.get("default_output_units", "SI")
-        if wanted in OUTPUT_UNITS and self.output_units_var.get() not in OUTPUT_UNITS:
-            self.output_units_var.set(wanted)
-
-
-# =============================================================================
-# Module-level helpers
-# =============================================================================
-
-# Friendly labels used by _add_field when the caller doesn't pass `label=`.
-_PRETTY_FIELD_LABELS = {
-    "rocket_name":                          "Rocket name",
-    "oxidizer_mass_flow_rate":              "Oxidizer mass flow rate",
-    "chamber_pressure":                     "Chamber pressure",
-    "fuel_external_diameter":               "Fuel external diameter",
-    "fuel_length":                          "Fuel length",
-    "initial_internal_fuel_diameter":       "Initial internal fuel diameter",
-    "fuel_grain_density":                   "Fuel grain density",
-    "regression_rate_scaling_coefficient":  "Regression coefficient (a)",
-    "regression_rate_exponent":             "Regression exponent (n)",
-    "liquid_oxidizer_type":                 "Liquid oxidizer type",
-    "solid_fuel_type":                      "Solid fuel type",
-    "target_apogee":                        "Target apogee",
-    "launch_site_altitude":                 "Launch site altitude",
-    "dry_mass":                             "Dry mass",
-    "rocket_external_diameter":             "Rocket external diameter",
-    "drag_coefficient":                     "Drag coefficient",
-    "launch_angle":                         "Launch angle (from vertical)",
-}
-
-
-# Per-field help text (shown as a hover tooltip on the label + entry).
-# Concise; the tooltip wraps at 320 px.
-_FIELD_HELP: dict[str, str] = {
-    "rocket_name":
-        "Human-friendly identifier for this configuration; used only in "
-        "the saved-preset filename.",
-    "oxidizer_mass_flow_rate":
-        "Steady-state N₂O mass flow rate through the injector.",
-    "chamber_pressure":
-        "Combustion-chamber stagnation pressure.",
-    "fuel_external_diameter":
-        "Outer diameter of the fuel grain.",
-    "fuel_length":
-        "Fuel grain length.",
-    "initial_internal_fuel_diameter":
-        "Initial port diameter (only used for hotfire). The other sim "
-        "types solve for it.",
-    "fuel_grain_density":
-        "Bulk density of the solid fuel. Paraffin: ~900 kg/m³.",
-    "regression_rate_scaling_coefficient":
-        "'a' in ṙ = a·G^n (SI: m/s, G in kg/m²/s). Paraffin/N₂O: ~1.3e-4.",
-    "regression_rate_exponent":
-        "'n' in ṙ = a·G^n. Paraffin/N₂O: ~0.555.",
-    "liquid_oxidizer_type":
-        "Chemical species of the liquid oxidizer.",
-    "solid_fuel_type":
-        "Chemical species of the solid fuel.",
-    "target_apogee":
-        "Design apogee target. The convergence solvers iterate the "
-        "burn duration to hit this.",
-    "launch_site_altitude":
-        "Elevation of the launch site above sea level.",
-    "dry_mass":
-        "Rocket dry mass.",
-    "rocket_external_diameter":
-        "Airframe outer diameter. Used with the drag coefficient for "
-        "aerodynamic loads.",
-    "drag_coefficient":
-        "Rocket drag coefficient.",
-    "launch_angle":
-        "Angle of the launch rail from vertical (deg). 0° = straight up.",
-}
-
-
-def _append_performance(lines: list[str], rp: dict) -> None:
-    PRETTY = [
-        ("thrust",                          "Thrust",              "N",     2),
-        ("Isp",                             "Isp",                 "s",     2),
-        ("burntime",                        "Burn time",           "s",     3),
-        ("total_impulse",                   "Total impulse",       "N·s",   1),
-        ("average_oxidizer_to_fuel_ratio",  "Average O/F",         "",      3),
-        ("fuel_mass",                       "Fuel mass",           "kg",    3),
-        ("nozzle_throat_radius",            "Nozzle throat radius","m",     5),
-        ("nozzle_exit_radius",              "Nozzle exit radius",  "m",     5),
-        ("wet_mass",                        "Wet mass",            "kg",    2),
-        ("thrust_to_weight_ratio",          "Thrust / weight",     "",      2),
-        ("reached_apogee",                  "Apogee reached",      "m",     1),
-    ]
-    lines.append("Performance:")
-    for key, label, unit, prec in PRETTY:
-        if key in rp and rp[key] is not None:
-            try:
-                v = float(rp[key])
-                u = f" {unit}" if unit else ""
-                lines.append(f"  {label:24s} {v:>14,.{prec}f}{u}")
-            except (TypeError, ValueError):
-                lines.append(f"  {label:24s} {rp[key]}")
+        self._clean_snapshot = self.to_config()

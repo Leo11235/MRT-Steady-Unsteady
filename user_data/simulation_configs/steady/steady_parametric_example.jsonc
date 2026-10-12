@@ -1,46 +1,40 @@
 {
-    "simulation_settings" : {
-        "simulation_type": "parametric_study", // can be 'fuel_mass_convergence', 'parametric_study', 'hotfire', or 'optimize_values_for_unsteady'
-        "output_units": "SI", // SI, IMP, or MRT (rocket team's own mishmash of SI and IMP)
-        "save_output_data": true, // whether to save simulation data
-        "parametric_study_settings": { // only include if simulation type is "parametric study"
+    "metadata": {
+        "simulation_type": "steady",
+        "simulation_name": "",
+        "simulation_description": "",
+        "expected_output": ""
+    },
+    "simulation_settings": {
+        "simulation_type": "parametric_study",
+        "output_units": "SI",
+        "save_output_data": true,
+        "parametric_study_settings": {
             "oxidizer_mass_flow_rate": {
-                "low_end": 1, // in kg/s
-                "high_end": 5,
-                "step_size": 1
+                "low_end": [1.0, "kg/s"],
+                "high_end": [5.0, "kg/s"],
+                "step_size": [1.0, "kg/s"]
             },
             "chamber_pressure": {
-                "low_end": 2758000, // 400 psi
-                "high_end": 4137000, // 600 psi
-                "step_size": 689476 // 100 psi
+                "low_end": [400.0, "psi"],
+                "high_end": [600.0, "psi"],
+                "step_size": [100.0, "psi"]
             }
         }
     },
-
-    "rocket_inputs" : {
-        "rocket_name": "Ancalagon",
-        "target_apogee": 13716, // m
-
-        "oxidizer_mass_flow_rate": 3.0, // kg/s
-        "chamber_pressure": 3447000, // Pa
-        "fuel_external_diameter": 0.1524, // m  (outer diameter of fuel grain)
-        "initial_internal_fuel_diameter": 0.04, // m; only used for hotfire tests
-        "fuel_length": 0.6096, // m
-        "launch_site_altitude": 364, // m
-        "dry_mass": 88.89, // kg
-        "rocket_external_diameter": 0.20574, // m  (rocket outer diameter)
-        "drag_coefficient": 0.641606, // [.]
-        "launch_angle": 6, // degrees
-
-        // PROPEP stuff here
+    "rocket_inputs": {
+        "fuel_external_diameter": [0.1524, "m"],
+        "fuel_length": [0.6096, "m"],
+        "fuel_grain_density": [900.0, "kg/m^3"],
+        "regression_rate_scaling_coefficient": [0.132, "(mm/s)/(kg/m^2/s)^n"],
+        "regression_rate_exponent": [0.555, "."],
         "liquid_oxidizer_type": "NITROUS OXIDE",
-        //"oxidizer_molecule_code": 657,
         "solid_fuel_type": "EICOSANE (PARAFFIN)",
-        //"fuel_molecule_code": 1029,
-
-        // from literature
-        "fuel_grain_density": 900, // kg/m^3
-        "regression_rate_scaling_coefficient": 0.000132, // [.]
-        "regression_rate_exponent": 0.555 // [.]
+        "dry_mass": [88.89, "kg"],
+        "rocket_external_diameter": [0.20574, "m"],
+        "drag_coefficient": [0.641606, "."],
+        "target_apogee": [13716.0, "m"],
+        "launch_site_altitude": [364.0, "m"],
+        "launch_angle": [6.0, "deg"]
     }
 }

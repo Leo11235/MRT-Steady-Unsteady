@@ -12,51 +12,96 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from src.backend.unsteady.engine.objects import StateVector, History
-from src.backend.unsteady.engine.config import load_unsteady_config
-from src.backend.unsteady.engine.registry import get_active_functions
-from src.backend.unsteady.engine.variable_initialization import initialize_state_vector, initialize_natural_constants_dict
-from src.backend.unsteady.engine.transitions import TRANSITION_REGISTRY
 
-from src.backend.unsteady.physics.N2O_properties.N2O_properties import get_N2O_property
-from src.backend.unsteady.physics.CEA.CEA_interpolator import CEA_interpolation_lookup
-from src.backend.unsteady.physics.atmosphere.atmosphere import get_atmosphere_properties
-from src.backend.unsteady.engine.warnings import (WARNINGS_REGISTRY, warn_initialization_limits, finalize_warnings)
-
+import src.backend.unsteady.engine.config as config
+import src.backend.unsteady.engine.registry as registry
+import src.backend.unsteady.engine.variable_initialization as var_init
+import src.backend.unsteady.engine.transitions as transitions
+import src.backend.unsteady.engine.warnings as warnings
 import src.backend.unsteady.engine.rhs as rhs
 
+import src.backend.unsteady.physics.N2O_properties.N2O_properties as N2O
+import src.backend.unsteady.physics.CEA.CEA_interpolator as CEA
+import src.backend.unsteady.physics.atmosphere.atmosphere as atmosphere
 
-def run_unsteady(rocket_inputs_filename: str, rocket_inputs_filepath: str | Path = Path(f"{project_root}") / "user_data" / "simulation_configs" / "unsteady"):
+
+
+class SolverStalledError(RuntimeError):
+    """
+    Raised by _StallDetector when solve_ivp advances unsustainably slowly. Happens when LSODA has shrunk its step below any meaningful size.
+    """
+
+class _StallDetector:
+    """
+    Wraps a scipy RHS callable, counts evaluations, and raises SolverStalledError when sim time isn't advancing. Checks every 'check_every' evals whether 't' moved forward by at least 'min_dt_s' since the previous check.
+    """
+
+    def __init__(self, wrapped, check_every: int = 1000, min_dt_s: float = 1e-3) -> None:
+        self._wrapped = wrapped
+        self._check_every = check_every
+        self._min_dt_s = min_dt_s
+        self._eval_count = 0
+        self._t_last_check = None # sim time seen at last checkpoint
+        self._eval_last_check = 0
+
+    def __call__(self, t, y, *args, **kwargs):
+        self._eval_count += 1
+        if self._eval_count - self._eval_last_check >= self._check_every:
+            if self._t_last_check is not None:
+                dt = t - self._t_last_check
+                if dt < self._min_dt_s:
+                    raise SolverStalledError(
+                        f"Solver stalled at t = {t:.6f} s: sim time advanced only {dt*1000:.3f} ms across {self._check_every} evaluations. This usually means the operating point is physically unstable (chamber pressure very close to tank pressure, so injector authority is near zero). Try reducing the regression rate coefficient or increasing the feed pressure loss."
+                    )
+            self._t_last_check = t
+            self._eval_last_check = self._eval_count
+        return self._wrapped(t, y, *args, **kwargs)
+
+
+def run_unsteady(rocket_inputs_filename: str, # should end in .jsonc
+                 rocket_inputs_filepath: str | Path = Path(f"{project_root}") / "user_data" / "simulation_configs" / "unsteady", # where to find json inputs
+                 output_dir_filepath: str | Path = Path(f"{project_root}") / "user_data" / "simulation_results" / "unsteady"): # creates a folder in this dir, leaves all outputs in that folder
     """
     The main function for running the unsteady simulation.
     Takes a JSON file of rocket inputs, outputs another JSON with simulation performance
     """
     
+    # reset terminal printer outer
+    rhs.reset_console_table()
+
     # load rocket inputs and simulation settings
     rocket_inputs_full_filepath = Path(f"{rocket_inputs_filepath}") / f"{rocket_inputs_filename}"
     print(f"Loading rocket inputs from config\n")
-    config = load_unsteady_config(rocket_inputs_full_filepath)
-    rocket_inputs = config["rocket_inputs"]
-    sim_settings = config["simulation_settings"]
-    rocket_inputs_metadata = config["metadata"]
+    sim_config = config.load_unsteady_config(rocket_inputs_full_filepath)
+    rocket_inputs = sim_config["rocket_inputs"]
+    sim_settings = sim_config["simulation_settings"]
+    rocket_inputs_metadata = sim_config["metadata"]
+    
+    # add transition_events dict to rocket_inputs (transition_events contains guidelines on when to abort certain phases)
+    # this is not the cleanest way to implement, transition_events should probably be passed on its own into args=... on solve_ivp below; worth doing if this code is ever refactored. this is a safe implementation for now since nothing else (other than some code in transitions.py) reads these keys from rocket_inputs. 
+    rocket_inputs.update(sim_settings.get("transition_events", {}))
+    rocket_inputs["epsilons"] = sim_settings.get("epsilons", {})
     
     # this dict contains constants (gravity, universal gas constant, etc)
-    constants_dict = initialize_natural_constants_dict()
+    constants_dict = var_init.initialize_natural_constants_dict()
     
     # map physics functions (this tells the program which physics models it is supposed to run)
-    cv_funcs = get_active_functions(rocket_inputs["CV_models"], "phase_2")
+    cv_funcs = registry.get_active_functions(rocket_inputs["CV_models"], "phase_2")
     
     # calculate initial state at t=0
     print("Calculating t=0 physical states\n")
+        # compute rocket constants based on rocket inputs (parachute area, injector hole area, etc)
+    var_init.compute_rocket_variables(rocket_inputs)
         # compute initial state vector
-    initial_state_dict = initialize_state_vector(rocket_inputs, constants_dict, get_N2O_property)
+    initial_state_dict = var_init.initialize_state_vector(rocket_inputs, constants_dict, N2O.get_N2O_property)
         # convert initial state dict to flat array to be used by solve_ivp
     y0 = StateVector.to_array(initial_state_dict)
         # compute t=0 non-state-vector values
     live_0 = {}
-    live_0.update(get_atmosphere_properties(initial_state_dict["sy_R"]))
-    live_0["p_T"] = get_N2O_property("p", initial_state_dict["T_T"])
-    live_0["v_l"] = get_N2O_property("v_l", initial_state_dict["T_T"])
-    live_0["v_v"] = get_N2O_property("v_v", initial_state_dict["T_T"])
+    live_0.update(atmosphere.get_atmosphere_properties(initial_state_dict["sy_R"]))
+    live_0["p_T"] = N2O.get_N2O_property("p", initial_state_dict["T_T"])
+    live_0["v_l"] = N2O.get_N2O_property("v_l", initial_state_dict["T_T"])
+    live_0["v_v"] = N2O.get_N2O_property("v_v", initial_state_dict["T_T"])
     
     if cv_funcs.get("CV2_valve"): live_0.update(cv_funcs["CV2_valve"](0.0, initial_state_dict, rocket_inputs, live_0, constants_dict))
     if cv_funcs.get("CV3_injector"): live_0.update(cv_funcs["CV3_injector"](0.0, initial_state_dict, rocket_inputs, live_0, constants_dict))
@@ -69,9 +114,14 @@ def run_unsteady(rocket_inputs_filename: str, rocket_inputs_filepath: str | Path
     history = History(rocket_inputs)
     history.log_timestep(t=0.0, state_dict=initial_state_dict, derived_dict=live_0, phase="phase_1")
     
+    # NASA-CEA: the envelope log is module-level state in the interpolator, so it has to be cleared per run or excursions accumulate across simulations
+    CEA.reset_envelope_log()
+    # N2O properties lookup: clear across simulations too
+    N2O.reset_N2O_excursion_log()
+    
     # initialize warnings dictionary & log starting state
     warnings_dict = {}
-    warn_initialization_limits(rocket_inputs, warnings_dict)
+    warnings.warn_initialization_limits(rocket_inputs, warnings_dict)
     
     ###################
     # MAIN PHASE LOOP #
@@ -96,13 +146,13 @@ def run_unsteady(rocket_inputs_filename: str, rocket_inputs_filepath: str | Path
     # helper to rebuild derived variables for logging and transition handler
     def _reconstruct_live(t_eval, state_dict, cvs):
         ld = {}
-        ld.update(get_atmosphere_properties(state_dict["sy_R"]))
+        ld.update(atmosphere.get_atmosphere_properties(state_dict["sy_R"]))
         
         # Using .get() evaluates to False if the key is missing OR if the value is None
         if cvs.get("CV1_tank"):
-            ld["p_T"] = get_N2O_property("p", state_dict["T_T"])
-            ld["v_l"] = get_N2O_property("v_l", state_dict["T_T"])
-            ld["v_v"] = get_N2O_property("v_v", state_dict["T_T"])
+            ld["p_T"] = N2O.get_N2O_property("p", state_dict["T_T"])
+            ld["v_l"] = N2O.get_N2O_property("v_l", state_dict["T_T"])
+            ld["v_v"] = N2O.get_N2O_property("v_v", state_dict["T_T"])
             
         if cvs.get("CV2_valve"): ld.update(cvs["CV2_valve"](t_eval, state_dict, rocket_inputs, ld, constants_dict))
         if cvs.get("CV3_injector"): ld.update(cvs["CV3_injector"](t_eval, state_dict, rocket_inputs, ld, constants_dict))
@@ -115,18 +165,34 @@ def run_unsteady(rocket_inputs_filename: str, rocket_inputs_filepath: str | Path
         ld.setdefault("F_thrust", 0.0)
         ld.setdefault("OF", float("nan"))
         ld.setdefault("T_c", float("nan"))
+        ld.setdefault("cstar", float("nan"))
         return ld
 
     while not active_phase.startswith("terminal"):
         print(f"\n--- {active_phase.upper()} ---")
         
-        cv_funcs = get_active_functions(rocket_inputs["CV_models"], active_phase)
+        cv_funcs = registry.get_active_functions(rocket_inputs["CV_models"], active_phase)
         active_rhs = RHS_MAP[active_phase]
-        active_events = TRANSITION_REGISTRY.get(active_phase, {}).get("events", [])
-        
+        active_events = transitions.TRANSITION_REGISTRY.get(active_phase, {}).get("events", [])
+
         # Pull dynamic timeout from settings, fallback to 60.0 if not explicitly defined
         phase_timeout = sim_settings.get("phase_max_times", {}).get(active_phase, 60.0)
-        
+
+        # Wrap the RHS with a stall detector so an unstable operating
+        # point can't hang the sim forever.  Tunables live in
+        # sim_settings so they can be relaxed for very-slow-progress
+        # runs if needed.
+        _stall_check_every = sim_settings.get("solver", {}).get("stall_check_every", 1000)
+        _stall_min_dt_s    = sim_settings.get("solver", {}).get("stall_min_dt_s",    1e-3)
+        active_rhs = _StallDetector(
+            active_rhs,
+            check_every=_stall_check_every,
+            min_dt_s=_stall_min_dt_s,
+        )
+
+        # the console table's Phase column reads this out of phase_metadata
+        phase_metadata["active_phase"] = active_phase
+
         solution = solve_ivp(
             fun=active_rhs,
             t_span=(current_time, current_time + phase_timeout), 
@@ -148,7 +214,7 @@ def run_unsteady(rocket_inputs_filename: str, rocket_inputs_filepath: str | Path
             live = _reconstruct_live(t_step, state_dict, cv_funcs)
             
             # update warnings dict
-            for warn_func in WARNINGS_REGISTRY.get(active_phase, []):
+            for warn_func in warnings.WARNINGS_REGISTRY.get(active_phase, []):
                 warn_func(t_step, warnings_dict, state_dict, live, rocket_inputs)
             
             history.log_timestep(t=t_step, state_dict=state_dict, derived_dict=live, phase=active_phase)
@@ -170,7 +236,7 @@ def run_unsteady(rocket_inputs_filename: str, rocket_inputs_filepath: str | Path
             if not final_live:
                 final_live = _reconstruct_live(current_time, state_dict, cv_funcs)
                 
-            handler = TRANSITION_REGISTRY[active_phase]["handlers"][triggered_idx]
+            handler = transitions.TRANSITION_REGISTRY[active_phase]["handlers"][triggered_idx]
             clamped_state_dict, next_phase, new_metadata = handler(state_dict, rocket_inputs, current_time, final_live)
             
             phase_metadata.update(new_metadata)
@@ -178,24 +244,46 @@ def run_unsteady(rocket_inputs_filename: str, rocket_inputs_filepath: str | Path
             
             event_name = active_events[triggered_idx].__name__
             history.log_event(current_time, "PHASE_TRANSITION", f"Event '{event_name}' triggered. Exiting {active_phase} to {next_phase}")
+            
+            # check for anything sus between phase transitions
+            warnings.warn_on_transition(event_name, current_time, warnings_dict, state_dict, final_live, rocket_inputs)
+            
             print(f"\n>>> [{event_name}] --> {active_phase.capitalize()} transitioned to {next_phase} at t={current_time:.3f} s")
             active_phase = next_phase
             
         else:
+            # solve_ivp returned without a terminal event firing
             print(f"Simulation ended or timed out. Message: {solution.message}")
-            active_phase = "terminal"
+            active_phase = "terminal_phase_timeout"
 
-    # TERMINAL ABORT HANDLING
-    if active_phase == "terminal_002_liquid_quench":
-        history.log_event(current_time, "ABORT_002", "Catastrophic liquid quench detected. Halting simulation.")
-        print("\n[ABORT] Catastrophic liquid quench detected. Execution stopped.")
-    elif active_phase == "terminal_apogee_abort":
-        history.log_event(current_time, "ABORT_APOGEE", "Apogee reached during powered ascent. Halting simulation.")
-        print("\n[ABORT] Apogee reached during powered ascent. Execution stopped.")
-    elif active_phase == "terminal_success_landed":
-        print("\n[SUCCESS] Rocket landed")
-
-    print("\nSimulation complete. Exporting...")
-    finalized_warnings = finalize_warnings(warnings_dict) if rocket_inputs_metadata.get("warnings", True) else None # keep warnings by default if not specified
+    # TERMINAL STATE HANDLING
+    # note for anyone messing with this code in the future: the next ~20 lines should probably be handed off to another function, especially the parts individually calling warning checks/functions. but it works for now so idc
+    _launch_cfg = sim_settings.get("warnings", {}).get("launch_capability", {})
+    _min_twr = _launch_cfg.get("min_peak_thrust_to_weight", 5.0)
+    _min_gain = _launch_cfg.get("min_altitude_gain_m", 10.0)
+    launch_metrics = history.launch_metrics()
+    terminal_info = transitions.terminal_state_info(active_phase)
     
-    return history.export(rocket_inputs, finalized_warnings, rocket_inputs_metadata)
+    # watch for any post-hoc verdicts (ie rocket never got off the ground)
+    ended_nominally = terminal_info["completed_nominally"]
+    if ended_nominally and launch_metrics["altitude_gain"] < _min_gain:
+        active_phase = "terminal_failed_to_launch"
+        terminal_info = transitions.terminal_state_info(active_phase)
+    
+    history.set_terminal_state(terminal_info, current_time)
+    print(f"\n{terminal_info['console']}")
+    
+    if not terminal_info["completed_nominally"]:
+        history.log_event(current_time, f"ABORT_{terminal_info['code'].upper()}", terminal_info["message"])
+        warnings.warn_terminal_state(warnings_dict, terminal_info, current_time)
+    # check if the rocket actually made it off the ground
+    warnings.warn_launch_capability(warnings_dict, launch_metrics, _min_twr, _min_gain, report_launch_failure=ended_nominally)
+    # for CEA and N2O properties lookup, turn clamp logs into warnings.
+    warnings.warn_CEA_envelope_excursions(warnings_dict)
+    warnings.warn_N2O_envelope_excursions(warnings_dict)
+    
+    finalized_warnings = warnings.finalize_warnings(warnings_dict) if rocket_inputs_metadata.get("warnings", True) else None # keep warnings by default if not specified
+    
+    
+    print("\nSimulation complete. Exporting...")
+    return history.export(rocket_inputs, finalized_warnings, rocket_inputs_metadata, output_dir_filepath)

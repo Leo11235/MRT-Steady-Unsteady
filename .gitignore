@@ -1,23 +1,24 @@
-# Compiled python files
 *.pyc
 __pycache__/
+.venv/
 
-# Per-user UI settings (each developer/operator has their own).
-# The committed baseline lives in user_data/default_ui_settings.json.
+# individual user settings & configs
 user_data/ui_settings.json
 user_data/simulation_configs
 user_data/simulation_results
+user_data/crash_log.txt
 
-# PyInstaller build artifacts
-build/
-dist/
+# everything the build produces lives in build_tools/
+build_tools/build/
+build_tools/dist/
+build_tools/output/
 *.spec.bak
 
-# Inno Setup output (setup .exe lives here after build.bat)
-Output/
+# scratch output from the backend test suite
+tests/test_outputs/
+# generated test reports
+tests/reports/
 
-# Local dev virtualenv
-.venv/
-
-# Personal to-do / scratch notes
-to do.txt
+# my own notes & debugging
+notes.txt
+main.py

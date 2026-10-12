@@ -1,12 +1,8 @@
 """
-Entry point for the MRT Steady-Unsteady Simulator GUI.
+Entry point for the desktop app.
 
-Run from project root:
-    python -m src.ui.main
-
-Or with the convenience script:
-    python src/ui/main.py
-(both work; the second adds the project root to sys.path for you)
+    python -m src.ui.main          from the project root
+    python src/ui/main.py          also works; the path fix below handles it
 """
 
 from __future__ import annotations
@@ -16,27 +12,25 @@ from pathlib import Path
 
 
 def _ensure_project_root_on_path() -> None:
+    """Put the project root on sys.path before importing anything from src.
+
+    Running `python src/ui/main.py` directly puts src/ui/ on the path rather
+    than the project root, so `from src.backend...` would fail. Running it as
+    `python -m src.ui.main` doesn't have that problem, but people do both.
     """
-    When `python src/ui/main.py` is invoked directly (instead of
-    `python -m src.ui.main`), the project root isn't on sys.path,
-    so absolute imports like `from src.backend...` would fail.
-    Insert it before importing anything from src.*.
-    """
-    project_root = Path(__file__).resolve().parents[2]
-    s = str(project_root)
-    if s not in sys.path:
-        sys.path.insert(0, s)
+    root = str(Path(__file__).resolve().parents[2])
+    if root not in sys.path:
+        sys.path.insert(0, root)
 
 
 _ensure_project_root_on_path()
 
-# Imports from src.ui.* go after the path tweak
-from src.ui.app.shell import AppShell  # noqa: E402
+# Has to come after the path fix above.
+from src.ui.app.shell import AppShell        # noqa: E402
 
 
 def main() -> None:
-    app = AppShell()
-    app.mainloop()
+    AppShell().mainloop()
 
 
 if __name__ == "__main__":

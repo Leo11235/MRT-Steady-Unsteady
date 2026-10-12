@@ -11,11 +11,12 @@ import customtkinter as ctk
 
 from src.ui.app import theme
 from src.ui.app.services.bug_report_client import (
-    submit_bug_report,
-    friendly_network_error_hint,
+    cap_field,
     collect_environment,
+    friendly_network_error_hint,
+    save_local_copy,
+    submit_bug_report,
 )
-
 
 # Placeholder text that seeds the description box.  Cleared on first
 # focus.  If the user submits with the placeholder still present, we
@@ -85,6 +86,8 @@ class BugReportPage(ctk.CTkFrame):
         # (title, diagnostics, config_json) queued for the next on_show.
         self._pending_prefill: tuple[str, str, str] | None = None
         self._desc_has_placeholder = True
+        # Where the last report was written, shown on the success screen.
+        self._saved_path = None
         self._build()
 
     # ---------------------------------------------------------------------
@@ -123,21 +126,20 @@ class BugReportPage(ctk.CTkFrame):
         wrap.place(relx=0.5, rely=0.02, anchor="n",
                    relwidth=0.78, relheight=0.96)
 
-        ctk.CTkLabel(
-            wrap, text="Tell us what went wrong.",
-            font=ctk.CTkFont(size=theme.SIZE_TITLE, weight="bold"),
-            anchor="w",
-        ).pack(fill="x", pady=(theme.PAD_M, theme.PAD_S))
+        # ctk.CTkLabel(
+        #     wrap, text="Tell us what went wrong.",
+        #     font=ctk.CTkFont(size=theme.SIZE_TITLE, weight="bold"),
+        #     anchor="w",
+        # ).pack(fill="x", pady=(theme.PAD_M, theme.PAD_S))
 
-        ctk.CTkLabel(
-            wrap,
-            text="Reports go straight to the MRT Steady-Unsteady bug "
-                 "tracker. You don't have to do anything after clicking "
-                 "Send.",
-            text_color=theme.TEXT_MUTED,
-            font=ctk.CTkFont(size=theme.SIZE_SMALL),
-            anchor="w", justify="left", wraplength=740,
-        ).pack(fill="x", pady=(0, theme.PAD_L))
+        # ctk.CTkLabel(
+        #     wrap,
+        #     text="Reports go to the MRT Steady-Unsteady maintainer. A copy is "
+        #          "also written to user_data/bug_reports/ on this machine.",
+        #     text_color=theme.TEXT_MUTED,
+        #     font=ctk.CTkFont(size=theme.SIZE_SMALL),
+        #     anchor="w", justify="left", wraplength=740,
+        # ).pack(fill="x", pady=(0, theme.PAD_L))
 
         # ---- User info -------------------------------------------------
         self._section_header(wrap, "User info")
@@ -247,6 +249,10 @@ class BugReportPage(ctk.CTkFrame):
             self._extra_row, text="Copy report to clipboard", width=200,
             command=self._on_copy_to_clipboard,
         )
+        self._folder_btn = ctk.CTkButton(
+            self._extra_row, text="Open saved reports", width=200,
+            command=self._on_open_reports_folder,
+        )
         self._home_btn = ctk.CTkButton(
             self._extra_row, text="Return to home", width=200,
             command=lambda: self.on_navigate("main"),
@@ -286,20 +292,13 @@ class BugReportPage(ctk.CTkFrame):
     def _install_desc_placeholder(self) -> None:
         self._desc.delete("0.0", "end")
         self._desc.insert("0.0", _DESC_PLACEHOLDER)
-        try:
-            self._desc.configure(text_color=theme.TEXT_FAINT)
-        except Exception:
-            pass
+        self._desc.configure(text_color=theme.TEXT_FAINT)
         self._desc_has_placeholder = True
 
     def _on_desc_focus_in(self, _event=None) -> None:
         if self._desc_has_placeholder:
             self._desc.delete("0.0", "end")
-            try:
-                self._desc.configure(text_color=theme.TEXT_NORMAL)
-            except Exception:
-                # Falls back if TEXT_NORMAL doesn't exist; visible either way.
-                pass
+            self._desc.configure(text_color=theme.TEXT_NORMAL)
             self._desc_has_placeholder = False
 
     def _on_desc_focus_out(self, _event=None) -> None:
@@ -364,7 +363,7 @@ class BugReportPage(ctk.CTkFrame):
     def _set_state(self, state: str, message: str = "") -> None:
         """state in {'idle', 'sending', 'error_empty', 'error_send',
         'error_email', 'success'}."""
-        for w in (self._copy_btn, self._home_btn):
+        for w in (self._copy_btn, self._folder_btn, self._home_btn):
             if w.winfo_ismapped():
                 w.pack_forget()
 
@@ -402,6 +401,7 @@ class BugReportPage(ctk.CTkFrame):
             )
             self._send_btn.configure(state="normal", text="Try again")
             self._copy_btn.pack(side="left", padx=(0, theme.PAD_S))
+            self._folder_btn.pack(side="left", padx=(0, theme.PAD_S))
 
         elif state == "success":
             self._status_label.configure(
@@ -409,6 +409,7 @@ class BugReportPage(ctk.CTkFrame):
                 text_color=theme.SUCCESS,
             )
             self._send_btn.configure(state="disabled", text="Sent")
+            self._folder_btn.pack(side="left", padx=(0, theme.PAD_S))
             self._home_btn.pack(side="left", padx=(0, theme.PAD_S))
 
     # ---------------------------------------------------------------------
@@ -446,12 +447,25 @@ class BugReportPage(ctk.CTkFrame):
             self._set_state("error_email")
             return
 
+        # A halted unsteady run can leave megabytes of terminal output in the
+        # diagnostics box; Web3Forms rejects fields that size outright.
+        diag = cap_field(diag)
+        cfg = cap_field(cfg)
+
+        # Save a local copy BEFORE sending. Web3Forms answering "success" is
+        # not proof the mail arrived — their spam filter sits between the
+        # accept and the inbox — so this is what stops a report from
+        # evaporating when delivery quietly fails.
+        from src.ui.app import backend_bridge
+        self._saved_path = save_local_copy(backend_bridge.project_root(),
+                                           self._report_text())
+
         self._set_state("sending")
         # Force UI to repaint before the blocking HTTP call.
         self.update_idletasks()
 
         try:
-            submit_bug_report(
+            server_message = submit_bug_report(
                 title=title,
                 description=desc,
                 name=name,
@@ -460,7 +474,11 @@ class BugReportPage(ctk.CTkFrame):
                 config_json=cfg,
                 env=self._env,
             )
-            self._set_state("success")
+            saved = (f"  A copy is saved at {self._saved_path}."
+                     if self._saved_path else "")
+            self._set_state(
+                "success",
+                "Report sent!")
         except urllib.error.HTTPError as exc:
             self._set_state(
                 "error_send",
@@ -481,13 +499,15 @@ class BugReportPage(ctk.CTkFrame):
                 f"Couldn't send the report. {type(exc).__name__}: {exc}",
             )
 
-    def _on_copy_to_clipboard(self) -> None:
+    def _report_text(self) -> str:
+        """The whole report as plain text. Used for the clipboard AND for the
+        local copy, so what gets saved is exactly what gets pasted."""
         title = self._title_var.get().strip() or "(no title)"
         desc  = self._description_actual() or "(no description)"
         diag  = self._diagnostics_text()   or "(no diagnostics)"
         cfg   = self._config_json          or "(no config)"
         env   = self._env
-        text = (
+        return (
             f"Title: {title}\n\n"
             f"Reporter: {self._name_var.get().strip() or '(anonymous)'}\n"
             f"Email:    {self._email_var.get().strip() or '(none)'}\n\n"
@@ -500,9 +520,18 @@ class BugReportPage(ctk.CTkFrame):
             f"Diagnostics:\n{diag}\n\n"
             f"Config:\n{cfg}\n"
         )
+
+    def _on_copy_to_clipboard(self) -> None:
         self.clipboard_clear()
-        self.clipboard_append(text)
+        self.clipboard_append(self._report_text())
         self._status_label.configure(
             text="Copied. Paste into an email, chat, or GitHub issue.",
             text_color=theme.SUCCESS,
         )
+
+    def _on_open_reports_folder(self) -> None:
+        from src.ui.app import backend_bridge
+        from src.ui.app.services import os_utils
+        folder = backend_bridge.project_root() / "user_data" / "bug_reports"
+        folder.mkdir(parents=True, exist_ok=True)
+        os_utils.reveal_in_file_explorer(folder)
