@@ -1,0 +1,3449 @@
+{
+  "generated_at": "2026-10-13 16:15:16",
+  "environment": {
+    "generated": "2026-10-13T16:15:15",
+    "python": "3.13.1",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "cwd": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady",
+    "numpy": "2.4.6",
+    "scipy": "1.17.1",
+    "matplotlib": "3.10.9",
+    "rocketcea": "1.2.3",
+    "pypropep": "installed",
+    "json5": "0.14.0",
+    "app_version": "1.6",
+    "git_commit": "db8fae9",
+    "git_branch": "dev-branch",
+    "git_dirty": "yes"
+  },
+  "summary": {
+    "total": 132,
+    "passed": 132,
+    "failed": 0
+  },
+  "clusters": [],
+  "timing_outliers": [
+    {
+      "test": "01_parametric_baseline",
+      "kind": "steady",
+      "elapsed": "30.0s",
+      "median": "1.9s"
+    },
+    {
+      "test": "20_parametric_sweep_fuel_length",
+      "kind": "steady",
+      "elapsed": "17.5s",
+      "median": "1.9s"
+    },
+    {
+      "test": "22_parametric_sweep_chamber_pressure",
+      "kind": "steady",
+      "elapsed": "15.8s",
+      "median": "1.9s"
+    },
+    {
+      "test": "23_parametric_sweep_two_vars",
+      "kind": "steady",
+      "elapsed": "24.2s",
+      "median": "1.9s"
+    },
+    {
+      "test": "30_units_output_mrt_parametric",
+      "kind": "steady",
+      "elapsed": "35.0s",
+      "median": "1.9s"
+    },
+    {
+      "test": "47_parametric_three_variables",
+      "kind": "steady",
+      "elapsed": "26.4s",
+      "median": "1.9s"
+    },
+    {
+      "test": "51_parametric_mixed_units_sweep",
+      "kind": "steady",
+      "elapsed": "63.4s",
+      "median": "1.9s"
+    },
+    {
+      "test": "58_parametric_all_variables",
+      "kind": "steady",
+      "elapsed": "373.3s",
+      "median": "1.9s"
+    }
+  ],
+  "tests": [
+    {
+      "name": "00_fuel_mass_convergence_baseline",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\00_fuel_mass_convergence_baseline.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.987,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        }
+      ]
+    },
+    {
+      "name": "01_parametric_baseline",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\01_parametric_baseline.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 29.957,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "list_length",
+          "passed": true,
+          "message": "lengths match"
+        }
+      ]
+    },
+    {
+      "name": "02_hotfire_baseline",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\02_hotfire_baseline.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 0.166,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        }
+      ]
+    },
+    {
+      "name": "03_hotfire_alt_diameter_only",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\03_hotfire_alt_diameter_only.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 0.178,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        }
+      ]
+    },
+    {
+      "name": "04_hotfire_high_chamber_pressure",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\04_hotfire_high_chamber_pressure.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 0.165,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        }
+      ]
+    },
+    {
+      "name": "05_hotfire_low_chamber_pressure",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\05_hotfire_low_chamber_pressure.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 0.217,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        }
+      ]
+    },
+    {
+      "name": "06_hotfire_high_ox_flow",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\06_hotfire_high_ox_flow.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 0.159,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        }
+      ]
+    },
+    {
+      "name": "07_hotfire_low_ox_flow",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\07_hotfire_low_ox_flow.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 0.176,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        }
+      ]
+    },
+    {
+      "name": "08_hotfire_short_grain",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\08_hotfire_short_grain.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 0.176,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        }
+      ]
+    },
+    {
+      "name": "09_hotfire_long_grain",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\09_hotfire_long_grain.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 0.166,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        }
+      ]
+    },
+    {
+      "name": "10_hotfire_fail_both_alt_filled",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\10_hotfire_fail_both_alt_filled.jsonc",
+      "passed": true,
+      "expected": "validation_error",
+      "outcome": "validation_error",
+      "elapsed_s": 0.002,
+      "checks": []
+    },
+    {
+      "name": "11_hotfire_fail_missing_ox_type",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\11_hotfire_fail_missing_ox_type.jsonc",
+      "passed": true,
+      "expected": "validation_error",
+      "outcome": "validation_error",
+      "elapsed_s": 0.002,
+      "checks": []
+    },
+    {
+      "name": "12_convergence_high_apogee",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\12_convergence_high_apogee.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.081,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        }
+      ]
+    },
+    {
+      "name": "13_convergence_low_apogee",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\13_convergence_low_apogee.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.241,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        }
+      ]
+    },
+    {
+      "name": "14_convergence_impossible_apogee",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\14_convergence_impossible_apogee.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 0.541,
+      "checks": [
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_equals",
+          "passed": true,
+          "message": "all equal"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        }
+      ]
+    },
+    {
+      "name": "15_convergence_off_vertical_launch",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\15_convergence_off_vertical_launch.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.123,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        }
+      ]
+    },
+    {
+      "name": "16_convergence_high_drag",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\16_convergence_high_drag.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 1.912,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        }
+      ]
+    },
+    {
+      "name": "17_convergence_heavy_dry_mass",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\17_convergence_heavy_dry_mass.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 1.47,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        }
+      ]
+    },
+    {
+      "name": "18_convergence_light_dry_mass",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\18_convergence_light_dry_mass.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.168,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        }
+      ]
+    },
+    {
+      "name": "19_convergence_fail_missing_kinematics",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\19_convergence_fail_missing_kinematics.jsonc",
+      "passed": true,
+      "expected": "validation_error",
+      "outcome": "validation_error",
+      "elapsed_s": 0.002,
+      "checks": []
+    },
+    {
+      "name": "20_parametric_sweep_fuel_length",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\20_parametric_sweep_fuel_length.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 17.55,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "list_length",
+          "passed": true,
+          "message": "lengths match"
+        }
+      ]
+    },
+    {
+      "name": "21_parametric_sweep_ox_flow",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\21_parametric_sweep_ox_flow.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 15.08,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "list_length",
+          "passed": true,
+          "message": "lengths match"
+        }
+      ]
+    },
+    {
+      "name": "22_parametric_sweep_chamber_pressure",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\22_parametric_sweep_chamber_pressure.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 15.828,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "list_length",
+          "passed": true,
+          "message": "lengths match"
+        }
+      ]
+    },
+    {
+      "name": "23_parametric_sweep_two_vars",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\23_parametric_sweep_two_vars.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 24.192,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "list_length",
+          "passed": true,
+          "message": "lengths match"
+        }
+      ]
+    },
+    {
+      "name": "24_parametric_single_point",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\24_parametric_single_point.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.139,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "list_length",
+          "passed": true,
+          "message": "lengths match"
+        }
+      ]
+    },
+    {
+      "name": "25_parametric_fail_low_gt_high",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\25_parametric_fail_low_gt_high.jsonc",
+      "passed": true,
+      "expected": "validation_error",
+      "outcome": "validation_error",
+      "elapsed_s": 0.003,
+      "checks": []
+    },
+    {
+      "name": "26_parametric_fail_missing_step_size",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\26_parametric_fail_missing_step_size.jsonc",
+      "passed": true,
+      "expected": "validation_error",
+      "outcome": "validation_error",
+      "elapsed_s": 0.003,
+      "checks": []
+    },
+    {
+      "name": "27_parametric_fail_zero_step_size",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\27_parametric_fail_zero_step_size.jsonc",
+      "passed": true,
+      "expected": "validation_error",
+      "outcome": "validation_error",
+      "elapsed_s": 0.003,
+      "checks": []
+    },
+    {
+      "name": "28_units_output_mrt_convergence",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\28_units_output_mrt_convergence.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.619,
+      "checks": [
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "29_units_output_mrt_hotfire",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\29_units_output_mrt_hotfire.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 0.191,
+      "checks": [
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "30_units_output_mrt_parametric",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\30_units_output_mrt_parametric.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 35.02,
+      "checks": [
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "list_length",
+          "passed": true,
+          "message": "lengths match"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "31_units_output_defaults_to_mrt",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\31_units_output_defaults_to_mrt.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.461,
+      "checks": [
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "32_units_output_imp_is_a_no_op",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\32_units_output_imp_is_a_no_op.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.325,
+      "checks": [
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "33_units_input_imperial_equivalent",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\33_units_input_imperial_equivalent.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.476,
+      "checks": [
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "34_units_input_metric_mixed_bag",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\34_units_input_metric_mixed_bag.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.407,
+      "checks": [
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "35_convergence_tight_tolerance",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\35_convergence_tight_tolerance.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.245,
+      "checks": [
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "36_convergence_loose_tolerance",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\36_convergence_loose_tolerance.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 0.977,
+      "checks": [
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "37_convergence_min_port_radius_binds",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\37_convergence_min_port_radius_binds.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 0.566,
+      "checks": [
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "38_convergence_vertical_launch",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\38_convergence_vertical_launch.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.472,
+      "checks": [
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "39_convergence_steep_launch_angle",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\39_convergence_steep_launch_angle.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.149,
+      "checks": [
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "40_convergence_very_low_apogee",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\40_convergence_very_low_apogee.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.55,
+      "checks": [
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "41_hotfire_high_regression_constant",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\41_hotfire_high_regression_constant.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 0.176,
+      "checks": [
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "42_hotfire_low_regression_constant",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\42_hotfire_low_regression_constant.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 0.174,
+      "checks": [
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "43_hotfire_dense_fuel",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\43_hotfire_dense_fuel.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 0.178,
+      "checks": [
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "44_hotfire_light_fuel",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\44_hotfire_light_fuel.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 0.172,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        }
+      ]
+    },
+    {
+      "name": "45_hotfire_tight_initial_port",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\45_hotfire_tight_initial_port.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 0.164,
+      "checks": [
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "46_hotfire_wide_initial_port",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\46_hotfire_wide_initial_port.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 0.236,
+      "checks": [
+        {
+          "name": "value_within",
+          "passed": true,
+          "message": "all within tolerance"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "47_parametric_three_variables",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\47_parametric_three_variables.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 26.417,
+      "checks": [
+        {
+          "name": "list_length",
+          "passed": true,
+          "message": "lengths match"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "48_parametric_sweep_kinematics_variable",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\48_parametric_sweep_kinematics_variable.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 14.272,
+      "checks": [
+        {
+          "name": "list_length",
+          "passed": true,
+          "message": "lengths match"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "49_parametric_sweep_dry_mass",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\49_parametric_sweep_dry_mass.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 9.026,
+      "checks": [
+        {
+          "name": "list_length",
+          "passed": true,
+          "message": "lengths match"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "50_parametric_non_integer_step_count",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\50_parametric_non_integer_step_count.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 5.519,
+      "checks": [
+        {
+          "name": "list_length",
+          "passed": true,
+          "message": "lengths match"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "51_parametric_mixed_units_sweep",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\51_parametric_mixed_units_sweep.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 63.364,
+      "checks": [
+        {
+          "name": "list_length",
+          "passed": true,
+          "message": "lengths match"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "52_parametric_two_point_sweep",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\52_parametric_two_point_sweep.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 6.364,
+      "checks": [
+        {
+          "name": "list_length",
+          "passed": true,
+          "message": "lengths match"
+        },
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        }
+      ]
+    },
+    {
+      "name": "53_fail_missing_regression_exponent",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\53_fail_missing_regression_exponent.jsonc",
+      "passed": true,
+      "expected": "validation_error",
+      "outcome": "validation_error",
+      "elapsed_s": 0.002,
+      "checks": []
+    },
+    {
+      "name": "54_fail_hotfire_neither_alt_filled",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\54_fail_hotfire_neither_alt_filled.jsonc",
+      "passed": true,
+      "expected": "validation_error",
+      "outcome": "validation_error",
+      "elapsed_s": 0.002,
+      "checks": []
+    },
+    {
+      "name": "55_fail_unknown_simulation_type",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\55_fail_unknown_simulation_type.jsonc",
+      "passed": true,
+      "expected": "validation_error",
+      "outcome": "validation_error",
+      "elapsed_s": 0.004,
+      "checks": []
+    },
+    {
+      "name": "56_fail_impossible_grain_geometry",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\56_fail_impossible_grain_geometry.jsonc",
+      "passed": true,
+      "expected": "validation_error",
+      "outcome": "validation_error",
+      "elapsed_s": 0.005,
+      "checks": []
+    },
+    {
+      "name": "58_parametric_all_variables",
+      "kind": "steady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\steady_configs\\58_parametric_all_variables.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 373.257,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "list_length",
+          "passed": true,
+          "message": "lengths match"
+        }
+      ]
+    },
+    {
+      "name": "00_baseline",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\00_baseline.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.213,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "01_no_warnings",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\01_no_warnings.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.188,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "warnings_equal",
+          "passed": true,
+          "message": "matches"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        }
+      ]
+    },
+    {
+      "name": "02_graphs",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\02_graphs.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 18.502,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 3 present"
+        },
+        {
+          "name": "custom_check",
+          "passed": true,
+          "message": "report PDF and PNGs render with real content"
+        }
+      ]
+    },
+    {
+      "name": "03_stall_luminor_verbatim",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\03_stall_luminor_verbatim.jsonc",
+      "passed": true,
+      "expected": "engine_abort",
+      "outcome": "engine_abort",
+      "elapsed_s": 0.702,
+      "checks": []
+    },
+    {
+      "name": "04_stress_high_regression_rate",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\04_stress_high_regression_rate.jsonc",
+      "passed": true,
+      "expected": "engine_abort",
+      "outcome": "engine_abort",
+      "elapsed_s": 0.988,
+      "checks": []
+    },
+    {
+      "name": "05_stress_small_throat",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\05_stress_small_throat.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.191,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "06_stress_near_burnthrough_grain",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\06_stress_near_burnthrough_grain.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 4.028,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "07_stress_low_feed_pressure_loss",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\07_stress_low_feed_pressure_loss.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.797,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "08_stress_high_injector_area",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\08_stress_high_injector_area.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.449,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "09_stress_low_ullage",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\09_stress_low_ullage.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.582,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "10_stress_short_burn",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\10_stress_short_burn.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.478,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "11_stress_long_burn",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\11_stress_long_burn.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 5.236,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "12_stress_instant_valve",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\12_stress_instant_valve.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.183,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "13_fail_missing_cv3_injector",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\13_fail_missing_cv3_injector.jsonc",
+      "passed": true,
+      "expected": "validation_error",
+      "outcome": "validation_error",
+      "elapsed_s": 0.134,
+      "checks": []
+    },
+    {
+      "name": "14_fail_cv4_both_alt_filled",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\14_fail_cv4_both_alt_filled.jsonc",
+      "passed": true,
+      "expected": "validation_error",
+      "outcome": "validation_error",
+      "elapsed_s": 0.137,
+      "checks": []
+    },
+    {
+      "name": "15_fail_cv1_alt_neither",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\15_fail_cv1_alt_neither.jsonc",
+      "passed": true,
+      "expected": "validation_error",
+      "outcome": "validation_error",
+      "elapsed_s": 0.142,
+      "checks": []
+    },
+    {
+      "name": "16_fail_inner_gt_outer",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\16_fail_inner_gt_outer.jsonc",
+      "passed": true,
+      "expected": "validation_error",
+      "outcome": "validation_error",
+      "elapsed_s": 0.134,
+      "checks": []
+    },
+    {
+      "name": "17_valve_linear",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\17_valve_linear.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.75,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "18_phase4a_burnthrough_in_gas_blowdown",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\18_phase4a_burnthrough_in_gas_blowdown.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 4.078,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "19_tank_via_length_branch",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\19_tank_via_length_branch.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.339,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "20_chamber_via_diameter_branch",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\20_chamber_via_diameter_branch.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 4.353,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "21_fuel_limited_burnout",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\21_fuel_limited_burnout.jsonc",
+      "passed": true,
+      "expected": "engine_abort",
+      "outcome": "engine_abort",
+      "elapsed_s": 1.412,
+      "checks": []
+    },
+    {
+      "name": "22_fast_ignition",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\22_fast_ignition.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.499,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "23_slow_ignition",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\23_slow_ignition.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.933,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "24_reaches_landing",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\24_reaches_landing.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.179,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "25_off_vertical_launch",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\25_off_vertical_launch.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.838,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "26_high_altitude_launch",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\26_high_altitude_launch.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 4.023,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "27_warn_short_fuel_grain",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\27_warn_short_fuel_grain.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 1.873,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "28_phase4a_burnthrough_thinner_web",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\28_phase4a_burnthrough_thinner_web.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.804,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "32_phase4_large_chamber_volume",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\32_phase4_large_chamber_volume.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.997,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "33_nozzle_area_ratio_near_unity",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\33_nozzle_area_ratio_near_unity.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.97,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "35_nozzle_very_high_area_ratio",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\35_nozzle_very_high_area_ratio.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.871,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "36_nozzle_large_throat_low_chamber_pressure",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\36_nozzle_large_throat_low_chamber_pressure.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 4.007,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "37_nozzle_sea_level_launch",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\37_nozzle_sea_level_launch.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.248,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "38_nozzle_very_high_launch_site",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\38_nozzle_very_high_launch_site.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.767,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "39_nozzle_tiny_throat_high_pressure",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\39_nozzle_tiny_throat_high_pressure.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.24,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "40_injector_near_zero_feed_loss",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\40_injector_near_zero_feed_loss.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.64,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "41_injector_huge_feed_loss",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\41_injector_huge_feed_loss.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.66,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "42_injector_feed_loss_near_tank_pressure",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\42_injector_feed_loss_near_tank_pressure.jsonc",
+      "passed": true,
+      "expected": "engine_abort",
+      "outcome": "engine_abort",
+      "elapsed_s": 1.458,
+      "checks": []
+    },
+    {
+      "name": "43_injector_very_low_discharge_coefficient",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\43_injector_very_low_discharge_coefficient.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.962,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "44_injector_four_large_holes",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\44_injector_four_large_holes.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 4.528,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "45_injector_many_tiny_holes",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\45_injector_many_tiny_holes.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.852,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "46_thrust_floor_disabled",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\46_thrust_floor_disabled.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.048,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "47_thrust_floor_aggressive",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\47_thrust_floor_aggressive.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.884,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "48_k_amb_raised",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\48_k_amb_raised.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.117,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "51_cea_probe_low_of_ratio",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\51_cea_probe_low_of_ratio.jsonc",
+      "passed": true,
+      "expected": "engine_abort",
+      "outcome": "engine_abort",
+      "elapsed_s": 1.162,
+      "checks": []
+    },
+    {
+      "name": "52_cea_probe_low_chamber_pressure",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\52_cea_probe_low_chamber_pressure.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.702,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "53_cea_probe_extreme_pressure_tiny_throat",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\53_cea_probe_extreme_pressure_tiny_throat.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.734,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "54_n2o_cold_tank_start",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\54_n2o_cold_tank_start.jsonc",
+      "passed": true,
+      "expected": "engine_abort",
+      "outcome": "engine_abort",
+      "elapsed_s": 0.352,
+      "checks": []
+    },
+    {
+      "name": "55_n2o_near_critical_tank",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\55_n2o_near_critical_tank.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.269,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "56_n2o_floor_via_deep_blowdown",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\56_n2o_floor_via_deep_blowdown.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.736,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "57_terminal_phase_timeout",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\57_terminal_phase_timeout.jsonc",
+      "passed": true,
+      "expected": "engine_abort",
+      "outcome": "engine_abort",
+      "elapsed_s": 0.693,
+      "checks": []
+    },
+    {
+      "name": "58_terminal_quench_during_ignition",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\58_terminal_quench_during_ignition.jsonc",
+      "passed": true,
+      "expected": "engine_abort",
+      "outcome": "engine_abort",
+      "elapsed_s": 1.16,
+      "checks": []
+    },
+    {
+      "name": "59_terminal_apogee_abort_probe",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\59_terminal_apogee_abort_probe.jsonc",
+      "passed": true,
+      "expected": "engine_abort",
+      "outcome": "engine_abort",
+      "elapsed_s": 2.036,
+      "checks": []
+    },
+    {
+      "name": "60_terminal_metadata_present_on_success",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\60_terminal_metadata_present_on_success.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.071,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "value_equals",
+          "passed": true,
+          "message": "all equal"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "61_units_imperial_equivalent",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\61_units_imperial_equivalent.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.154,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "62_units_metric_mixed_bag",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\62_units_metric_mixed_bag.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.174,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "63_units_temperature_celsius_only",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\63_units_temperature_celsius_only.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.047,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "64_units_fail_unknown_unit_string",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\64_units_fail_unknown_unit_string.jsonc",
+      "passed": true,
+      "expected": "config_error",
+      "outcome": "config_error",
+      "elapsed_s": 0.165,
+      "checks": []
+    },
+    {
+      "name": "65_units_imperial_alternate_branches",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\65_units_imperial_alternate_branches.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.152,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "66_solver_tight_tolerances",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\66_solver_tight_tolerances.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 9.396,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "67_solver_loose_tolerances",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\67_solver_loose_tolerances.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.183,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "68_solver_bdf_method",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\68_solver_bdf_method.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 4.986,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "69_solver_large_max_step",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\69_solver_large_max_step.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 8.965,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "70_warn_tight_fuel_port",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\70_warn_tight_fuel_port.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 6.164,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        }
+      ]
+    },
+    {
+      "name": "71_warn_high_ullage",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\71_warn_high_ullage.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.508,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "72_warn_low_regression_exponent",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\72_warn_low_regression_exponent.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 1.706,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "73_warn_high_regression_exponent",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\73_warn_high_regression_exponent.jsonc",
+      "passed": true,
+      "expected": "engine_abort",
+      "outcome": "engine_abort",
+      "elapsed_s": 1.36,
+      "checks": []
+    },
+    {
+      "name": "74_warn_several_at_once",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\74_warn_several_at_once.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.002,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        }
+      ]
+    },
+    {
+      "name": "75_trajectory_vertical_launch",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\75_trajectory_vertical_launch.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.538,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "76_trajectory_steep_off_vertical",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\76_trajectory_steep_off_vertical.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.099,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "77_trajectory_very_high_drag",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\77_trajectory_very_high_drag.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 2.92,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "78_trajectory_low_drag_light_vehicle",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\78_trajectory_low_drag_light_vehicle.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 4.224,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    },
+    {
+      "name": "79_trajectory_tiny_drogue_fast_descent",
+      "kind": "unsteady",
+      "config_path": "C:\\Users\\leoam\\Documents\\Mostly VS Code\\Git Files\\MRT-Steady-Unsteady\\tests\\unsteady_configs\\79_trajectory_tiny_drogue_fast_descent.jsonc",
+      "passed": true,
+      "expected": "success",
+      "outcome": "success",
+      "elapsed_s": 3.451,
+      "checks": [
+        {
+          "name": "files_exist",
+          "passed": true,
+          "message": "all 1 present"
+        },
+        {
+          "name": "json_path_exists",
+          "passed": true,
+          "message": "all present"
+        },
+        {
+          "name": "reaches_phases",
+          "passed": true,
+          "message": "all reached"
+        },
+        {
+          "name": "value_between",
+          "passed": true,
+          "message": "all in range"
+        },
+        {
+          "name": "no_nans_in",
+          "passed": true,
+          "message": "clean"
+        }
+      ]
+    }
+  ]
+}
