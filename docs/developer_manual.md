@@ -7,8 +7,8 @@
 1. [Introduction](#1-Introduction)
 2. [The input system](#2-The-input-system)
 3. [Testing suite](#3-Testing-suite)
-4. [Backend: Steady](#4-Backend-Steady)
-5. [Backend: Unsteady](#5-Backend-Unsteady)
+4. [Backend: Steady](#4-Backend:-Steady)
+5. [Backend: Unsteady](#4-Backend:-Unsteady)
 
 ---
 
@@ -26,6 +26,78 @@ In general, the program is organized into three file trees:
 - `src\backend\{steady,unsteady}\static_data\` folders: contains N2O saturation data, CEA combustion tables, atmosphere data, the PROPEP table, and more. 
 
 The UI is a customtkinter interface that allows a user to easily interact with both. It never touches the physics or engine and was made by an LLM. The important part is that it works. 
+
+### 1.1 Development setup
+
+The `dev branch` contains additional tools to make editing the codebase easier
+
+### Requirements
+
+| Requirement | Version | Notes |
+| :--- | :--- | :--- |
+| **[Python](https://www.python.org/downloads/)** | 3.13 | Earlier 3.10+ likely works but is untested. |
+| **[Git](https://git-scm.com/downloads)** | any recent | For cloning the repository. |
+| **[Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)** | *(Windows only)* | Select **Desktop development with C++**, **MSVC v14.x**, and **Windows 10/11 SDK**. Needed because a couple of scientific-Python wheels compile from source on Windows. |
+| **[Inno Setup 6](https://jrsoftware.org/isdl.php)** | *(only for building the installer)* | Not required for running from source. |
+
+### Clone and install
+
+Open a terminal in the project root (the folder that contains `requirements.txt`):
+
+```bash
+git clone https://github.com/Leo11235/MRT-Steady-Unsteady
+cd MRT-Steady-Unsteady
+```
+
+<details>
+<summary><b>Windows</b></summary>
+
+```powershell
+py -3.13 -m venv .venv
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+.venv\Scripts\activate
+python -m pip install -U pip setuptools wheel
+python -m pip install -r requirements.txt
+```
+
+</details>
+
+<details>
+<summary><b>macOS / Linux</b></summary>
+
+```bash
+python3.13 -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip setuptools wheel
+python -m pip install -r requirements.txt
+```
+</details>
+
+
+### Running from source
+
+With the venv activated, from the project root:
+
+```bash
+python -m src.ui.main
+```
+
+The GUI launches full-screen on your primary display.
+
+<details>
+<summary><b>Subsequent sessions</b> (once the venv is set up)</summary>
+
+```powershell
+# Windows
+.venv\Scripts\activate
+python -m src.ui.main
+```
+
+```bash
+# macOS / Linux
+source .venv/bin/activate
+python -m src.ui.main
+```
 
 
 ---
