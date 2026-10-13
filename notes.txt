@@ -1,0 +1,16 @@
+========================
+INSTALL REQUIREMENTS
+python -m pip install -r requirements.txt
+
+ACTIVATE VENV
+.venv\Scripts\activate
+
+TEST UI
+python -m src.ui.main
+
+TEST BACKEND
+python -m tests.backend_tests
+
+BUILD
+.\build_tools\build.bat
+========================
